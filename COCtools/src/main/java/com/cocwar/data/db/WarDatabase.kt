@@ -1,0 +1,186 @@
+package com.cocwar.data.db
+
+import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.cocwar.data.model.Attack
+import kotlinx.coroutines.flow.Flow
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+
+@Entity(tableName = "war_events")
+data class WarEventEntity(
+    @PrimaryKey val eventId: String,
+    val eventName: String,
+    val eventType: String,        // "war" | "league"
+    val eventRound: Int,          // 0 for war, 1..7 for league
+    val clanTotalStars: Int,
+    val clanTotalDestruction: String,
+    val isSample: Boolean,
+    val createdAt: Long
+)
+
+@Entity(
+    tableName = "members",
+    foreignKeys = [ForeignKey(
+        entity = WarEventEntity::class,
+        parentColumns = ["eventId"],
+        childColumns = ["eventId"],
+        onDelete = ForeignKey.CASCADE
+    )],
+    indices = [Index("eventId")]
+)
+data class MemberEntity(
+    @PrimaryKey val id: String,   // "$eventId#$rank"
+    val eventId: String,
+    val rank: Int,
+    val playerName: String,
+    val role: String,
+    val totalStars: Int,
+    val attacks: List<Attack>
+)
+
+@Entity(tableName = "member_roster")
+data class MemberRosterEntity(
+    @PrimaryKey val name: String
+)
+
+class Converters {
+    private val gson = Gson()
+
+    @TypeConverter
+    fun attacksToJson(list: List<Attack>): String = gson.toJson(list)
+
+    @TypeConverter
+    fun jsonToAttacks(json: String): List<Attack> {
+        if (json.isBlank()) return emptyList()
+        return runCatching {
+            gson.fromJson<List<Attack>>(json, object : TypeToken<List<Attack>>() {}.type)
+        }.getOrDefault(emptyList())
+    }
+}
+
+@Dao
+interface WarDao {
+
+    @Transaction
+    @Query("SELECT * FROM war_events ORDER BY createdAt DESC")
+    suspend fun getAllEvents(): List<WarEventEntity>
+
+    @Query("SELECT * FROM war_events ORDER BY createdAt DESC")
+    fun observeEvents(): Flow<List<WarEventEntity>>
+
+    @Query("SELECT * FROM war_events WHERE eventId = :id")
+    fun observeEvent(id: String): Flow<WarEventEntity?>
+
+    @Query("SELECT * FROM war_events WHERE eventId = :id LIMIT 1")
+    suspend fun getEventById(id: String): WarEventEntity?
+
+    @Query("SELECT * FROM members WHERE eventId = :eventId ORDER BY rank ASC")
+    fun observeMembers(eventId: String): Flow<List<MemberEntity>>
+
+    @Transaction
+    suspend fun insertEvent(event: WarEventEntity, members: List<MemberEntity>) {
+        insertEventOnly(event)
+        insertMembers(members)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEventOnly(event: WarEventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMembers(members: List<MemberEntity>)
+
+    @Update
+    suspend fun updateEvent(event: WarEventEntity)
+
+    @Update
+    suspend fun updateMember(member: MemberEntity)
+
+    @Query("DELETE FROM war_events WHERE eventId = :id")
+    suspend fun deleteEvent(id: String)
+
+    @Query("SELECT COUNT(*) FROM war_events")
+    suspend fun countEvents(): Int
+
+    @Query("SELECT COUNT(*) FROM war_events WHERE eventType = :type AND createdAt >= :monthStart AND createdAt < :nextMonthStart")
+    suspend fun countByTypeInMonth(type: String, monthStart: Long, nextMonthStart: Long): Int
+
+    @Query("SELECT * FROM war_events WHERE createdAt >= :start AND createdAt < :end ORDER BY createdAt DESC")
+    suspend fun getEventsInRange(start: Long, end: Long): List<WarEventEntity>
+
+    @Query("SELECT * FROM members WHERE eventId IN (:eventIds) ORDER BY rank ASC")
+    suspend fun getMembersByEventIds(eventIds: List<String>): List<MemberEntity>
+
+    @Query("SELECT DISTINCT playerName FROM members ORDER BY playerName")
+    suspend fun getAllPlayerNames(): List<String>
+}
+
+@Dao
+interface RosterDao {
+    @Query("SELECT * FROM member_roster ORDER BY name")
+    fun observeAll(): Flow<List<MemberRosterEntity>>
+
+    @Query("SELECT * FROM member_roster ORDER BY name")
+    suspend fun getAll(): List<MemberRosterEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(names: List<MemberRosterEntity>)
+
+    @Query("DELETE FROM member_roster WHERE name = :name")
+    suspend fun delete(name: String)
+}
+
+// v1→v2: 移除 war_events 中的敌方部落字段
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS war_events_new (eventId TEXT PRIMARY KEY NOT NULL, eventName TEXT NOT NULL, eventType TEXT NOT NULL, eventRound INTEGER NOT NULL, clanTotalStars INTEGER NOT NULL, clanTotalDestruction TEXT NOT NULL, isSample INTEGER NOT NULL, createdAt INTEGER NOT NULL)")
+        db.execSQL("INSERT INTO war_events_new SELECT eventId, eventName, eventType, eventRound, clanTotalStars, clanTotalDestruction, isSample, createdAt FROM war_events")
+        db.execSQL("DROP TABLE war_events")
+        db.execSQL("ALTER TABLE war_events_new RENAME TO war_events")
+    }
+}
+
+// v2→v3: members 表新增 totalStars 列
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        try { db.execSQL("ALTER TABLE members ADD COLUMN totalStars INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+    }
+}
+
+// v3→v5: 清理旧别名表 + 创建 member_roster（跳过 v4 直接到 v5）
+val MIGRATION_3_5 = object : Migration(3, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP TABLE IF EXISTS member_aliases")
+        db.execSQL("CREATE TABLE IF NOT EXISTS member_roster (name TEXT PRIMARY KEY NOT NULL)")
+    }
+}
+
+// v4→v5: 清理旧别名表残留
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP TABLE IF EXISTS member_aliases")
+        db.execSQL("CREATE TABLE IF NOT EXISTS member_roster (name TEXT PRIMARY KEY NOT NULL)")
+    }
+}
+
+@Database(
+    entities = [WarEventEntity::class, MemberEntity::class, MemberRosterEntity::class],
+    version = 5,
+    exportSchema = false
+)
+@TypeConverters(Converters::class)
+abstract class WarDatabase : RoomDatabase() {
+    abstract fun warDao(): WarDao
+    abstract fun rosterDao(): RosterDao
+
+    companion object {
+        const val NAME = "coc_war.db"
+
+        fun build(context: android.content.Context): WarDatabase =
+            Room.databaseBuilder(context.applicationContext, WarDatabase::class.java, NAME)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5)
+                .fallbackToDestructiveMigration()
+                .build()
+    }
+}
