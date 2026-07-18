@@ -11,6 +11,7 @@
 *.aab
 *.jks
 *.keystore
+!发行版/**/*.apk
 
 # Gradle
 **/build/
