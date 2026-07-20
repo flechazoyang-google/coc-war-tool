@@ -1,6 +1,8 @@
 package com.cocwar.ui.eventlist
 
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BarChart
@@ -27,6 +30,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -41,6 +45,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -62,12 +67,18 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
+import com.cocwar.BuildConfig
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.di.warViewModel
 import com.cocwar.ui.util.parseEventDisplayName
 import com.cocwar.ui.util.parseEventTypeFromName
 import com.cocwar.ui.util.parseMonthFromName
 import com.cocwar.ui.util.parseYearFromName
+import com.cocwar.data.update.UpdateChecker
+import com.cocwar.data.update.UpdateInfo
+import com.cocwar.service.FloatingBallService
+import com.cocwar.ui.components.checkCapturePermissions
+import com.cocwar.ui.components.PermissionGuideDialog
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,13 +88,19 @@ fun EventListScreen(
     onOpen: (String) -> Unit,
     onStats: () -> Unit,
     onMembers: () -> Unit,
-    onSync: () -> Unit = {}
+    onSync: () -> Unit = {},
+    onAiConfig: () -> Unit = {},
+    onAiImport: () -> Unit = {}
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
     var toDelete by remember { mutableStateOf<WarEventEntity?>(null) }
     var menuExpanded by remember { mutableStateOf(false) }
     var showFormatDialog by remember { mutableStateOf(false) }
+    var showPermissionDialog by remember { mutableStateOf(false) }
+    var showSwipeSettingDialog by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var checkingUpdate by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -122,6 +139,43 @@ fun EventListScreen(
                     Text("部落战数据管家", style = MaterialTheme.typography.headlineMedium)
                 },
                 actions = {
+                    // 悬浮窗截图按钮
+                    val isBallRunning = FloatingBallService.isRunning()
+                    IconButton(onClick = {
+                        if (isBallRunning) {
+                            // 已运行 → 关闭
+                            FloatingBallService.stop(context)
+                            Toast.makeText(context, "悬浮窗已关闭", Toast.LENGTH_SHORT).show()
+                        } else {
+                            // 检查权限
+                            val permState = checkCapturePermissions(context)
+                            if (!permState.allReady) {
+                                showPermissionDialog = true
+                            } else {
+                                // 权限就绪 → 启动悬浮窗 + 打开游戏
+                                FloatingBallService.start(context)
+                                Toast.makeText(context, "悬浮窗已开启，正在打开游戏...", Toast.LENGTH_SHORT).show()
+                                // 尝试打开部落冲突
+                                try {
+                                    val intent = context.packageManager.getLaunchIntentForPackage("com.supercell.clashofclans")
+                                    if (intent != null) {
+                                        context.startActivity(intent)
+                                    } else {
+                                        Toast.makeText(context, "未找到部落冲突应用", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "无法打开游戏：${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }) {
+                        Icon(
+                            Icons.Filled.CameraAlt,
+                            contentDescription = "截图悬浮窗",
+                            tint = if (isBallRunning) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = onStats) {
                         Icon(Icons.Filled.BarChart, contentDescription = "成员统计")
                     }
@@ -152,9 +206,45 @@ fun EventListScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("检查更新") },
+                            leadingIcon = { Icon(Icons.Filled.Cloud, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                checkingUpdate = true
+                                scope.launch {
+                                    val result = UpdateChecker.check(context)
+                                    result.fold(
+                                        onSuccess = { info ->
+                                            if (info != null) updateInfo = info
+                                            else Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onFailure = { e ->
+                                            Toast.makeText(context, "检查失败：${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+                                    checkingUpdate = false
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("云端同步") },
                             leadingIcon = { Icon(Icons.Filled.Cloud, contentDescription = null) },
                             onClick = { menuExpanded = false; onSync() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("AI 识别导入") },
+                            leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                            onClick = { menuExpanded = false; onAiImport() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("AI 设置") },
+                            leadingIcon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) },
+                            onClick = { menuExpanded = false; onAiConfig() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("截图设置") },
+                            leadingIcon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) },
+                            onClick = { menuExpanded = false; showSwipeSettingDialog = true }
                         )
                         DropdownMenuItem(
                             text = { Text("JSON 格式示例") },
@@ -304,6 +394,125 @@ fun EventListScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showFormatDialog = false }) { Text("关闭") }
+            }
+        )
+    }
+
+    // 滑动步长设置弹窗
+    if (showSwipeSettingDialog) {
+        val prefs = context.getSharedPreferences("cocwar_capture", android.content.Context.MODE_PRIVATE)
+        var stepPercent by remember {
+            mutableStateOf(prefs.getFloat("swipe_step_percent", 30f))
+        }
+        AlertDialog(
+            onDismissRequest = { showSwipeSettingDialog = false },
+            title = { Text("截图滑动步长") },
+            text = {
+                Column {
+                    Text(
+                        "每次上滑的距离（屏幕高度的百分比）\n当前：${stepPercent.toInt()}%（约 ${(stepPercent / 100 * context.resources.displayMetrics.heightPixels).toInt()}px）\n\n" +
+                        "• 15-25%：精细模式，重叠多不漏行\n" +
+                        "• 30%：标准（推荐）\n" +
+                        "• 40-50%：快速模式，适合长列表",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Slider(
+                        value = stepPercent,
+                        onValueChange = { stepPercent = it },
+                        valueRange = 10f..55f,
+                        steps = 8
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    prefs.edit().putFloat("swipe_step_percent", stepPercent).apply()
+                    showSwipeSettingDialog = false
+                    Toast.makeText(context, "滑动步长已设为 ${stepPercent.toInt()}%", Toast.LENGTH_SHORT).show()
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSwipeSettingDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    // 权限引导弹窗
+    if (showPermissionDialog) {
+        val permState = checkCapturePermissions(context)
+        if (permState.allReady) {
+            // 权限已就绪，直接启动
+            showPermissionDialog = false
+            FloatingBallService.start(context)
+            Toast.makeText(context, "悬浮窗已开启，正在打开游戏...", Toast.LENGTH_SHORT).show()
+            try {
+                val intent = context.packageManager.getLaunchIntentForPackage("com.supercell.clashofclans")
+                if (intent != null) context.startActivity(intent)
+            } catch (_: Exception) {}
+        } else {
+            PermissionGuideDialog(
+                state = permState,
+                onDismiss = {
+                    showPermissionDialog = false
+                    // 再次检查，如果权限已就绪则启动
+                    val newState = checkCapturePermissions(context)
+                    if (newState.allReady) {
+                        FloatingBallService.start(context)
+                        Toast.makeText(context, "权限已就绪，悬浮窗已开启", Toast.LENGTH_SHORT).show()
+                        try {
+                            val intent = context.packageManager.getLaunchIntentForPackage("com.supercell.clashofclans")
+                            if (intent != null) context.startActivity(intent)
+                        } catch (_: Exception) {}
+                    }
+                }
+            )
+        }
+    }
+
+    // 检查更新对话框
+    updateInfo?.let { info ->
+        var downloading by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("发现新版本") },
+            text = {
+                Column {
+                    Text("当前版本：${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
+                    Text("最新版本：${info.version}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (info.body.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("更新内容：", style = MaterialTheme.typography.labelMedium)
+                        Text(info.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (downloading) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("正在下载，请查看通知栏进度…", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        downloading = true
+                        scope.launch {
+                            val result = UpdateChecker.downloadAndInstall(context, info)
+                            result.fold(
+                                onSuccess = { updateInfo = null },
+                                onFailure = { e ->
+                                    downloading = false
+                                    Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        }
+                    },
+                    enabled = !downloading
+                ) {
+                    Text(if (downloading) "下载中…" else "立即更新")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateInfo = null }) { Text("以后再说") }
             }
         )
     }

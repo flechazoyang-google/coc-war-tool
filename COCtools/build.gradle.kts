@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.cocwar"
-        minSdk = 24
+        minSdk = 30
         targetSdk = 34
         versionCode = 3
         versionName = "1.2"
@@ -82,6 +82,10 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // AI 视觉识别（HTTP 客户端 + 加密密钥存储）
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Force core to a compileSdk-34-compatible version (overrides Compose BOM 1.15.0)
     constraints {

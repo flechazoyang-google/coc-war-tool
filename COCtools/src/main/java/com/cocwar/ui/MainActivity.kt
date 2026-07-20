@@ -21,9 +21,11 @@ import com.cocwar.CocWarApplication
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
+import com.cocwar.ui.importflow.AiImportScreen
 import com.cocwar.ui.importflow.ImportScreen
 import com.cocwar.ui.members.MemberManageScreen
 import com.cocwar.ui.stats.StatsScreen
+import com.cocwar.ui.settings.AiConfigScreen
 import com.cocwar.ui.sync.SyncScreen
 import com.cocwar.ui.theme.CocWarTheme
 
@@ -70,11 +72,19 @@ private fun CocWarNavHost() {
                 onOpen = { id -> nav.navigate("detail/$id") },
                 onStats = { nav.navigate("stats") },
                 onMembers = { nav.navigate("member_manage") },
-                onSync = { nav.navigate("sync") }
+                onSync = { nav.navigate("sync") },
+                onAiConfig = { nav.navigate("ai_config") },
+                onAiImport = { nav.navigate("ai_import") }
             )
         }
         composable("import") {
             ImportScreen(
+                onBack = { nav.popBackStack() },
+                onSaved = { nav.popBackStack() }
+            )
+        }
+        composable("ai_import") {
+            AiImportScreen(
                 onBack = { nav.popBackStack() },
                 onSaved = { nav.popBackStack() }
             )
@@ -87,6 +97,9 @@ private fun CocWarNavHost() {
         }
         composable("sync") {
             SyncScreen(onBack = { nav.popBackStack() })
+        }
+        composable("ai_config") {
+            AiConfigScreen(onBack = { nav.popBackStack() })
         }
         composable(
             "detail/{eventId}",
