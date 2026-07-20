@@ -15,20 +15,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,7 +45,6 @@ private val Gold = Color(0xFFFFC107)
 private val Silver = Color(0xFF9E9E9E)
 private val Bronze = Color(0xFFCD7F32)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(onBack: () -> Unit) {
     val viewModel: StatsViewModel = warViewModel { StatsViewModel(it) }
@@ -58,14 +53,12 @@ fun StatsScreen(onBack: () -> Unit) {
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("成员统计") }
+        Column(Modifier.fillMaxSize()) {
+            Text(
+                "成员统计",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             )
-        }
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("月度参战") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("未进攻排行") })
@@ -75,7 +68,6 @@ fun StatsScreen(onBack: () -> Unit) {
                 1 -> RecentMissedTab(recentMissed, viewModel, Modifier.weight(1f))
             }
         }
-    }
 }
 
 @Composable

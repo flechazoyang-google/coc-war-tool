@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -30,9 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,17 +66,16 @@ fun AiConfigScreen(onBack: () -> Unit) {
 
     val currentProvider = AI_PROVIDERS.find { it.id == providerId }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("设置") }
-            )
-        }
-    ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
+            Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            Text(
+                "设置",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+
             // 提供商选择
             Text("模型提供商", style = MaterialTheme.typography.titleSmall)
             ExposedDropdownMenuBox(
@@ -213,5 +209,4 @@ fun AiConfigScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(8.dp))
         }
-    }
 }

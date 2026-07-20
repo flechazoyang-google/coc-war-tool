@@ -24,11 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SaveAlt
@@ -44,12 +42,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -129,30 +125,34 @@ fun EventListScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text("部落战数据管家", style = MaterialTheme.typography.headlineMedium)
-                },
-                actions = {
+        Column(Modifier.fillMaxSize()) {
+            // 顶部标题栏
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "部落战数据管家",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     // 悬浮窗截图按钮
                     val isBallRunning = FloatingBallService.isRunning()
                     IconButton(onClick = {
                         if (isBallRunning) {
-                            // 已运行 → 关闭
                             FloatingBallService.stop(context)
                             Toast.makeText(context, "悬浮窗已关闭", Toast.LENGTH_SHORT).show()
                         } else {
-                            // 检查权限
                             val permState = checkCapturePermissions(context)
                             if (!permState.allReady) {
                                 showPermissionDialog = true
                             } else {
-                                // 权限就绪 → 启动悬浮窗 + 打开游戏
                                 FloatingBallService.start(context)
                                 Toast.makeText(context, "悬浮窗已开启，正在打开游戏...", Toast.LENGTH_SHORT).show()
-                                // 尝试打开部落冲突
                                 try {
                                     val intent = context.packageManager.getLaunchIntentForPackage("com.supercell.clashofclans")
                                     if (intent != null) {
@@ -237,10 +237,8 @@ fun EventListScreen(
                         )
                     }
                 }
-            )
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+            }
+
             // 筛选栏 —— 胶囊风格下拉框
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -315,7 +313,6 @@ fun EventListScreen(
                 }
             }
         }
-    }
 
     toDelete?.let { event ->
         AlertDialog(
