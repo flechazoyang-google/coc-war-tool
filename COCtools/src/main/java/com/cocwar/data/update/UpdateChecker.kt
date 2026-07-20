@@ -40,6 +40,7 @@ object UpdateChecker {
 
     private const val TAG = "UpdateChecker"
     private const val CHANNEL_ID = "update_download"
+    private const val USER_AGENT = "COCWarTool-UpdateChecker"
 
     private val gson = Gson()
     private val client = OkHttpClient.Builder()
@@ -54,7 +55,10 @@ object UpdateChecker {
      */
     suspend fun check(context: Context): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder().url(GITEE_API).build()
+            val request = Request.Builder()
+                .url(GITEE_API)
+                .header("User-Agent", USER_AGENT)
+                .build()
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 return@withContext Result.failure(Exception("API 返回 ${response.code}"))
@@ -107,7 +111,10 @@ object UpdateChecker {
             val downloadFile = File(context.cacheDir, "update_${info.version}.apk")
             if (downloadFile.exists()) downloadFile.delete()
 
-            val request = Request.Builder().url(info.apkUrl).build()
+            val request = Request.Builder()
+                .url(info.apkUrl)
+                .header("User-Agent", USER_AGENT)
+                .build()
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 return@withContext Result.failure(Exception("下载失败 HTTP ${response.code}"))
@@ -134,6 +141,15 @@ object UpdateChecker {
                         }
                     }
                 }
+            }
+
+            // 校验下载内容是否为有效的 APK（ZIP 格式以 "PK" 开头）。
+            // Gitee 限流时可能返回 HTML 页面而非文件，需提前拦截以免安装失败。
+            val magic = ByteArray(2)
+            downloadFile.inputStream().use { it.read(magic) }
+            if (!(magic[0] == 'P'.code.toByte() && magic[1] == 'K'.code.toByte())) {
+                downloadFile.delete()
+                return@withContext Result.failure(Exception("下载内容不是有效的 APK（可能被限流，请稍后重试）"))
             }
 
             nm.cancel(100)
