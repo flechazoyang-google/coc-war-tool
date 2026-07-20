@@ -1,5 +1,16 @@
 # COC War Tool 发行版日志
 
+## v2.1 (2026-07-20)
+
+修复自动更新下载后无法安装的问题：补齐 FileProvider 的 cache-path 配置；下载请求增加 User-Agent 与 APK 文件头校验。
+
+- **APK**: [coc-war-tool-v2.1.apk](./2.1/coc-war-tool-v2.1.apk)
+- **Git Tag**: `v2.1`
+- **Version Code**: 6
+- **Gitee Release**: [v2.1](https://gitee.com/yang-genhao/coc-war-tool/releases/tag/v2.1)
+
+---
+
 ## v1.3 (2025-07-20)
 
 Bug 修复与小幅优化
