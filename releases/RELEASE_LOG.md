@@ -1,5 +1,16 @@
 # COC War Tool 发行版日志
 
+## v2.2 (2026-07-20)
+
+修复顶部留白问题：移除战报/统计/成员/设置四个底部导航 Tab 内嵌套的 Scaffold 和 TopAppBar，改用紧凑内联标题栏，减少无效留白空间。
+
+- **APK**: [coc-war-tool-v2.2.apk](./2.2/coc-war-tool-v2.2.apk)
+- **Git Tag**: `v2.2`
+- **Version Code**: 7
+- **Gitee Release**: [v2.2](https://gitee.com/yang-genhao/coc-war-tool/releases/tag/v2.2)
+
+---
+
 ## v2.1 (2026-07-20)
 
 修复自动更新下载后无法安装的问题：补齐 FileProvider 的 cache-path 配置；下载请求增加 User-Agent 与 APK 文件头校验。
