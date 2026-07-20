@@ -84,13 +84,10 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventListScreen(
-    onImport: () -> Unit,
     onOpen: (String) -> Unit,
-    onStats: () -> Unit,
-    onMembers: () -> Unit,
     onSync: () -> Unit = {},
-    onAiConfig: () -> Unit = {},
-    onAiImport: () -> Unit = {}
+    onAiImport: () -> Unit = {},
+    onImport: () -> Unit = {},
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
@@ -176,18 +173,10 @@ fun EventListScreen(
                                    else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onStats) {
-                        Icon(Icons.Filled.BarChart, contentDescription = "成员统计")
-                    }
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "更多")
                     }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        DropdownMenuItem(
-                            text = { Text("成员管理") },
-                            leadingIcon = { Icon(Icons.Filled.ManageAccounts, contentDescription = null) },
-                            onClick = { menuExpanded = false; onMembers() }
-                        )
                         DropdownMenuItem(
                             text = { Text("导出所有数据") },
                             leadingIcon = { Icon(Icons.Filled.SaveAlt, contentDescription = null) },
@@ -237,11 +226,6 @@ fun EventListScreen(
                             onClick = { menuExpanded = false; onAiImport() }
                         )
                         DropdownMenuItem(
-                            text = { Text("AI 设置") },
-                            leadingIcon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) },
-                            onClick = { menuExpanded = false; onAiConfig() }
-                        )
-                        DropdownMenuItem(
                             text = { Text("截图设置") },
                             leadingIcon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) },
                             onClick = { menuExpanded = false; showSwipeSettingDialog = true }
@@ -255,11 +239,6 @@ fun EventListScreen(
                 }
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = onImport) {
-                Icon(Icons.Filled.Add, contentDescription = "导入数据")
-            }
-        }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             // 筛选栏 —— 胶囊风格下拉框

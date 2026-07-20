@@ -52,11 +52,6 @@ fun MemberManageScreen(onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("成员名单") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
                 actions = {
                     IconButton(onClick = { showImport = !showImport }) {
                         Icon(Icons.Filled.Add, contentDescription = "批量导入")
