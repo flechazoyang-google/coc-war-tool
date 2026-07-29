@@ -1,15 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="48dp"
     android:height="48dp"
     android:viewportWidth="48"
     android:viewportHeight="48">
+    <!-- 圆形背景 -->
     <path
-        android:fillColor="#FF1976D2"
-        android:pathData="M24,2a22,22 0 1,0 0,44a22,22 0 1,0 0,-44z" />
+        android:fillColor="#4CAF50"
+        android:pathData="M24,24m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0" />
+    <!-- 相机图标简化 -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M24,10 L34,24 L24,38 L14,24Z" />
-    <path
-        android:fillColor="#1976D2"
-        android:pathData="M24,15 L30,24 L24,33 L18,24Z" />
+        android:pathData="M16,18 L19,15 L29,15 L32,18 L34,18 C35.1,18 36,18.9 36,20 L36,31 C36,32.1 35.1,33 34,33 L14,33 C12.9,33 12,32.1 12,31 L12,20 C12,18.9 12.9,18 14,18 L16,18 Z M24,30 C26.76,30 29,27.76 29,25 C29,22.24 26.76,20 24,20 C21.24,20 19,22.24 19,25 C19,27.76 21.24,30 24,30 Z" />
 </vector>

@@ -1,6 +1,8 @@
 package com.cocwar.ui.importflow
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,19 +11,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,7 +32,11 @@ import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
 import com.cocwar.data.parser.WarJsonParser
-import com.cocwar.ui.util.roleColor
+import com.cocwar.ui.components.CocCard
+import com.cocwar.ui.components.CocShape
+import com.cocwar.ui.components.FilterPill
+import com.cocwar.ui.theme.cocColors
+import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.StringMatcher
 
 data class MemberMatchState(
@@ -54,45 +58,96 @@ fun WarNameField(
             label = { Text("战报名称（必填）") },
             placeholder = { Text("自动生成，可修改") },
             modifier = Modifier.fillMaxWidth(), isError = isError,
-            singleLine = true, shape = RoundedCornerShape(12.dp)
+            singleLine = true, shape = CocShape.field,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                unfocusedBorderColor = MaterialTheme.cocColors.hairline,
+                cursorColor = MaterialTheme.cocColors.accent
+            )
         )
         if (isError && errorText != null)
-            Text(errorText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 2.dp))
+            Text(errorText, color = MaterialTheme.cocColors.danger, style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 3.dp))
     }
 }
 
 @Composable
 fun WarTypeRoundSection(eventType: String, onTypeChange: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("类型", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("类型", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = eventType == EVENT_TYPE_WAR, onClick = { onTypeChange(EVENT_TYPE_WAR) }, label = { Text("部落战") })
-            FilterChip(selected = eventType == EVENT_TYPE_LEAGUE, onClick = { onTypeChange(EVENT_TYPE_LEAGUE) }, label = { Text("联赛") })
+            FilterPill(
+                label = "部落战",
+                selected = eventType == EVENT_TYPE_WAR,
+                onClick = { onTypeChange(EVENT_TYPE_WAR) }
+            )
+            FilterPill(
+                label = "联赛",
+                selected = eventType == EVENT_TYPE_LEAGUE,
+                onClick = { onTypeChange(EVENT_TYPE_LEAGUE) }
+            )
         }
     }
 }
 
+/**
+ * 数据预览：平面双联数字 —— 总星数(黄铜) / 成员数(墨色)，中间细线分隔。
+ */
 @Composable
 fun WarPreviewCard(parsed: WarJsonParser.ParsedEvent) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    CocCard(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.weight(1f)
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("${parsed.event.clanTotalStars}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Filled.Star, null,
+                        tint = MaterialTheme.cocColors.star,
+                        modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "${parsed.event.clanTotalStars}",
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
-                Text("总星数", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(2.dp))
+                Text("总星数", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .height(44.dp)
+                    .background(MaterialTheme.cocColors.hairline)
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.weight(1f)
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Groups, null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("${parsed.members.size}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Filled.Groups, null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "${parsed.members.size}",
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
-                Text("成员数", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(2.dp))
+                Text("成员数", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -110,31 +165,43 @@ fun MemberMatchPreview(
     val matched = matchStates.filter { it.matched }
     val unmatched = matchStates.filter { !it.matched }
 
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-        Column(Modifier.padding(12.dp)) {
+    CocCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
             if (matched.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("已匹配 ${matched.size} 人", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Icon(Icons.Filled.CheckCircle, null,
+                        tint = MaterialTheme.cocColors.accent,
+                        modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("已匹配 ${matched.size} 人",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.cocColors.accent)
                 }
-                Spacer(Modifier.height(6.dp))
             }
             if (unmatched.isNotEmpty()) {
+                if (matched.isNotEmpty()) Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("未匹配 ${unmatched.size} 人，请确认或修正", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Filled.Warning, null,
+                        tint = MaterialTheme.cocColors.danger,
+                        modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("未匹配 ${unmatched.size} 人，请确认或修正",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.cocColors.danger)
                 }
-                Spacer(Modifier.height(6.dp))
-                unmatched.forEachIndexed { idx, state ->
+                Spacer(Modifier.height(8.dp))
+                unmatched.forEach { state ->
                     val origIdx = matchStates.indexOf(state)
                     UnmatchedRow(state, origIdx, onNameEdit, onToggleSuggestion)
                 }
             }
             if (unmatched.isEmpty() && matched.isNotEmpty()) {
-                Text("所有成员均已匹配 ✓", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(6.dp))
+                Text("所有成员均已匹配",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -148,33 +215,48 @@ private fun UnmatchedRow(
     onToggleSuggestion: (Int, Boolean) -> Unit
 ) {
     val nameColor = roleColor(state.member.role)
-    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("#${state.member.rank}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(24.dp))
+            Text(
+                "#${state.member.rank}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(26.dp)
+            )
             OutlinedTextField(
                 value = state.editedName,
                 onValueChange = { onNameEdit(index, it) },
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(color = nameColor, fontWeight = FontWeight.Medium),
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = RoundedCornerShape(8.dp)
+                textStyle = MaterialTheme.typography.bodySmall.copy(
+                    color = nameColor,
+                    fontWeight = FontWeight.Medium
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(50.dp),
+                shape = CocShape.chip,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedBorderColor = MaterialTheme.cocColors.hairline,
+                    cursorColor = MaterialTheme.cocColors.accent
+                )
             )
             if (state.suggestion != null) {
-                Spacer(Modifier.width(4.dp))
                 Checkbox(
                     checked = state.acceptSuggestion,
                     onCheckedChange = { onToggleSuggestion(index, it) },
-                    modifier = Modifier.size(20.dp)
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.cocColors.accent
+                    )
                 )
             }
         }
         if (state.suggestion != null) {
-            Spacer(Modifier.height(1.dp))
             Text(
-                "→ ${state.suggestion}",
+                "建议改为：${state.suggestion}",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 28.dp)
+                color = MaterialTheme.cocColors.danger,
+                modifier = Modifier.padding(start = 30.dp)
             )
         }
     }

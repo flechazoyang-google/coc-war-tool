@@ -15,7 +15,61 @@ data class MemberMonthlyStat(
     val totalEvents: Int,          // 当月总事件数
     val participationRate: Float,
     val effectiveRate: Float,
-    val missedCount: Int
+    val missedCount: Int,
+    val totalStars: Int = 0,       // 当月总星数
+    val avgStars: Float = 0f,      // 场均星数（仅参战场次）
+    val avgDestruction: Float = 0f,// 场均摧毁率
+    val threeStarCount: Int = 0,   // 三星次数
+    val threeStarRate: Float = 0f, // 三星率
+    val starRate: Float = 0f       // 归一化星率（每次进攻可得星数 0~1，部落战/联赛可比）
+)
+
+/** 单类型（部落战/联赛）汇总统计 */
+data class TypeStats(
+    val eventCount: Int,
+    val totalStars: Int,
+    val avgStarsPerEvent: Float,
+    val avgDestruction: Float,
+    val totalUsedAttacks: Int,
+    val totalPossibleAttacks: Int,
+    val attackRate: Float,
+    val threeStarCount: Int,
+    val threeStarRate: Float
+)
+
+/** 月度/选定范围总览统计数据 */
+data class StatsOverview(
+    val totalEvents: Int,
+    val warCount: Int,
+    val leagueCount: Int,
+    // 合并统计
+    val totalStars: Int,
+    val avgStarsPerEvent: Float,
+    val avgDestruction: Float,
+    val totalUsedAttacks: Int,
+    val totalPossibleAttacks: Int,
+    val overallAttackRate: Float,
+    val threeStarCount: Int,
+    val threeStarRate: Float,
+    // 分类型统计
+    val war: TypeStats?,
+    val league: TypeStats?
+)
+
+/** 单场战报摘要，用于战报列表展示 */
+data class EventStatSummary(
+    val eventId: String,
+    val eventName: String,
+    val eventType: String,
+    val eventRound: Int,
+    val createdAt: Long,
+    val participantCount: Int,
+    val attackerCount: Int,
+    val totalStars: Int,
+    val avgDestruction: Float,
+    val threeStarCount: Int,
+    val threeStarRate: Float,
+    val isSample: Boolean
 )
 
 /** 近n次未进攻排行榜条目 */
@@ -106,6 +160,19 @@ object StatsCalculator {
             val attacked = monthMembers.count { m -> m.attacks.any { a -> a.status == "used" } }
             val role = monthMembers.lastOrNull()?.role ?: "member"
 
+            // 增强指标
+            val totalStars = monthMembers.sumOf { it.totalStars }
+            val allUsedAttacks = monthMembers.flatMap { it.attacks }.filter { it.status == "used" }
+            val avgStars = if (participated > 0) totalStars.toFloat() / participated else 0f
+            val avgDestruction = if (allUsedAttacks.isNotEmpty())
+                allUsedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
+            val threeStarCount = allUsedAttacks.count { it.destructionPercentage == 100 }
+            val threeStarRate = if (allUsedAttacks.isNotEmpty()) threeStarCount.toFloat() / allUsedAttacks.size else 0f
+            // 归一化：部落战单成员最多 6 星（2 次×3），联赛最多 3 星（1 次×3）；
+            // 用「每次进攻可得星数」归一，使两类战报的星率可比（0~1）。
+            val starRate = if (allUsedAttacks.isNotEmpty())
+                (totalStars.toFloat() / (allUsedAttacks.size * 3f)).coerceIn(0f, 1f) else 0f
+
             MemberMonthlyStat(
                 playerName = name,
                 role = role,
@@ -114,9 +181,132 @@ object StatsCalculator {
                 totalEvents = totalEvents,
                 participationRate = if (totalEvents > 0) participated.toFloat() / totalEvents else 0f,
                 effectiveRate = if (participated > 0) attacked.toFloat() / participated else 0f,
-                missedCount = participated - attacked
+                missedCount = participated - attacked,
+                totalStars = totalStars,
+                avgStars = avgStars,
+                avgDestruction = avgDestruction,
+                threeStarCount = threeStarCount,
+                threeStarRate = threeStarRate,
+                starRate = starRate
             )
         }.sortedByDescending { it.effectiveRate }
+    }
+
+    /**
+     * 计算选定范围的总览统计。
+     */
+    fun computeOverview(
+        events: List<WarEventEntity>,
+        allMembers: List<MemberEntity>
+    ): StatsOverview {
+        if (events.isEmpty()) {
+            return StatsOverview(
+                totalEvents = 0, warCount = 0, leagueCount = 0,
+                totalStars = 0, avgStarsPerEvent = 0f, avgDestruction = 0f,
+                totalUsedAttacks = 0, totalPossibleAttacks = 0,
+                overallAttackRate = 0f, threeStarCount = 0, threeStarRate = 0f,
+                war = null, league = null
+            )
+        }
+
+        val eventIds = events.map { it.eventId }.toSet()
+        val members = allMembers.filter { it.eventId in eventIds }
+        val totalStars = events.sumOf { it.clanTotalStars }
+        val warEvents = events.filter { it.eventType != "league" }
+        val leagueEvents = events.filter { it.eventType == "league" }
+
+        val allAttacks = members.flatMap { it.attacks }
+        val usedAttacks = allAttacks.filter { it.status == "used" }
+        val totalUsedAttacks = usedAttacks.size
+        val totalPossibleAttacks = allAttacks.size
+        val overallAttackRate = if (totalPossibleAttacks > 0) totalUsedAttacks.toFloat() / totalPossibleAttacks else 0f
+        val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
+        val threeStarRate = if (totalUsedAttacks > 0) threeStarCount.toFloat() / totalUsedAttacks else 0f
+        val avgDestruction = if (usedAttacks.isNotEmpty())
+            usedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
+
+        return StatsOverview(
+            totalEvents = events.size,
+            warCount = warEvents.size,
+            leagueCount = leagueEvents.size,
+            totalStars = totalStars,
+            avgStarsPerEvent = if (events.isNotEmpty()) totalStars.toFloat() / events.size else 0f,
+            avgDestruction = avgDestruction,
+            totalUsedAttacks = totalUsedAttacks,
+            totalPossibleAttacks = totalPossibleAttacks,
+            overallAttackRate = overallAttackRate,
+            threeStarCount = threeStarCount,
+            threeStarRate = threeStarRate,
+            war = computeTypeStats(warEvents, members),
+            league = computeTypeStats(leagueEvents, members)
+        )
+    }
+
+    private fun computeTypeStats(
+        events: List<WarEventEntity>,
+        allMembers: List<MemberEntity>
+    ): TypeStats? {
+        if (events.isEmpty()) return null
+        val eventIds = events.map { it.eventId }.toSet()
+        val members = allMembers.filter { it.eventId in eventIds }
+        val totalStars = events.sumOf { it.clanTotalStars }
+        val allAttacks = members.flatMap { it.attacks }
+        val usedAttacks = allAttacks.filter { it.status == "used" }
+        val totalUsedAttacks = usedAttacks.size
+        val totalPossibleAttacks = allAttacks.size
+        val attackRate = if (totalPossibleAttacks > 0) totalUsedAttacks.toFloat() / totalPossibleAttacks else 0f
+        val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
+        val threeStarRate = if (totalUsedAttacks > 0) threeStarCount.toFloat() / totalUsedAttacks else 0f
+        val avgDestruction = if (usedAttacks.isNotEmpty())
+            usedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
+
+        return TypeStats(
+            eventCount = events.size,
+            totalStars = totalStars,
+            avgStarsPerEvent = totalStars.toFloat() / events.size,
+            avgDestruction = avgDestruction,
+            totalUsedAttacks = totalUsedAttacks,
+            totalPossibleAttacks = totalPossibleAttacks,
+            attackRate = attackRate,
+            threeStarCount = threeStarCount,
+            threeStarRate = threeStarRate
+        )
+    }
+
+    /**
+     * 计算每场战报的摘要统计。
+     */
+    fun computeEventSummaries(
+        events: List<WarEventEntity>,
+        allMembers: List<MemberEntity>
+    ): List<EventStatSummary> {
+        if (events.isEmpty()) return emptyList()
+        val membersByEvent = allMembers.groupBy { it.eventId }
+
+        return events.map { event ->
+            val members = membersByEvent[event.eventId] ?: emptyList()
+            val usedAttacks = members.flatMap { it.attacks }.filter { it.status == "used" }
+            val attackerCount = members.count { m -> m.attacks.any { it.status == "used" } }
+            val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
+            val avgDestruction = if (usedAttacks.isNotEmpty())
+                usedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
+            val threeStarRate = if (usedAttacks.isNotEmpty()) threeStarCount.toFloat() / usedAttacks.size else 0f
+
+            EventStatSummary(
+                eventId = event.eventId,
+                eventName = event.eventName,
+                eventType = event.eventType,
+                eventRound = event.eventRound,
+                createdAt = event.createdAt,
+                participantCount = members.size,
+                attackerCount = attackerCount,
+                totalStars = event.clanTotalStars,
+                avgDestruction = avgDestruction,
+                threeStarCount = threeStarCount,
+                threeStarRate = threeStarRate,
+                isSample = event.isSample
+            )
+        }
     }
 
     /**

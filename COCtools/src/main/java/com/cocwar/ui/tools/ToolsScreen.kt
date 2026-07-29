@@ -1,0 +1,550 @@
+package com.cocwar.ui.tools
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.SystemUpdateAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.cocwar.BuildConfig
+import com.cocwar.CocWarApplication
+import com.cocwar.data.update.UpdateChecker
+import com.cocwar.data.update.UpdateInfo
+import com.cocwar.service.FloatingBallService
+import com.cocwar.service.ScreenCaptureService
+import com.cocwar.ui.components.CocCard
+import com.cocwar.ui.components.CocShape
+import com.cocwar.ui.components.ScreenHeader
+import com.cocwar.ui.components.SectionTitle
+import com.cocwar.ui.theme.cocColors
+import kotlinx.coroutines.launch
+
+@Composable
+fun ToolsScreen(
+    onSync: () -> Unit = {},
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // 截图设置
+    val prefs = remember { context.getSharedPreferences("cocwar_capture", Context.MODE_PRIVATE) }
+    var stepPercent by remember { mutableFloatStateOf(prefs.getFloat("swipe_step_percent", 30f)) }
+    var cleanDays by remember { mutableIntStateOf(prefs.getInt("clean_days", 7)) }
+
+    // 弹窗状态
+    var showJsonFormatDialog by remember { mutableStateOf(false) }
+    var showPermissionDialog by remember { mutableStateOf(false) }
+    var showScreenshotGallery by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+
+    // 悬浮球与权限状态：用响应式 state，并在返回页面时（onResume）重新读取，
+    // 解决「开启后状态不刷新」「授予权限后弹窗不消失」的问题。
+    var isBallRunning by remember { mutableStateOf(FloatingBallService.isRunning()) }
+    var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var a11yEnabled by remember { mutableStateOf(ScreenCaptureService.isAccessibilityServiceEnabled(context)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val og = Settings.canDrawOverlays(context)
+                val ae = ScreenCaptureService.isAccessibilityServiceEnabled(context)
+                overlayGranted = og
+                a11yEnabled = ae
+                isBallRunning = FloatingBallService.isRunning()
+                // 若权限引导弹窗仍在、且权限已齐备，则自动开启悬浮球并关闭弹窗
+                if (showPermissionDialog && og && ae) {
+                    FloatingBallService.start(context)
+                    isBallRunning = true
+                    showPermissionDialog = false
+                    Toast.makeText(context, "悬浮球已开启", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        ScreenHeader(
+            title = "工具",
+            overline = "设置与辅助",
+            subtitle = "数据管理 · 截图 · 关于"
+        )
+
+        // ── 数据管理 ──
+        SectionTitleWithPadding("数据管理")
+        CocCard(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+        ) {
+            Column {
+                ToolsRow(
+                    icon = Icons.Filled.Cloud,
+                    title = "云端同步 (WebDAV)",
+                    subtitle = "上传/下载备份到坚果云等",
+                    onClick = onSync
+                )
+                ToolsDivider()
+                ToolsRow(
+                    icon = Icons.Filled.SaveAlt,
+                    title = "导出所有数据",
+                    subtitle = "导出全量战报备份为 JSON 文件",
+                    onClick = {
+                        scope.launch {
+                            val app = context.applicationContext as CocWarApplication
+                            val json = app.repository.exportAllDataJson()
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_TEXT, json)
+                                putExtra(Intent.EXTRA_SUBJECT, "COC战报数据备份")
+                            }
+                            context.startActivity(Intent.createChooser(intent, "导出备份"))
+                        }
+                    }
+                )
+                ToolsDivider()
+                ToolsRow(
+                    icon = Icons.Filled.Info,
+                    title = "JSON 格式示例",
+                    subtitle = "查看并复制标准战报 JSON 格式",
+                    onClick = { showJsonFormatDialog = true }
+                )
+            }
+        }
+
+        // ── 截图工具 ──
+        SectionTitleWithPadding("截图工具")
+        CocCard(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+        ) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                // 悬浮球开关
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.CameraAlt, null, Modifier.size(20.dp),
+                        tint = if (isBallRunning) MaterialTheme.cocColors.accent
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("悬浮球", style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(1.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .background(
+                                        if (isBallRunning) MaterialTheme.cocColors.accent
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        androidx.compose.foundation.shape.CircleShape
+                                    )
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                if (isBallRunning) "运行中" else "未启动",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isBallRunning) MaterialTheme.cocColors.accent
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = isBallRunning,
+                        onCheckedChange = { want ->
+                            if (want) {
+                                if (!overlayGranted || !a11yEnabled) {
+                                    showPermissionDialog = true
+                                } else {
+                                    FloatingBallService.start(context)
+                                    isBallRunning = true
+                                    Toast.makeText(context, "悬浮球已开启", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                FloatingBallService.stop(context)
+                                isBallRunning = false
+                                Toast.makeText(context, "悬浮球已关闭", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = MaterialTheme.cocColors.accent,
+                            checkedThumbColor = MaterialTheme.colorScheme.surface
+                        )
+                    )
+                }
+
+                ToolsDivider(horizontal = 0.dp)
+
+                // 滑动步长
+                SettingSlider(
+                    label = "滑动步长",
+                    valueText = "${stepPercent.toInt()}%",
+                    value = stepPercent,
+                    onValueChange = { stepPercent = it },
+                    onValueChangeFinished = {
+                        prefs.edit().putFloat("swipe_step_percent", stepPercent).apply()
+                    },
+                    valueRange = 10f..55f,
+                    steps = 8
+                )
+
+                // 自动清理
+                SettingSlider(
+                    label = "自动清理",
+                    valueText = "${cleanDays} 天",
+                    value = cleanDays.toFloat(),
+                    onValueChange = { cleanDays = it.toInt() },
+                    onValueChangeFinished = {
+                        prefs.edit().putInt("clean_days", cleanDays).apply()
+                    },
+                    valueRange = 1f..30f,
+                    steps = 28
+                )
+
+                // 操作按钮行
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { showScreenshotGallery = true },
+                        modifier = Modifier.weight(1f),
+                        shape = CocShape.field,
+                        border = BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
+                    ) { Text("查看截图") }
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                ScreenCaptureService.cleanAllScreenshotsAsync(context)
+                                Toast.makeText(context, "截图已全部清理", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = CocShape.field,
+                        border = BorderStroke(1.dp, MaterialTheme.cocColors.danger.copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Filled.Delete, null, Modifier.size(15.dp),
+                            tint = MaterialTheme.cocColors.danger)
+                        Spacer(Modifier.width(5.dp))
+                        Text("清理全部", color = MaterialTheme.cocColors.danger)
+                    }
+                }
+            }
+        }
+
+        // ── 关于 ──
+        SectionTitleWithPadding("关于")
+        CocCard(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+        ) {
+            ToolsRow(
+                icon = Icons.Filled.SystemUpdateAlt,
+                title = "检查更新",
+                subtitle = "当前版本 ${BuildConfig.VERSION_NAME}",
+                onClick = {
+                    scope.launch {
+                        val result = UpdateChecker.check(context)
+                        result.fold(
+                            onSuccess = { info ->
+                                if (info != null) updateInfo = info
+                                else Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
+                            },
+                            onFailure = { e ->
+                                Toast.makeText(context, "检查失败：${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    }
+                }
+            )
+        }
+
+        Spacer(Modifier.height(28.dp))
+    }
+
+    // ── JSON 格式示例弹窗 ──
+    if (showJsonFormatDialog) {
+        val jsonSample = """{
+  "members": [
+    {
+      "rank": 1,
+      "player_name": "陈平安",
+      "role": "elder",
+      "total_stars": 6,
+      "attacks": [
+        {
+          "attack_order": 1,
+          "status": "used",
+          "destruction_percentage": 100
+        }
+      ]
+    }
+  ]
+}"""
+        AlertDialog(
+            onDismissRequest = { showJsonFormatDialog = false },
+            title = { Text("JSON 数据格式") },
+            text = {
+                Text(jsonSample, style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace)
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("json", jsonSample))
+                    Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                    showJsonFormatDialog = false
+                }) { Text("复制") }
+            },
+            confirmButton = {
+                TextButton(onClick = { showJsonFormatDialog = false }) { Text("关闭") }
+            }
+        )
+    }
+
+    // ── 权限引导弹窗 ──
+    if (showPermissionDialog) {
+        val overlayGranted = Settings.canDrawOverlays(context)
+        val a11yEnabled = ScreenCaptureService.isAccessibilityServiceEnabled(context)
+        val missingParts = buildList {
+            if (!overlayGranted) add("悬浮窗权限")
+            if (!a11yEnabled) add("无障碍服务")
+        }
+        AlertDialog(
+            onDismissRequest = { showPermissionDialog = false },
+            title = { Text("需要开启以下权限") },
+            text = {
+                Text("使用截图功能需要开启：${missingParts.joinToString("、")}\n\n" +
+                    "1. 悬浮窗权限：允许在游戏上方显示截图按钮\n" +
+                    "2. 无障碍服务：允许自动截图和滑动")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (!a11yEnabled) {
+                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } else if (!overlayGranted) {
+                        context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")))
+                    }
+                }) { Text("去开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    val stillOverlay = Settings.canDrawOverlays(context)
+                    val stillA11y = ScreenCaptureService.isAccessibilityServiceEnabled(context)
+                    val stillMissing = buildList {
+                        if (!stillOverlay) add("悬浮窗权限")
+                        if (!stillA11y) add("无障碍服务")
+                    }
+                    if (stillMissing.isNotEmpty()) {
+                        Toast.makeText(context, "仍缺少：${stillMissing.joinToString("、")}，请先开启后再试",
+                            Toast.LENGTH_LONG).show()
+                    }
+                    showPermissionDialog = false
+                }) { Text("取消") }
+            }
+        )
+    }
+
+    // ── 更新对话框 ──
+    updateInfo?.let { info ->
+        var downloading by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("发现新版本") },
+            text = {
+                Column {
+                    Text("当前版本：${BuildConfig.VERSION_NAME}")
+                    Text("最新版本：${info.version}", fontWeight = FontWeight.Bold)
+                    if (info.body.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("更新内容：", style = MaterialTheme.typography.labelMedium)
+                        Text(info.body, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (downloading) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("正在下载，请查看通知栏进度…")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    downloading = true
+                    scope.launch {
+                        val result = UpdateChecker.downloadAndInstall(context, info)
+                        result.fold(
+                            onSuccess = { updateInfo = null },
+                            onFailure = { e ->
+                                downloading = false
+                                Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    }
+                }, enabled = !downloading) {
+                    Text(if (downloading) "下载中…" else "立即更新")
+                }
+            },
+            dismissButton = { TextButton(onClick = { updateInfo = null }) { Text("以后再说") } }
+        )
+    }
+
+    // ── 截图查看弹窗 ──
+    if (showScreenshotGallery) {
+        ScreenshotGalleryDialog(onDismiss = { showScreenshotGallery = false })
+    }
+}
+
+@Composable
+private fun SectionTitleWithPadding(title: String) {
+    SectionTitle(title, modifier = Modifier.padding(horizontal = 20.dp))
+}
+
+@Composable
+private fun ToolsDivider(horizontal: androidx.compose.ui.unit.Dp = 16.dp) {
+    Box(
+        Modifier
+            .padding(horizontal = horizontal)
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(MaterialTheme.cocColors.hairline)
+    )
+}
+
+/** 分组列表行：图标 + 标题/副标题 + 尾端箭头，整行可点 */
+@Composable
+private fun ToolsRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(13.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(1.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+/** 设置滑杆：标签 + 当前值同行，滑杆松绿 */
+@Composable
+private fun SettingSlider(
+    label: String,
+    valueText: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int
+) {
+    Column(Modifier.padding(vertical = 8.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium)
+            Text(valueText, style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.cocColors.accent)
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
+            valueRange = valueRange,
+            steps = steps,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.cocColors.accent,
+                activeTrackColor = MaterialTheme.cocColors.accent,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        )
+    }
+}

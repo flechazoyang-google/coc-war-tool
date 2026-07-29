@@ -1,6 +1,5 @@
 package com.cocwar.ui.util
 
-import androidx.compose.ui.graphics.Color
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
 
@@ -26,14 +25,6 @@ fun formatPercent(value: Float): String = "%.1f%%".format(value)
 
 fun formatPercent(value: Int): String = "$value%"
 
-/** 职位对应颜色：靛蓝=首领，琥珀=co-leader，翠绿=长老，蓝灰=成员 */
-fun roleColor(role: String): Color = when (normRole(role)) {
-    "leader" -> Color(0xFFC62828)
-    "coleader" -> Color(0xFFF9A825)
-    "elder" -> Color(0xFF2E7D32)
-    else -> Color(0xFF546E7A)
-}
-
 /**
  * 解析 SAABBCC 格式名称为可读文本。
  * 部落战：S=0, CC=场次 → "第X场"
@@ -55,7 +46,9 @@ fun parseEventDisplayName(name: String): String {
 /** 从名称中提取类型过滤键：null=无法解析, "0"=部落战, "1"=联赛 */
 fun parseEventTypeFromName(name: String): String? {
     if (name.length < 7) return null
-    return name[0].toString()
+    val s = name[0]
+    // 只认 '0'/'1'，其它前缀视为无法解析（与 parseTypeAndRound 口径一致）
+    return if (s == '0' || s == '1') s.toString() else null
 }
 
 /** 从名称中提取年份（后两位） */

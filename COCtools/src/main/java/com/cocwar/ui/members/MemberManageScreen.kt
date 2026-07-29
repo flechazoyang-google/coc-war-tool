@@ -1,6 +1,6 @@
 package com.cocwar.ui.members
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,19 +10,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,6 +35,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.di.warViewModel
+import com.cocwar.ui.components.CocCard
+import com.cocwar.ui.components.CocIconButton
+import com.cocwar.ui.components.CocShape
+import com.cocwar.ui.components.EmptyState
+import com.cocwar.ui.components.ScreenHeader
+import com.cocwar.ui.theme.cocColors
 
 @Composable
 fun MemberManageScreen(onBack: () -> Unit) {
@@ -43,91 +49,134 @@ fun MemberManageScreen(onBack: () -> Unit) {
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
 
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "成员名单",
-                    style = MaterialTheme.typography.headlineMedium
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(
+            title = "成员",
+            overline = "花名册",
+            subtitle = if (roster.isEmpty()) "尚无成员" else "共 ${roster.size} 人",
+            actions = {
+                CocIconButton(
+                    icon = if (showImport) Icons.Filled.Close else Icons.Filled.Add,
+                    contentDescription = "批量导入",
+                    onClick = { showImport = !showImport },
+                    filled = showImport
                 )
-                IconButton(onClick = { showImport = !showImport }) {
-                    Icon(Icons.Filled.Add, contentDescription = "批量导入")
-                }
             }
+        )
 
-            if (showImport) {
-                Card(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("批量导入（一行一个名字）", style = MaterialTheme.typography.labelMedium)
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = importText,
-                            onValueChange = { importText = it },
-                            placeholder = { Text("陈平安\n张三\n李四\n...") },
-                            modifier = Modifier.fillMaxWidth().height(120.dp),
-                            singleLine = false,
-                            shape = RoundedCornerShape(8.dp)
+        if (showImport) {
+            CocCard(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        "批量导入",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "一行一个名字",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = importText,
+                        onValueChange = { importText = it },
+                        placeholder = { Text("陈平安\n张三\n李四\n...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        singleLine = false,
+                        shape = CocShape.field,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedBorderColor = MaterialTheme.cocColors.hairline,
+                            cursorColor = MaterialTheme.cocColors.accent
                         )
-                        Spacer(Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                val names = importText.lines().map { it.trim() }.filter { it.isNotBlank() }
-                                if (names.isNotEmpty()) {
-                                    viewModel.addNames(names)
-                                    importText = ""
-                                    showImport = false
-                                }
-                            },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text("导入")
-                        }
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            val names = importText.lines().map { it.trim() }.filter { it.isNotBlank() }
+                            if (names.isNotEmpty()) {
+                                viewModel.addNames(names)
+                                importText = ""
+                                showImport = false
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.End),
+                        shape = CocShape.field,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("导入", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
+            Spacer(Modifier.height(14.dp))
+        }
 
-            Text(
-                "共 ${roster.size} 人",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-
-            if (roster.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("名单为空，点击右上角 + 批量导入", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(roster) { name ->
-                        Card(
-                            Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+        if (roster.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState(
+                    title = "名单为空",
+                    body = "点击右上角 + 批量导入成员\n导入战报时也会自动收录新成员"
+                )
+            }
+        } else {
+            // 无卡片名册：序号 + 名字，发丝线分隔
+            LazyColumn(Modifier.fillMaxSize()) {
+                itemsIndexed(roster, key = { _, name -> name }) { index, name ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "%02d".format(index + 1),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.width(30.dp)
+                        )
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = { viewModel.removeName(name) },
+                            modifier = Modifier.size(36.dp)
                         ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                IconButton(onClick = { viewModel.removeName(name) }, modifier = Modifier.size(28.dp)) {
-                                    Icon(Icons.Filled.Close, "删除", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-                                }
-                            }
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "删除",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
+                    if (index < roster.lastIndex) {
+                        Box(
+                            Modifier
+                                .padding(start = 50.dp)
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(MaterialTheme.cocColors.hairline)
+                        )
+                    }
                 }
+                item { Spacer(Modifier.height(24.dp)) }
             }
         }
+    }
 }

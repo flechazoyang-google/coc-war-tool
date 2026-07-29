@@ -1,12 +1,9 @@
 package com.cocwar.ui.eventlist
 
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,31 +15,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,59 +35,50 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
-import com.cocwar.BuildConfig
 import com.cocwar.data.db.WarEventEntity
+import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.di.warViewModel
+import com.cocwar.ui.ClipboardImportDialog
+import com.cocwar.ui.components.CocIconButton
+import com.cocwar.ui.components.EmptyState
+import com.cocwar.ui.components.ScreenHeader
+import com.cocwar.ui.looksLikeWarJson
+import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.util.parseEventDisplayName
 import com.cocwar.ui.util.parseEventTypeFromName
 import com.cocwar.ui.util.parseMonthFromName
 import com.cocwar.ui.util.parseYearFromName
-import com.cocwar.data.update.UpdateChecker
-import com.cocwar.data.update.UpdateInfo
-import com.cocwar.service.FloatingBallService
-import com.cocwar.ui.components.checkCapturePermissions
-import com.cocwar.ui.components.PermissionGuideDialog
-import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventListScreen(
     onOpen: (String) -> Unit,
-    onSync: () -> Unit = {},
-    onAiImport: () -> Unit = {},
     onImport: () -> Unit = {},
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
     var toDelete by remember { mutableStateOf<WarEventEntity?>(null) }
-    var menuExpanded by remember { mutableStateOf(false) }
-    var showFormatDialog by remember { mutableStateOf(false) }
-    var showPermissionDialog by remember { mutableStateOf(false) }
-    var showSwipeSettingDialog by remember { mutableStateOf(false) }
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    var checkingUpdate by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // 筛选状态
-    var typeFilter by remember { mutableStateOf<String?>(null) }
-    var yearFilter by remember { mutableStateOf<Int?>(null) }
-    var monthFilter by remember { mutableStateOf<Int?>(null) }
+    // 剪切板读取状态（由右上角按钮触发，不再自动检测）
+    var clipboardParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
+    val clipboardManager = LocalClipboardManager.current
 
-    // 下拉展开状态
+    // 筛选状态 —— rememberSaveable 保证切换页面或退出应用后筛选条件不丢失
+    var typeFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var yearFilter by rememberSaveable { mutableStateOf<Int?>(null) }
+    var monthFilter by rememberSaveable { mutableStateOf<Int?>(null) }
+
+    // 下拉展开状态（仅 UI 临时状态，无需持久化）
     var typeExpanded by remember { mutableStateOf(false) }
     var yearExpanded by remember { mutableStateOf(false) }
     var monthExpanded by remember { mutableStateOf(false) }
@@ -116,7 +92,9 @@ fun EventListScreen(
 
     val filtered = remember(events, typeFilter, yearFilter, monthFilter) {
         events.filter { event ->
+            // 名称无法解析时回退到 entity.eventType，避免非标准名称在筛选时凭空消失
             val t = parseEventTypeFromName(event.eventName)
+                ?: if (event.eventType == "league") "1" else "0"
             val y = parseYearFromName(event.eventName)
             val m = parseMonthFromName(event.eventName)
             (typeFilter == null || t == typeFilter) &&
@@ -125,194 +103,124 @@ fun EventListScreen(
         }
     }
 
-        Column(Modifier.fillMaxSize()) {
-            // 顶部标题栏
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "部落战数据管家",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // 悬浮窗截图按钮
-                    val isBallRunning = FloatingBallService.isRunning()
-                    IconButton(onClick = {
-                        if (isBallRunning) {
-                            FloatingBallService.stop(context)
-                            Toast.makeText(context, "悬浮窗已关闭", Toast.LENGTH_SHORT).show()
-                        } else {
-                            val permState = checkCapturePermissions(context)
-                            if (!permState.allReady) {
-                                showPermissionDialog = true
-                            } else {
-                                FloatingBallService.start(context)
-                                Toast.makeText(context, "悬浮窗已开启，正在打开游戏...", Toast.LENGTH_SHORT).show()
-                                try {
-                                    val intent = context.packageManager.getLaunchIntentForPackage("com.supercell.clashofclans")
-                                    if (intent != null) {
-                                        context.startActivity(intent)
-                                    } else {
-                                        Toast.makeText(context, "未找到部落冲突应用", Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "无法打开游戏：${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
+    val warCount = remember(events) { events.count { it.eventType != "league" } }
+    val leagueCount = events.size - warCount
+
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader(
+            title = "战报",
+            overline = "战报档案",
+            subtitle = if (events.isEmpty()) "尚无归档"
+            else "共 ${events.size} 份 · 部落战 $warCount · 联赛 $leagueCount",
+            actions = {
+                CocIconButton(
+                    icon = Icons.Filled.ContentPaste,
+                    contentDescription = "读取剪切板",
+                    onClick = {
+                        val text = clipboardManager.getText()?.text ?: ""
+                        if (text.isBlank()) {
+                            Toast.makeText(context, "剪切板为空，没有可读取的内容", Toast.LENGTH_SHORT).show()
+                            return@CocIconButton
                         }
-                    }) {
-                        Icon(
-                            Icons.Filled.CameraAlt,
-                            contentDescription = "截图悬浮窗",
-                            tint = if (isBallRunning) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (!looksLikeWarJson(text)) {
+                            Toast.makeText(context, "剪切板中没有检测到战报数据", Toast.LENGTH_SHORT).show()
+                            return@CocIconButton
+                        }
+                        when (val result = WarJsonParser.parse(text)) {
+                            is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
+                            is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "战报解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                        }
                     }
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "更多")
-                    }
-                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        DropdownMenuItem(
-                            text = { Text("导出所有数据") },
-                            leadingIcon = { Icon(Icons.Filled.SaveAlt, contentDescription = null) },
-                            onClick = {
-                                menuExpanded = false
-                                scope.launch {
-                                    val app = context.applicationContext as CocWarApplication
-                                    val json = app.repository.exportAllDataJson()
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/json"
-                                        putExtra(Intent.EXTRA_TEXT, json)
-                                        putExtra(Intent.EXTRA_SUBJECT, "COC战报数据备份")
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "导出备份"))
-                                }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("检查更新") },
-                            leadingIcon = { Icon(Icons.Filled.Cloud, contentDescription = null) },
-                            onClick = {
-                                menuExpanded = false
-                                checkingUpdate = true
-                                scope.launch {
-                                    val result = UpdateChecker.check(context)
-                                    result.fold(
-                                        onSuccess = { info ->
-                                            if (info != null) updateInfo = info
-                                            else Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
-                                        },
-                                        onFailure = { e ->
-                                            Toast.makeText(context, "检查失败：${e.message}", Toast.LENGTH_LONG).show()
-                                        }
-                                    )
-                                    checkingUpdate = false
-                                }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("云端同步") },
-                            leadingIcon = { Icon(Icons.Filled.Cloud, contentDescription = null) },
-                            onClick = { menuExpanded = false; onSync() }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("AI 识别导入") },
-                            leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                            onClick = { menuExpanded = false; onAiImport() }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("截图设置") },
-                            leadingIcon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) },
-                            onClick = { menuExpanded = false; showSwipeSettingDialog = true }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("JSON 格式示例") },
-                            leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
-                            onClick = { menuExpanded = false; showFormatDialog = true }
-                        )
-                    }
-                }
+                )
+                CocIconButton(
+                    icon = Icons.Filled.Add,
+                    contentDescription = "导入战报",
+                    onClick = onImport,
+                    filled = true
+                )
             }
+        )
 
-            // 筛选栏 —— 胶囊风格下拉框
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+        // 筛选栏 —— 细线胶囊下拉
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterDropdown(
+                label = when (typeFilter) { "0" -> "部落战"; "1" -> "联赛"; else -> "类型" },
+                isActive = typeFilter != null,
+                expanded = typeExpanded,
+                onToggle = { typeExpanded = true },
+                onDismiss = { typeExpanded = false }
             ) {
-                // 类型
-                FilterDropdown(
-                    label = when (typeFilter) { "0" -> "部落战"; "1" -> "联赛"; else -> "类型" },
-                    isActive = typeFilter != null,
-                    expanded = typeExpanded,
-                    onToggle = { typeExpanded = true },
-                    onDismiss = { typeExpanded = false },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    DropdownMenuItem(text = { Text("全部") }, onClick = { typeFilter = null; typeExpanded = false })
-                    DropdownMenuItem(text = { Text("部落战") }, onClick = { typeFilter = "0"; typeExpanded = false })
-                    DropdownMenuItem(text = { Text("联赛") }, onClick = { typeFilter = "1"; typeExpanded = false })
-                }
-                // 年份
-                FilterDropdown(
-                    label = yearFilter?.let { "${it}年" } ?: "年份",
-                    isActive = yearFilter != null,
-                    expanded = yearExpanded,
-                    onToggle = { yearExpanded = true },
-                    onDismiss = { yearExpanded = false },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    DropdownMenuItem(text = { Text("全部") }, onClick = { yearFilter = null; yearExpanded = false })
-                    years.forEach { y ->
-                        DropdownMenuItem(text = { Text("${y}年") }, onClick = { yearFilter = y; yearExpanded = false })
-                    }
-                }
-                // 月份
-                FilterDropdown(
-                    label = monthFilter?.let { "${it}月" } ?: "月份",
-                    isActive = monthFilter != null,
-                    expanded = monthExpanded,
-                    onToggle = { monthExpanded = true },
-                    onDismiss = { monthExpanded = false },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    DropdownMenuItem(text = { Text("全部") }, onClick = { monthFilter = null; monthExpanded = false })
-                    months.forEach { m ->
-                        DropdownMenuItem(text = { Text("${m}月") }, onClick = { monthFilter = m; monthExpanded = false })
-                    }
+                DropdownMenuItem(text = { Text("全部") }, onClick = { typeFilter = null; typeExpanded = false })
+                DropdownMenuItem(text = { Text("部落战") }, onClick = { typeFilter = "0"; typeExpanded = false })
+                DropdownMenuItem(text = { Text("联赛") }, onClick = { typeFilter = "1"; typeExpanded = false })
+            }
+            FilterDropdown(
+                label = yearFilter?.let { "${it}年" } ?: "年份",
+                isActive = yearFilter != null,
+                expanded = yearExpanded,
+                onToggle = { yearExpanded = true },
+                onDismiss = { yearExpanded = false }
+            ) {
+                DropdownMenuItem(text = { Text("全部") }, onClick = { yearFilter = null; yearExpanded = false })
+                years.forEach { y ->
+                    DropdownMenuItem(text = { Text("${y}年") }, onClick = { yearFilter = y; yearExpanded = false })
                 }
             }
-
-            if (filtered.isEmpty()) {
-                Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        if (events.isEmpty()) "还没有战报数据\n点击右下角 + 导入 JSON"
-                        else "没有匹配的战报",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item { Spacer(Modifier.height(4.dp)) }
-                    items(filtered, key = { it.eventId }) { event ->
-                        EventCard(
-                            event = event,
-                            onClick = { onOpen(event.eventId) },
-                            onDelete = { toDelete = event }
-                        )
-                    }
-                    item { Spacer(Modifier.height(80.dp)) }
+            FilterDropdown(
+                label = monthFilter?.let { "${it}月" } ?: "月份",
+                isActive = monthFilter != null,
+                expanded = monthExpanded,
+                onToggle = { monthExpanded = true },
+                onDismiss = { monthExpanded = false }
+            ) {
+                DropdownMenuItem(text = { Text("全部") }, onClick = { monthFilter = null; monthExpanded = false })
+                months.forEach { m ->
+                    DropdownMenuItem(text = { Text("${m}月") }, onClick = { monthFilter = m; monthExpanded = false })
                 }
             }
         }
+
+        Spacer(Modifier.height(6.dp))
+
+        if (filtered.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (events.isEmpty()) {
+                    EmptyState(
+                        title = "还没有战报",
+                        body = "点击右上角 + 导入 JSON\n复制战报 JSON 后打开 App 会自动识别"
+                    )
+                } else {
+                    EmptyState(title = "没有匹配的战报", body = "试试调整筛选条件")
+                }
+            }
+        } else {
+            // 无卡片列表：发丝线分隔的编辑式条目
+            LazyColumn(Modifier.fillMaxSize()) {
+                itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
+                    EventRow(
+                        event = event,
+                        onClick = { onOpen(event.eventId) },
+                        onDelete = { toDelete = event }
+                    )
+                    if (index < filtered.lastIndex) {
+                        Box(
+                            Modifier
+                                .padding(start = 20.dp)
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(MaterialTheme.cocColors.hairline)
+                        )
+                    }
+                }
+                item { Spacer(Modifier.height(24.dp)) }
+            }
+        }
+    }
 
     toDelete?.let { event ->
         AlertDialog(
@@ -323,7 +231,7 @@ fun EventListScreen(
                 TextButton(onClick = {
                     viewModel.deleteEvent(event.eventId)
                     toDelete = null
-                }) { Text("删除") }
+                }) { Text("删除", color = MaterialTheme.cocColors.danger) }
             },
             dismissButton = {
                 TextButton(onClick = { toDelete = null }) { Text("取消") }
@@ -331,171 +239,23 @@ fun EventListScreen(
         )
     }
 
-    if (showFormatDialog) {
-        val jsonSample = """{
-  "members": [
-    {
-      "rank": 1,
-      "player_name": "陈平安",
-      "role": "elder",
-      "total_stars": 6,
-      "attacks": [
-        {
-          "attack_order": 1,
-          "status": "used",
-          "destruction_percentage": 100
-        }
-      ]
-    }
-  ]
-}"""
-        val clipboardManager = LocalClipboardManager.current
-        val context = LocalContext.current
-        AlertDialog(
-            onDismissRequest = { showFormatDialog = false },
-            title = { Text("JSON 数据格式") },
-            text = {
-                Text(
-                    jsonSample,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace
-                )
+    // 剪切板战报导入对话框
+    clipboardParsed?.let { parsed ->
+        val app = context.applicationContext as CocWarApplication
+        ClipboardImportDialog(
+            parsed = parsed,
+            repo = app.repository,
+            onSaved = { eventId ->
+                clipboardParsed = null
+                onOpen(eventId)
             },
-            dismissButton = {
-                TextButton(onClick = {
-                    clipboardManager.setText(AnnotatedString(jsonSample))
-                    Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
-                    showFormatDialog = false
-                }) { Text("复制") }
-            },
-            confirmButton = {
-                TextButton(onClick = { showFormatDialog = false }) { Text("关闭") }
-            }
-        )
-    }
-
-    // 滑动步长设置弹窗
-    if (showSwipeSettingDialog) {
-        val prefs = context.getSharedPreferences("cocwar_capture", android.content.Context.MODE_PRIVATE)
-        var stepPercent by remember {
-            mutableStateOf(prefs.getFloat("swipe_step_percent", 30f))
-        }
-        AlertDialog(
-            onDismissRequest = { showSwipeSettingDialog = false },
-            title = { Text("截图滑动步长") },
-            text = {
-                Column {
-                    Text(
-                        "每次上滑的距离（屏幕高度的百分比）\n当前：${stepPercent.toInt()}%（约 ${(stepPercent / 100 * context.resources.displayMetrics.heightPixels).toInt()}px）\n\n" +
-                        "• 15-25%：精细模式，重叠多不漏行\n" +
-                        "• 30%：标准（推荐）\n" +
-                        "• 40-50%：快速模式，适合长列表",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Slider(
-                        value = stepPercent,
-                        onValueChange = { stepPercent = it },
-                        valueRange = 10f..55f,
-                        steps = 8
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    prefs.edit().putFloat("swipe_step_percent", stepPercent).apply()
-                    showSwipeSettingDialog = false
-                    Toast.makeText(context, "滑动步长已设为 ${stepPercent.toInt()}%", Toast.LENGTH_SHORT).show()
-                }) { Text("保存") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSwipeSettingDialog = false }) { Text("取消") }
-            }
-        )
-    }
-
-    // 权限引导弹窗
-    if (showPermissionDialog) {
-        val permState = checkCapturePermissions(context)
-        if (permState.allReady) {
-            // 权限已就绪，直接启动
-            showPermissionDialog = false
-            FloatingBallService.start(context)
-            Toast.makeText(context, "悬浮窗已开启，正在打开游戏...", Toast.LENGTH_SHORT).show()
-            try {
-                val intent = context.packageManager.getLaunchIntentForPackage("com.supercell.clashofclans")
-                if (intent != null) context.startActivity(intent)
-            } catch (_: Exception) {}
-        } else {
-            PermissionGuideDialog(
-                state = permState,
-                onDismiss = {
-                    showPermissionDialog = false
-                    // 再次检查，如果权限已就绪则启动
-                    val newState = checkCapturePermissions(context)
-                    if (newState.allReady) {
-                        FloatingBallService.start(context)
-                        Toast.makeText(context, "权限已就绪，悬浮窗已开启", Toast.LENGTH_SHORT).show()
-                        try {
-                            val intent = context.packageManager.getLaunchIntentForPackage("com.supercell.clashofclans")
-                            if (intent != null) context.startActivity(intent)
-                        } catch (_: Exception) {}
-                    }
-                }
-            )
-        }
-    }
-
-    // 检查更新对话框
-    updateInfo?.let { info ->
-        var downloading by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { updateInfo = null },
-            title = { Text("发现新版本") },
-            text = {
-                Column {
-                    Text("当前版本：${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
-                    Text("最新版本：${info.version}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    if (info.body.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("更新内容：", style = MaterialTheme.typography.labelMedium)
-                        Text(info.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (downloading) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("正在下载，请查看通知栏进度…", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        downloading = true
-                        scope.launch {
-                            val result = UpdateChecker.downloadAndInstall(context, info)
-                            result.fold(
-                                onSuccess = { updateInfo = null },
-                                onFailure = { e ->
-                                    downloading = false
-                                    Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_LONG).show()
-                                }
-                            )
-                        }
-                    },
-                    enabled = !downloading
-                ) {
-                    Text(if (downloading) "下载中…" else "立即更新")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { updateInfo = null }) { Text("以后再说") }
-            }
+            onDismiss = { clipboardParsed = null }
         )
     }
 }
 
 /**
- * 胶囊风格筛选下拉框。
+ * 细线胶囊筛选下拉框。
  */
 @Composable
 private fun FilterDropdown(
@@ -510,30 +270,36 @@ private fun FilterDropdown(
     Box(modifier) {
         Surface(
             onClick = onToggle,
-            shape = RoundedCornerShape(20.dp),
-            color = if (isActive) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            tonalElevation = if (isActive) 2.dp else 0.dp
+            shape = com.cocwar.ui.components.CocShape.chip,
+            color = if (isActive) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isActive) MaterialTheme.colorScheme.primary
+                else MaterialTheme.cocColors.hairline
+            ),
+            shadowElevation = 0.dp,
+            tonalElevation = 0.dp
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     label,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer
+                    color = if (isActive) MaterialTheme.colorScheme.onPrimary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(3.dp))
                 Icon(
-                    Icons.Filled.ArrowDropDown,
+                    Icons.Filled.KeyboardArrowDown,
                     contentDescription = null,
-                    tint = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer
+                    tint = if (isActive) MaterialTheme.colorScheme.onPrimary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(15.dp)
                 )
             }
         }
@@ -546,77 +312,80 @@ private fun FilterDropdown(
     }
 }
 
+/**
+ * 战报条目：编辑式排版 —— 左侧名称与元信息，右侧星数大数字。
+ */
 @Composable
-private fun EventCard(
+private fun EventRow(
     event: WarEventEntity,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val isWar = parseEventTypeFromName(event.eventName) != "1"
-    val accent = if (isWar) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.secondary
+    // 名称无法解析时回退到 entity.eventType，避免非标准名称被错归类
+    val isWar = when (parseEventTypeFromName(event.eventName)) {
+        "1" -> false
+        "0" -> true
+        else -> event.eventType != "league"
+    }
+    val typeColor = if (isWar) MaterialTheme.cocColors.accent else MaterialTheme.cocColors.star
 
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = 20.dp, end = 8.dp, top = 15.dp, bottom = 15.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-            // 左侧色带
-            Box(
-                modifier = Modifier
-                    .width(5.dp)
-                    .fillMaxWidth()
-                    .background(accent, RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp))
-            )
-            Box {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            parseEventDisplayName(event.eventName),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (event.isSample) {
-                            AssistChip(onClick = {}, label = { Text("示例") })
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Filled.Star,
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "${event.clanTotalStars}",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = accent
-                        )
-                    }
-                }
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.align(Alignment.TopEnd)
-                ) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "删除",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    parseEventDisplayName(event.eventName),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (event.isSample) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "示例",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (isWar) "部落战" else "联赛",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = typeColor
+            )
+        }
+
+        // 星数大数字（表格化）
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Star,
+                contentDescription = null,
+                tint = MaterialTheme.cocColors.star,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(3.dp))
+            Text(
+                "${event.clanTotalStars}",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+            Icon(
+                Icons.Filled.DeleteOutline,
+                contentDescription = "删除",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

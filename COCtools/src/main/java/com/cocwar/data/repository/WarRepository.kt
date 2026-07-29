@@ -41,6 +41,9 @@ class WarRepository(
 
     suspend fun getAllPlayerNames(): List<String> = dao.getAllPlayerNames()
 
+    /** 一次性获取所有事件（用于统计页月份选择等）。 */
+    suspend fun getAllEventsSync(): List<WarEventEntity> = dao.getAllEvents()
+
     // === 正式成员名单 (roster) ===
 
     /** 获取名单流（供 UI 订阅）。 */
@@ -184,7 +187,20 @@ class WarRepository(
         return sb.toString()
     }
 
-    private fun escapeJson(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
+    private fun escapeJson(s: String): String = buildString(s.length + 8) {
+        for (c in s) {
+            when (c) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                else -> if (c < '\u0020') append("\\u%04x".format(c.code)) else append(c)
+            }
+        }
+    }
 
     /** 获取当月时间范围。 */
     fun currentMonthRange(): Pair<Long, Long> {
@@ -229,7 +245,8 @@ class WarRepository(
         val monthStart = cal.timeInMillis; cal.add(Calendar.MONTH, 1)
         val prefix = if (eventType == "league") "1" else "0"
         val count = dao.countByTypeInMonth(eventType, monthStart, cal.timeInMillis)
-        val seq = if (eventType == "league") eventRound else count + 1
+        // 统一自增：根据本月已有同类型战报数量自动编号，切换类型时由调用方重新生成全名
+        val seq = count + 1
         return "%s%02d%02d%02d".format(prefix, year, month, seq)
     }
 
@@ -239,9 +256,15 @@ class WarRepository(
     private fun parseTypeAndRound(name: String, fallbackType: String, fallbackRound: Int): Pair<String, Int> {
         if (name.length < 7) return fallbackType to fallbackRound
         val s = name[0]
+        // 首字符必须是合法类型标识，否则视为无法解析（避免把 "1212战报01" 之类误判为联赛）
+        if (s != '0' && s != '1') return fallbackType to fallbackRound
         val cc = name.substring(5, 7).toIntOrNull() ?: return fallbackType to fallbackRound
         val type = if (s == '1') "league" else "war"
-        val round = if (s == '1') (cc - 1) % 7 + 1 else 0
+        val round = if (s == '1') {
+            // cc 合法范围 1..14（两场联赛各 7 轮），越界视为无法解析
+            if (cc !in 1..14) return fallbackType to fallbackRound
+            (cc - 1) % 7 + 1
+        } else 0
         return type to round
     }
 }

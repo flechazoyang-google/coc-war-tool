@@ -42,7 +42,13 @@ object WarJsonParser {
         data class Error(val message: String) : ParseResult
     }
 
-    fun parse(json: String, isSample: Boolean = false, createdAt: Long = System.currentTimeMillis()): ParseResult {
+    fun parse(
+        json: String,
+        isSample: Boolean = false,
+        createdAt: Long = System.currentTimeMillis(),
+        eventType: String = EVENT_TYPE_WAR,
+        eventRound: Int = 0
+    ): ParseResult {
         val trimmed = json.trim()
         if (trimmed.isBlank()) return ParseResult.Error("JSON 内容为空")
 
@@ -55,17 +61,21 @@ object WarJsonParser {
         } ?: return ParseResult.Error("JSON 解析结果为空")
 
         return try {
-            ParseResult.Success(fromDto(dto, isSample, createdAt))
+            ParseResult.Success(fromDto(dto, isSample, createdAt, eventType, eventRound))
         } catch (e: Exception) {
             ParseResult.Error("数据校验失败：${e.message}")
         }
     }
 
     /** Build entities from an already-parsed DTO (used by samples too). */
-    fun fromDto(dto: WarDto, isSample: Boolean, createdAt: Long): ParsedEvent {
-        // eventType 默认部落战，用户在导入时通过对话框切换
-        val eventType = EVENT_TYPE_WAR
-        val round = 0
+    fun fromDto(
+        dto: WarDto,
+        isSample: Boolean,
+        createdAt: Long,
+        eventType: String = EVENT_TYPE_WAR,
+        eventRound: Int = 0
+    ): ParsedEvent {
+        val round = eventRound
 
         // event_id 自动生成；eventName 由用户在导入时填写
         val eventId = "${eventType}_${createdAt}"

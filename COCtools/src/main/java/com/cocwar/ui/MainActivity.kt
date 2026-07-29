@@ -4,19 +4,27 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.ManageAccounts
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Leaderboard
+import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Leaderboard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -24,19 +32,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
-import com.cocwar.ui.importflow.AiImportScreen
 import com.cocwar.ui.importflow.ImportScreen
 import com.cocwar.ui.members.MemberManageScreen
-import com.cocwar.ui.settings.AiConfigScreen
 import com.cocwar.ui.stats.StatsScreen
 import com.cocwar.ui.sync.SyncScreen
 import com.cocwar.ui.theme.CocWarTheme
+import com.cocwar.ui.theme.cocColors
+import com.cocwar.ui.tools.ToolsScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,17 +65,18 @@ class MainActivity : ComponentActivity() {
 private data class BottomNavItem(
     val route: String,
     val label: String,
-    val icon: ImageVector,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
 )
 
 private val BottomNavItems = listOf(
-    BottomNavItem("event_list", "战报", Icons.Filled.Home),
-    BottomNavItem("stats", "统计", Icons.Filled.BarChart),
-    BottomNavItem("member_manage", "成员", Icons.Filled.ManageAccounts),
-    BottomNavItem("ai_config", "设置", Icons.Filled.Settings),
+    BottomNavItem("event_list", "战报", Icons.AutoMirrored.Filled.LibraryBooks, Icons.AutoMirrored.Outlined.LibraryBooks),
+    BottomNavItem("stats", "统计", Icons.Filled.Leaderboard, Icons.Outlined.Leaderboard),
+    BottomNavItem("member_manage", "成员", Icons.Filled.Groups, Icons.Outlined.Groups),
+    BottomNavItem("tools", "工具", Icons.Filled.Build, Icons.Outlined.Build),
 )
 
-private val TopLevelRoutes = setOf("event_list", "stats", "member_manage", "ai_config")
+private val TopLevelRoutes = setOf("event_list", "stats", "member_manage", "tools")
 
 @Composable
 private fun CocWarNavHost() {
@@ -77,31 +88,53 @@ private fun CocWarNavHost() {
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
-                    BottomNavItems.forEach { item ->
-                        val selected = currentRoute == item.route
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                nav.navigate(item.route) {
-                                    popUpTo(nav.graph.startDestinationId) {
-                                        saveState = true
+                // 细线 + 纸面底栏，去掉 M3 默认 tonal 色块
+                Column {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.cocColors.hairline)
+                    )
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 0.dp
+                    ) {
+                        BottomNavItems.forEach { item ->
+                            val selected = currentRoute == item.route
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = {
+                                    nav.navigate(item.route) {
+                                        popUpTo(nav.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label) },
-                        )
+                                },
+                                icon = {
+                                    Icon(
+                                        if (selected) item.selectedIcon else item.unselectedIcon,
+                                        contentDescription = item.label
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        item.label,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                            )
+                        }
                     }
-                }
-            }
-        },
-        floatingActionButton = {
-            if (currentRoute == "event_list") {
-                FloatingActionButton(onClick = { nav.navigate("import") }) {
-                    Icon(Icons.Filled.Add, contentDescription = "导入战报")
                 }
             }
         },
@@ -114,8 +147,7 @@ private fun CocWarNavHost() {
             composable("event_list") {
                 EventListScreen(
                     onOpen = { nav.navigate("detail/$it") },
-                    onSync = { nav.navigate("sync") },
-                    onAiImport = { nav.navigate("ai_import") },
+                    onImport = { nav.navigate("import") },
                 )
             }
             composable("detail/{eventId}") {
@@ -134,11 +166,10 @@ private fun CocWarNavHost() {
             composable("sync") {
                 SyncScreen(onBack = { nav.popBackStack() })
             }
-            composable("ai_config") {
-                AiConfigScreen(onBack = { nav.popBackStack() })
-            }
-            composable("ai_import") {
-                AiImportScreen(onBack = { nav.popBackStack() }, onSaved = { nav.popBackStack() })
+            composable("tools") {
+                ToolsScreen(
+                    onSync = { nav.navigate("sync") },
+                )
             }
         }
     }

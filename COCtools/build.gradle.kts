@@ -13,8 +13,8 @@ android {
         applicationId = "com.cocwar"
         minSdk = 30
         targetSdk = 34
-        versionCode = 7
-        versionName = "2.2"
+        versionCode = 8
+        versionName = "3.0"
     }
 
     buildTypes {
@@ -35,6 +35,16 @@ android {
 
     kotlinOptions {
         jvmTarget = "21"
+    }
+
+    kotlin {
+        jvmToolchain(21)
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
     }
 
     buildFeatures {
@@ -82,10 +92,6 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-
-    // AI 视觉识别（HTTP 客户端 + 加密密钥存储）
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Force core to a compileSdk-34-compatible version (overrides Compose BOM 1.15.0)
     constraints {

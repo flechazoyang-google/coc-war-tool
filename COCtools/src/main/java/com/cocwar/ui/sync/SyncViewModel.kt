@@ -134,14 +134,28 @@ class SyncViewModel(
         }
     }
 
-    /** 解析备份 JSON 并导入所有事件 */
+    /** 解析备份 JSON 并导入所有事件（含花名册）。 */
     private suspend fun restoreFromJson(json: String) {
         val gson = com.google.gson.Gson()
-        val root = gson.fromJson(json, BackupData::class.java)
-        root?.events?.forEach { eventDto ->
-            val parsed = com.cocwar.data.parser.WarJsonParser.parse(eventDto.toWarJson())
+        val root = gson.fromJson(json, BackupData::class.java) ?: return
+
+        // 恢复花名册（addToRoster 内部去重/忽略已存在）
+        root.roster?.takeIf { it.isNotEmpty() }?.let { repo.addToRoster(it) }
+
+        root.events?.forEach { eventDto ->
+            val parsed = com.cocwar.data.parser.WarJsonParser.parse(
+                eventDto.toWarJson(),
+                createdAt = eventDto.created_at?.takeIf { it > 0 } ?: System.currentTimeMillis(),
+                eventType = eventDto.event_type ?: com.cocwar.data.model.EVENT_TYPE_WAR,
+                eventRound = eventDto.event_round ?: 0
+            )
             if (parsed is com.cocwar.data.parser.WarJsonParser.ParseResult.Success) {
-                repo.importEvent(parsed.data)
+                // 用备份里的原始名称覆盖，避免被重置为空
+                val src = parsed.data
+                val restored = src.copy(
+                    event = src.event.copy(eventName = eventDto.event_name ?: src.event.eventName)
+                )
+                repo.importEvent(restored)
             }
         }
     }
@@ -198,7 +212,20 @@ private data class BackupEvent(
         return sb.toString()
     }
 
-    private fun escape(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
+    private fun escape(s: String): String = buildString(s.length + 8) {
+        for (c in s) {
+            when (c) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                else -> if (c < '\u0020') append("\\u%04x".format(c.code)) else append(c)
+            }
+        }
+    }
 }
 
 private data class BackupMember(

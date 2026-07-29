@@ -15,11 +15,10 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.TimeUnit
+import java.net.HttpURLConnection
+import java.net.URL
 
 /**
  * Gitee 仓库信息（硬编码，发布时无需改动）。
@@ -43,11 +42,6 @@ object UpdateChecker {
     private const val USER_AGENT = "COCWarTool-UpdateChecker"
 
     private val gson = Gson()
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
 
     /**
      * 检查 Gitee 最新 release 是否有更新。
@@ -55,15 +49,23 @@ object UpdateChecker {
      */
     suspend fun check(context: Context): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder()
-                .url(GITEE_API)
-                .header("User-Agent", USER_AGENT)
-                .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("API 返回 ${response.code}"))
+            val connection = URL(GITEE_API).openConnection() as HttpURLConnection
+            connection.apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", USER_AGENT)
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                instanceFollowRedirects = true
             }
-            val body = response.body?.string() ?: ""
+
+            val code = connection.responseCode
+            if (code != HttpURLConnection.HTTP_OK) {
+                return@withContext Result.failure(Exception("API 返回 $code"))
+            }
+
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            connection.disconnect()
+
             val json = JsonParser.parseString(body).asJsonObject
 
             val tagName = json.get("tag_name")?.asString ?: ""
@@ -111,25 +113,31 @@ object UpdateChecker {
             val downloadFile = File(context.cacheDir, "update_${info.version}.apk")
             if (downloadFile.exists()) downloadFile.delete()
 
-            val request = Request.Builder()
-                .url(info.apkUrl)
-                .header("User-Agent", USER_AGENT)
-                .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("下载失败 HTTP ${response.code}"))
+            val connection = URL(info.apkUrl).openConnection() as HttpURLConnection
+            connection.apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", USER_AGENT)
+                connectTimeout = 15_000
+                readTimeout = 120_000
+                instanceFollowRedirects = true
             }
 
-            val body = response.body ?: return@withContext Result.failure(Exception("响应为空"))
-            val total = body.contentLength()
+            val code = connection.responseCode
+            if (code != HttpURLConnection.HTTP_OK) {
+                return@withContext Result.failure(Exception("下载失败 HTTP $code"))
+            }
+
+            val total = connection.contentLengthLong
             var downloaded = 0L
 
-            body.byteStream().use { input ->
+            connection.inputStream.use { input ->
                 FileOutputStream(downloadFile).use { output ->
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     var lastNotifyTime = 0L
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                    while (true) {
+                        bytesRead = input.read(buffer)
+                        if (bytesRead == -1) break
                         output.write(buffer, 0, bytesRead)
                         downloaded += bytesRead
                         // 每秒更新一次通知
@@ -142,9 +150,9 @@ object UpdateChecker {
                     }
                 }
             }
+            connection.disconnect()
 
             // 校验下载内容是否为有效的 APK（ZIP 格式以 "PK" 开头）。
-            // Gitee 限流时可能返回 HTML 页面而非文件，需提前拦截以免安装失败。
             val magic = ByteArray(2)
             downloadFile.inputStream().use { it.read(magic) }
             if (!(magic[0] == 'P'.code.toByte() && magic[1] == 'K'.code.toByte())) {

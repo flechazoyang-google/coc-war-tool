@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
@@ -70,7 +71,7 @@ fun ClipboardImportDialog(
                     if (newNames.isNotEmpty()) repo.addToRoster(newNames)
                     repo.importEvent(adjusted); onSaved(adjusted.event.eventId)
                 }
-            }) { Text("确认导入") }
+            }) { Text("确认导入", fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
         title = { Text("检测到剪切板中的战报数据") },
