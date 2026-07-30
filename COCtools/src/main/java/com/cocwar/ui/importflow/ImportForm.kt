@@ -1,5 +1,6 @@
 package com.cocwar.ui.importflow
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -8,21 +9,24 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,12 +43,21 @@ import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.StringMatcher
 
+/** 未匹配成员的处理方式 */
+enum class MatchOption(val label: String) {
+    USE_SUGGESTION("使用建议"),
+    PICK_FROM_ROSTER("从名单中选择"),
+    AS_NEW_MEMBER("作为新成员导入")
+}
+
 data class MemberMatchState(
     val member: MemberEntity,
     val editedName: String,
     val matched: Boolean,
     val suggestion: String?,
-    val acceptSuggestion: Boolean = false
+    val matchOption: MatchOption,
+    val selectedRosterName: String? = null,
+    val dropdownExpanded: Boolean = false
 )
 
 @Composable
@@ -154,13 +167,16 @@ fun WarPreviewCard(parsed: WarJsonParser.ParsedEvent) {
 }
 
 /**
- * 成员匹配预览 — 显示匹配/未匹配列表，未匹配项可编辑+模糊建议+复选框。
+ * 成员匹配预览 — 显示匹配/未匹配列表，未匹配项可通过下拉选择处理方式。
  */
 @Composable
 fun MemberMatchPreview(
     matchStates: List<MemberMatchState>,
+    roster: List<String>,
     onNameEdit: (Int, String) -> Unit,
-    onToggleSuggestion: (Int, Boolean) -> Unit
+    onOptionChange: (Int, MatchOption) -> Unit,
+    onRosterPick: (Int, String) -> Unit,
+    onToggleDropdown: (Int) -> Unit
 ) {
     val matched = matchStates.filter { it.matched }
     val unmatched = matchStates.filter { !it.matched }
@@ -186,7 +202,7 @@ fun MemberMatchPreview(
                         tint = MaterialTheme.cocColors.danger,
                         modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(7.dp))
-                    Text("未匹配 ${unmatched.size} 人，请确认或修正",
+                    Text("未匹配 ${unmatched.size} 人，请选择处理方式",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.cocColors.danger)
@@ -194,7 +210,15 @@ fun MemberMatchPreview(
                 Spacer(Modifier.height(8.dp))
                 unmatched.forEach { state ->
                     val origIdx = matchStates.indexOf(state)
-                    UnmatchedRow(state, origIdx, onNameEdit, onToggleSuggestion)
+                    UnmatchedRow(
+                        state = state,
+                        index = origIdx,
+                        roster = roster,
+                        onNameEdit = onNameEdit,
+                        onOptionChange = onOptionChange,
+                        onRosterPick = onRosterPick,
+                        onToggleDropdown = onToggleDropdown
+                    )
                 }
             }
             if (unmatched.isEmpty() && matched.isNotEmpty()) {
@@ -211,11 +235,17 @@ fun MemberMatchPreview(
 private fun UnmatchedRow(
     state: MemberMatchState,
     index: Int,
+    roster: List<String>,
     onNameEdit: (Int, String) -> Unit,
-    onToggleSuggestion: (Int, Boolean) -> Unit
+    onOptionChange: (Int, MatchOption) -> Unit,
+    onRosterPick: (Int, String) -> Unit,
+    onToggleDropdown: (Int) -> Unit
 ) {
     val nameColor = roleColor(state.member.role)
+    val isExpanded = state.dropdownExpanded
+
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        // 主行：序号 + 名字 + 展开按钮
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "#${state.member.rank}",
@@ -223,12 +253,26 @@ private fun UnmatchedRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.width(26.dp)
             )
+
+            // 名字区域：根据选项显示不同状态
+            val displayName = when (state.matchOption) {
+                MatchOption.USE_SUGGESTION -> state.suggestion ?: state.editedName
+                MatchOption.PICK_FROM_ROSTER -> state.selectedRosterName ?: "请选择成员…"
+                MatchOption.AS_NEW_MEMBER -> state.editedName
+            }
+            val isEditable = state.matchOption == MatchOption.AS_NEW_MEMBER
+
             OutlinedTextField(
-                value = state.editedName,
-                onValueChange = { onNameEdit(index, it) },
+                value = displayName,
+                onValueChange = { if (isEditable) onNameEdit(index, it) },
+                readOnly = !isEditable,
+                enabled = isEditable || state.matchOption != MatchOption.PICK_FROM_ROSTER ||
+                        (state.matchOption == MatchOption.PICK_FROM_ROSTER && state.selectedRosterName != null),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodySmall.copy(
-                    color = nameColor,
+                    color = if (isExpanded && !isEditable)
+                        MaterialTheme.colorScheme.primary
+                    else nameColor,
                     fontWeight = FontWeight.Medium
                 ),
                 modifier = Modifier
@@ -236,29 +280,146 @@ private fun UnmatchedRow(
                     .height(50.dp),
                 shape = CocShape.chip,
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedBorderColor = MaterialTheme.cocColors.hairline,
-                    cursorColor = MaterialTheme.cocColors.accent
+                    focusedBorderColor = if (isExpanded) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
+                    unfocusedBorderColor = if (isExpanded) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.cocColors.hairline,
+                    cursorColor = MaterialTheme.cocColors.accent,
+                    disabledBorderColor = if (isExpanded) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.cocColors.hairline,
+                    disabledTextColor = if (isExpanded) MaterialTheme.colorScheme.primary
+                    else nameColor
                 )
             )
-            if (state.suggestion != null) {
-                Checkbox(
-                    checked = state.acceptSuggestion,
-                    onCheckedChange = { onToggleSuggestion(index, it) },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = MaterialTheme.cocColors.accent
-                    )
+
+            Spacer(Modifier.width(4.dp))
+            // 展开/收起按钮
+            TextButton(
+                onClick = { onToggleDropdown(index) },
+                modifier = Modifier.height(36.dp)
+            ) {
+                Text(
+                    text = if (isExpanded) "▲" else "▼",
+                    color = if (isExpanded) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-        if (state.suggestion != null) {
-            Text(
-                "建议改为：${state.suggestion}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.cocColors.danger,
-                modifier = Modifier.padding(start = 30.dp)
-            )
+
+        // 展开的下拉选项区
+        if (isExpanded) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 26.dp)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(10.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // 选项1：使用建议
+                    if (state.suggestion != null) {
+                        OptionRow(
+                            label = "使用建议 \"${state.suggestion}\"",
+                            selected = state.matchOption == MatchOption.USE_SUGGESTION,
+                            onClick = { onOptionChange(index, MatchOption.USE_SUGGESTION) }
+                        )
+                    }
+
+                    // 选项2：从名单中选择
+                    OptionRow(
+                        label = "从名单中选择",
+                        selected = state.matchOption == MatchOption.PICK_FROM_ROSTER,
+                        onClick = { onOptionChange(index, MatchOption.PICK_FROM_ROSTER) }
+                    )
+
+                    // 从名单选择的子列表
+                    if (state.matchOption == MatchOption.PICK_FROM_ROSTER && roster.isNotEmpty()) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = 28.dp, top = 2.dp, bottom = 2.dp)
+                                .heightIn(max = 140.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surface,
+                                    RoundedCornerShape(6.dp)
+                                )
+                        ) {
+                            LazyColumn {
+                                items(roster) { name ->
+                                    val isPicked = name == state.selectedRosterName
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onRosterPick(index, name) }
+                                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (isPicked) {
+                                            Icon(
+                                                Icons.Filled.CheckCircle,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.cocColors.accent,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        Text(
+                                            name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isPicked) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isPicked) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 选项3：作为新成员导入
+                    OptionRow(
+                        label = "作为新成员导入（可修改名称）",
+                        selected = state.matchOption == MatchOption.AS_NEW_MEMBER,
+                        onClick = { onOptionChange(index, MatchOption.AS_NEW_MEMBER) }
+                    )
+                }
+            }
         }
+    }
+}
+
+/** 下拉菜单中的单选行 */
+@Composable
+private fun OptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 5.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (selected) Icons.Filled.CheckCircle else Icons.Filled.CheckCircle,
+            contentDescription = null,
+            tint = if (selected) MaterialTheme.cocColors.accent
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -269,5 +430,12 @@ fun buildMatchStates(parsed: WarJsonParser.ParsedEvent, roster: List<String>): L
         val suggestion = if (!matched) {
             StringMatcher.bestMatch(m.playerName, roster, 0.6f)?.first
         } else null
-        MemberMatchState(m, m.playerName, matched, suggestion)
+        val defaultOption = if (suggestion != null) MatchOption.USE_SUGGESTION else MatchOption.AS_NEW_MEMBER
+        MemberMatchState(
+            member = m,
+            editedName = m.playerName,
+            matched = matched,
+            suggestion = suggestion,
+            matchOption = defaultOption
+        )
     }

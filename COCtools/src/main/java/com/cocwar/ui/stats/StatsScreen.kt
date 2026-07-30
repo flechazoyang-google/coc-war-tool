@@ -1,6 +1,7 @@
 package com.cocwar.ui.stats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,25 +13,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,11 +50,11 @@ import com.cocwar.domain.RecentMissedRank
 import com.cocwar.domain.StatsOverview
 import com.cocwar.domain.TypeStats
 import com.cocwar.ui.components.CocCard
+import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
 import com.cocwar.ui.components.FilterPill
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.components.SectionTitle
-import com.cocwar.ui.components.SegmentedTabs
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.formatPercent
@@ -92,35 +94,70 @@ fun StatsScreen(onBack: () -> Unit) {
     val availableMonths by viewModel.availableMonths.collectAsStateWithLifecycle()
     val selectedMonth by viewModel.selectedMonth.collectAsStateWithLifecycle()
     val sortBy by viewModel.sortBy.collectAsStateWithLifecycle()
-    val typeFilter by viewModel.typeFilter.collectAsStateWithLifecycle()
+    val recentMissedWindow by viewModel.recentMissedWindow.collectAsStateWithLifecycle()
 
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }  // 0=总览, 1=排名, 2=预警
+
+    // 视图标签
+    val viewLabels = listOf("总览", "排名", "预警")
+
+    // 筛选持久化 —— rememberSaveable
+    var typeFilterIndex by rememberSaveable { mutableIntStateOf(0) }  // 0=ALL, 1=WAR, 2=LEAGUE
+    var savedMonthLabel by rememberSaveable { mutableStateOf("") }   // 持久化月份标签
+    var showFilterDialog by remember { mutableStateOf(false) }
+
+    // 筛选对话框的编辑状态（级联选择用）
+    var editViewTab by rememberSaveable { mutableIntStateOf(0) }
+    var editTypeIndex by rememberSaveable { mutableIntStateOf(0) }
+    var editSortByIndex by remember { mutableIntStateOf(0) }
+    var editRecentN by rememberSaveable { mutableIntStateOf(0) }
+    var editMonthLabel by rememberSaveable { mutableStateOf("") }
+
+    // 打开对话框时用当前值初始化编辑状态
+    LaunchedEffect(showFilterDialog) {
+        if (showFilterDialog) {
+            editViewTab = tab
+            editTypeIndex = typeFilterIndex
+            editSortByIndex = MemberSortBy.entries.indexOf(sortBy)
+            editRecentN = recentMissedWindow
+            editMonthLabel = selectedMonth?.label ?: ""
+        }
+    }
+
+    val currentTypeFilter = TypeFilter.entries[typeFilterIndex]
+
+    // 同步筛选到 ViewModel
+    LaunchedEffect(typeFilterIndex) {
+        viewModel.setTypeFilter(currentTypeFilter)
+    }
+
+    // 恢复持久化的月份选择
+    LaunchedEffect(availableMonths, savedMonthLabel) {
+        if (availableMonths.isNotEmpty() && savedMonthLabel.isNotBlank()) {
+            val match = availableMonths.find { it.label == savedMonthLabel }
+            if (match != null && match != selectedMonth) {
+                viewModel.selectMonth(match)
+            }
+        }
+    }
+
+    // 判断筛选是否激活
+    val defaultMonth = availableMonths.firstOrNull()
+    val isFilterActive = typeFilterIndex != 0 || (selectedMonth != null && selectedMonth != defaultMonth) || tab != 0
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
-            title = "统计",
+            title = "统计·${viewLabels[tab]}",
             overline = "月度复盘",
-            subtitle = selectedMonth?.label ?: "选择月份"
-        )
-
-        MonthBar(
-            months = availableMonths,
-            selected = selectedMonth,
-            onPrev = {
-                val idx = availableMonths.indexOf(selectedMonth)
-                if (idx < availableMonths.lastIndex) viewModel.selectMonth(availableMonths[idx + 1])
-            },
-            onNext = {
-                val idx = availableMonths.indexOf(selectedMonth)
-                if (idx > 0) viewModel.selectMonth(availableMonths[idx - 1])
+            subtitle = selectedMonth?.label ?: "选择月份",
+            actions = {
+                CocIconButton(
+                    icon = Icons.Filled.FilterList,
+                    contentDescription = "筛选",
+                    onClick = { showFilterDialog = true },
+                    filled = isFilterActive
+                )
             }
-        )
-
-        SegmentedTabs(
-            options = listOf("总览", "成员", "未进攻"),
-            selectedIndex = tab,
-            onSelect = { tab = it },
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
         )
 
         when {
@@ -136,62 +173,186 @@ fun StatsScreen(onBack: () -> Unit) {
             }
             else -> when (tab) {
                 0 -> OverviewTab(overview, memberStats, Modifier.weight(1f))
-                1 -> MembersTab(memberStats, sortBy, { viewModel.setSortBy(it) }, typeFilter, { viewModel.setTypeFilter(it) }, Modifier.weight(1f))
-                2 -> MissedTab(recentMissed, viewModel, typeFilter, { viewModel.setTypeFilter(it) }, Modifier.weight(1f))
+                1 -> MembersTab(memberStats, Modifier.weight(1f))
+                2 -> MissedTab(recentMissed, Modifier.weight(1f))
             }
         }
     }
-}
 
-// ---- 月份切换栏：编辑式翻页 ----
+    // 筛选对话框：级联选择（视图 → 类型/排序/时间段 → 月份）
+    if (showFilterDialog) {
+        AlertDialog(
+            onDismissRequest = { showFilterDialog = false },
+            title = { Text("筛选") },
+            text = {
+                Column {
+                    // 视图区（始终显示）
+                    Text("视图", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        viewLabels.forEachIndexed { index, label ->
+                            FilterPill(
+                                label = label,
+                                selected = editViewTab == index,
+                                onClick = { editViewTab = index }
+                            )
+                        }
+                    }
 
-@Composable
-private fun MonthBar(
-    months: List<MonthOption>,
-    selected: MonthOption?,
-    onPrev: () -> Unit,
-    onNext: () -> Unit
-) {
-    val canPrev = months.indexOf(selected) < months.lastIndex
-    val canNext = months.indexOf(selected) > 0
+                    // 类型区（仅排名/预警时显示）
+                    if (editViewTab != 0) {
+                        Spacer(Modifier.height(14.dp))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(MaterialTheme.cocColors.hairline)
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text("类型", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TypeFilter.entries.forEach { filter ->
+                                FilterPill(
+                                    label = filter.label,
+                                    selected = editTypeIndex == filter.ordinal,
+                                    onClick = { editTypeIndex = filter.ordinal }
+                                )
+                            }
+                        }
+                    }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        IconButton(onClick = onPrev, enabled = canPrev) {
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                contentDescription = "上一月",
-                tint = if (canPrev) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-            )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                selected?.label ?: "—",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(2.dp))
-            Box(
-                Modifier
-                    .width(24.dp)
-                    .height(2.dp)
-                    .background(MaterialTheme.cocColors.accent)
-            )
-        }
-        IconButton(onClick = onNext, enabled = canNext) {
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = "下一月",
-                tint = if (canNext) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-            )
-        }
+                    // 排序方式（仅排名时显示）
+                    if (editViewTab == 1) {
+                        Spacer(Modifier.height(14.dp))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(MaterialTheme.cocColors.hairline)
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text("排序方式", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MemberSortBy.entries.forEachIndexed { index, sort ->
+                                FilterPill(
+                                    label = sort.label,
+                                    selected = editSortByIndex == index,
+                                    onClick = { editSortByIndex = index }
+                                )
+                            }
+                        }
+                    }
+
+                    // 时间段（仅预警时显示）
+                    if (editViewTab == 2) {
+                        Spacer(Modifier.height(14.dp))
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(MaterialTheme.cocColors.hairline)
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text("时间段", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val timeOptions = listOf(0 to "当月全部", 3 to "近3次", 7 to "近7次")
+                            timeOptions.forEach { (n, label) ->
+                                FilterPill(
+                                    label = label,
+                                    selected = editRecentN == n,
+                                    onClick = { editRecentN = n }
+                                )
+                            }
+                        }
+                    }
+
+                    // 分隔线 + 月份区（始终显示）
+                    Spacer(Modifier.height(18.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.cocColors.hairline)
+                    )
+                    Spacer(Modifier.height(18.dp))
+
+                    Text("月份", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    if (availableMonths.isEmpty()) {
+                        Text("暂无可用月份", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column {
+                            availableMonths.forEach { month ->
+                                val isSelected = month.label == editMonthLabel
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            editMonthLabel = month.label
+                                        }
+                                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        month.label,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (isSelected) {
+                                        Icon(
+                                            Icons.Filled.FilterList,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    // 应用所有选择
+                    tab = editViewTab
+                    typeFilterIndex = editTypeIndex
+                    viewModel.setTypeFilter(TypeFilter.entries[editTypeIndex])
+
+                    val newSort = MemberSortBy.entries[editSortByIndex]
+                    viewModel.setSortBy(newSort)
+
+                    viewModel.setRecentMissedWindow(editRecentN)
+
+                    val newMonth = availableMonths.find { it.label == editMonthLabel }
+                    if (newMonth != null && newMonth != selectedMonth) {
+                        savedMonthLabel = editMonthLabel
+                        viewModel.selectMonth(newMonth)
+                    }
+
+                    showFilterDialog = false
+                }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFilterDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 }
 
@@ -572,10 +733,6 @@ private fun TopMemberRow(index: Int, stat: MemberMonthlyStat) {
 @Composable
 private fun MembersTab(
     stats: List<MemberMonthlyStat>,
-    sortBy: MemberSortBy,
-    onSortChange: (MemberSortBy) -> Unit,
-    typeFilter: TypeFilter,
-    onTypeFilterChange: (TypeFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (stats.isEmpty()) {
@@ -586,37 +743,6 @@ private fun MembersTab(
     }
 
     Column(modifier) {
-        // 类型 + 排序合并为单行，横向滚动以压缩纵向占用
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TypeFilter.entries.forEach { filter ->
-                FilterPill(
-                    label = filter.label,
-                    selected = typeFilter == filter,
-                    onClick = { onTypeFilterChange(filter) }
-                )
-            }
-            Box(
-                Modifier
-                    .width(1.dp)
-                    .height(18.dp)
-                    .background(MaterialTheme.cocColors.hairline)
-            )
-            MemberSortBy.entries.forEach { sort ->
-                FilterPill(
-                    label = sort.label,
-                    selected = sortBy == sort,
-                    onClick = { onSortChange(sort) }
-                )
-            }
-        }
-
         // 表头
         Row(
             Modifier
@@ -716,43 +842,9 @@ private fun MemberStatCard(stat: MemberMonthlyStat) {
 @Composable
 private fun MissedTab(
     ranks: List<RecentMissedRank>,
-    viewModel: StatsViewModel,
-    typeFilter: TypeFilter,
-    onTypeFilterChange: (TypeFilter) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedN by remember { mutableIntStateOf(0) }
-
     Column(modifier.padding(horizontal = 20.dp)) {
-        // 类型 + 范围合并为单行，横向滚动以压缩纵向占用
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TypeFilter.entries.forEach { filter ->
-                FilterPill(
-                    label = filter.label,
-                    selected = typeFilter == filter,
-                    onClick = { onTypeFilterChange(filter); viewModel.loadRecentMissed(selectedN) }
-                )
-            }
-            Box(
-                Modifier
-                    .width(1.dp)
-                    .height(18.dp)
-                    .background(MaterialTheme.cocColors.hairline)
-            )
-            val options = listOf(3 to "近3次", 7 to "近7次", 0 to "当月全部")
-            options.forEach { (n, label) ->
-                FilterPill(
-                    label = label,
-                    selected = selectedN == n,
-                    onClick = { selectedN = n; viewModel.loadRecentMissed(n) }
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
 
         if (ranks.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

@@ -24,6 +24,7 @@ import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.repository.WarRepository
+import com.cocwar.ui.importflow.MatchOption
 import com.cocwar.ui.importflow.MemberMatchPreview
 import com.cocwar.ui.importflow.MemberMatchState
 import com.cocwar.ui.importflow.WarNameField
@@ -42,11 +43,14 @@ fun ClipboardImportDialog(
     var eventType by remember { mutableStateOf(parsed.event.eventType) }
     var nameError by remember { mutableStateOf(false) }
     var matchStates by remember { mutableStateOf<List<MemberMatchState>>(emptyList()) }
+    var roster by remember { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(parsed) {
         name = repo.generateEventName(parsed.event.eventType, parsed.event.eventRound)
-        matchStates = buildMatchStates(parsed, repo.getRoster())
+        val loadedRoster = repo.getRoster()
+        roster = loadedRoster
+        matchStates = buildMatchStates(parsed, loadedRoster)
     }
 
     AlertDialog(
@@ -57,7 +61,11 @@ fun ClipboardImportDialog(
                 val editedMembers = parsed.members.mapIndexed { i, m ->
                     val state = matchStates.getOrNull(i)
                     if (state != null) {
-                        val finalName = if (state.acceptSuggestion && state.suggestion != null) state.suggestion else state.editedName
+                        val finalName = when (state.matchOption) {
+                            MatchOption.USE_SUGGESTION -> state.suggestion ?: state.editedName
+                            MatchOption.PICK_FROM_ROSTER -> state.selectedRosterName ?: state.editedName
+                            MatchOption.AS_NEW_MEMBER -> state.editedName
+                        }
                         if (finalName != m.playerName) m.copy(playerName = finalName) else m
                     } else m
                 }
@@ -83,8 +91,23 @@ fun ClipboardImportDialog(
                 WarPreviewCard(parsed = parsed)
                 MemberMatchPreview(
                     matchStates = matchStates,
+                    roster = roster,
                     onNameEdit = { i, n -> matchStates = matchStates.toMutableList().also { it[i] = it[i].copy(editedName = n) } },
-                    onToggleSuggestion = { i, v -> matchStates = matchStates.toMutableList().also { it[i] = it[i].copy(acceptSuggestion = v) } }
+                    onOptionChange = { i, opt ->
+                        matchStates = matchStates.toMutableList().also {
+                            it[i] = it[i].copy(matchOption = opt, selectedRosterName = null)
+                        }
+                    },
+                    onRosterPick = { i, name ->
+                        matchStates = matchStates.toMutableList().also {
+                            it[i] = it[i].copy(selectedRosterName = name)
+                        }
+                    },
+                    onToggleDropdown = { i ->
+                        matchStates = matchStates.toMutableList().also {
+                            it[i] = it[i].copy(dropdownExpanded = !it[i].dropdownExpanded)
+                        }
+                    }
                 )
                 WarTypeRoundSection(eventType = eventType, onTypeChange = {
                     eventType = it

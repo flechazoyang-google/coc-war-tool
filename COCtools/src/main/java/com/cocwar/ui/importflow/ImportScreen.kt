@@ -68,14 +68,16 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf(false) }
     var matchStates by remember { mutableStateOf<List<MemberMatchState>>(emptyList()) }
+    var roster by remember { mutableStateOf<List<String>>(emptyList()) }
 
     LaunchedEffect(parsedEvent) {
         parsedEvent?.let { parsed ->
             eventType = parsed.event.eventType
             name = viewModel.generateName(parsed.event.eventType, parsed.event.eventRound)
             nameError = false
-            val roster = viewModel.loadRoster()
-            matchStates = buildMatchStates(parsed, roster)
+            val loadedRoster = viewModel.loadRoster()
+            roster = loadedRoster
+            matchStates = buildMatchStates(parsed, loadedRoster)
         }
     }
 
@@ -206,8 +208,23 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                 SectionTitle("成员匹配")
                 MemberMatchPreview(
                     matchStates = matchStates,
+                    roster = roster,
                     onNameEdit = { i, n -> matchStates = matchStates.toMutableList().also { it[i] = it[i].copy(editedName = n) } },
-                    onToggleSuggestion = { i, v -> matchStates = matchStates.toMutableList().also { it[i] = it[i].copy(acceptSuggestion = v) } }
+                    onOptionChange = { i, opt ->
+                        matchStates = matchStates.toMutableList().also {
+                            it[i] = it[i].copy(matchOption = opt, selectedRosterName = null)
+                        }
+                    },
+                    onRosterPick = { i, name ->
+                        matchStates = matchStates.toMutableList().also {
+                            it[i] = it[i].copy(selectedRosterName = name)
+                        }
+                    },
+                    onToggleDropdown = { i ->
+                        matchStates = matchStates.toMutableList().also {
+                            it[i] = it[i].copy(dropdownExpanded = !it[i].dropdownExpanded)
+                        }
+                    }
                 )
 
                 Spacer(Modifier.height(18.dp))
@@ -218,7 +235,11 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                         val editedMembers = parsed.members.mapIndexed { i, m ->
                             val state = matchStates.getOrNull(i)
                             if (state != null) {
-                                val finalName = if (state.acceptSuggestion && state.suggestion != null) state.suggestion else state.editedName
+                                val finalName = when (state.matchOption) {
+                                    MatchOption.USE_SUGGESTION -> state.suggestion ?: state.editedName
+                                    MatchOption.PICK_FROM_ROSTER -> state.selectedRosterName ?: state.editedName
+                                    MatchOption.AS_NEW_MEMBER -> state.editedName
+                                }
                                 if (finalName != m.playerName) m.copy(playerName = finalName) else m
                             } else m
                         }

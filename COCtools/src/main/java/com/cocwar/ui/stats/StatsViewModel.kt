@@ -17,10 +17,8 @@ import java.util.Calendar
 
 /** 成员排序方式 */
 enum class MemberSortBy(val label: String) {
-    EFFECTIVE_RATE("有效参战率"),
-    TOTAL_STARS("总星数"),
-    PARTICIPATED("参战次数"),
-    ATTACKED("进攻次数")
+    ATTACKED_COUNT("有效参战次数"),
+    THREE_STAR_RATE("三星率")
 }
 
 /** 类型筛选 */
@@ -53,10 +51,14 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     val loading: StateFlow<Boolean> = MutableStateFlow(false)
 
     // --- 排序 ---
-    val sortBy: StateFlow<MemberSortBy> = MutableStateFlow(MemberSortBy.EFFECTIVE_RATE)
+    val sortBy: StateFlow<MemberSortBy> = MutableStateFlow(MemberSortBy.ATTACKED_COUNT)
 
     // --- 类型筛选 ---
     val typeFilter: StateFlow<TypeFilter> = MutableStateFlow(TypeFilter.ALL)
+
+    // --- 未进攻窗口 ---
+    private val _recentMissedWindow = MutableStateFlow(0)
+    val recentMissedWindow: StateFlow<Int> = _recentMissedWindow
 
     // 缓存当月原始数据
     private var currentEvents: List<WarEventEntity> = emptyList()
@@ -128,17 +130,13 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         recomputeForFilter()
     }
 
-    fun loadRecentMissed(n: Int) {
-        viewModelScope.launch {
-            val selected = currentEvents.sortedByDescending { it.createdAt }
-            val filtered = filterEventsByType(selected)
-            val events = if (n <= 0) filtered else filtered.take(n)
-            val eventIds = events.map { it.eventId }
-            val members = if (eventIds.isNotEmpty()) repo.getMembersByEventIds(eventIds) else emptyList()
+    fun setRecentMissedWindow(n: Int) {
+        _recentMissedWindow.value = n
+        recomputeRecentMissed()
+    }
 
-            (recentMissed as MutableStateFlow).value =
-                StatsCalculator.computeRecentMissed(events, members, n)
-        }
+    fun loadRecentMissed(n: Int) {
+        setRecentMissedWindow(n)
     }
 
     private fun loadMonth(option: MonthOption) {
@@ -150,24 +148,8 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
             val members = if (eventIds.isNotEmpty()) repo.getMembersByEventIds(eventIds) else emptyList()
             currentMembers = members
 
-            // 总览
-            (overview as MutableStateFlow).value =
-                StatsCalculator.computeOverview(events, members)
-
-            // 成员统计
-            val rawMembers = StatsCalculator.computeMonthly(events, members)
-            (memberStats as MutableStateFlow).value = rawMembers
-            applySort()
-
-            // 战报摘要
-            (eventSummaries as MutableStateFlow).value =
-                StatsCalculator.computeEventSummaries(events, members)
-
-            // 未进攻排行（默认当月全部）
-            (recentMissed as MutableStateFlow).value =
-                StatsCalculator.computeRecentMissed(
-                    events.sortedByDescending { it.createdAt }, members, 0
-                )
+            // 应用当前类型筛选
+            recomputeForFilter()
 
             (loading as MutableStateFlow).value = false
         }
@@ -176,10 +158,16 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     private fun applySort() {
         val raw = (memberStats as MutableStateFlow).value
         val sorted = when (sortBy.value) {
-            MemberSortBy.EFFECTIVE_RATE -> raw.sortedByDescending { it.effectiveRate }
-            MemberSortBy.TOTAL_STARS -> raw.sortedByDescending { it.totalStars }
-            MemberSortBy.PARTICIPATED -> raw.sortedByDescending { it.participated }
-            MemberSortBy.ATTACKED -> raw.sortedByDescending { it.attacked }
+            MemberSortBy.ATTACKED_COUNT -> raw.sortedWith(
+                compareByDescending<MemberMonthlyStat> { it.attacked }
+                    .thenByDescending { it.threeStarRate }
+                    .thenByDescending { it.avgDestruction }
+            )
+            MemberSortBy.THREE_STAR_RATE -> raw.sortedWith(
+                compareByDescending<MemberMonthlyStat> { it.threeStarRate }
+                    .thenByDescending { it.attacked }
+                    .thenByDescending { it.avgDestruction }
+            )
         }
         (memberStats as MutableStateFlow).value = sorted
     }
@@ -197,13 +185,29 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         val eventIds = events.map { it.eventId }.toSet()
         val members = currentMembers.filter { it.eventId in eventIds }
 
+        (overview as MutableStateFlow).value =
+            StatsCalculator.computeOverview(events, members)
+
         val rawMembers = StatsCalculator.computeMonthly(events, members)
         (memberStats as MutableStateFlow).value = rawMembers
         applySort()
 
+        (eventSummaries as MutableStateFlow).value =
+            StatsCalculator.computeEventSummaries(events, members)
+
+        recomputeRecentMissed(events, members)
+    }
+
+    private fun recomputeRecentMissed(
+        events: List<WarEventEntity> = filterEventsByType(currentEvents),
+        members: List<MemberEntity> = currentMembers.filter { it.eventId in events.map { e -> e.eventId }.toSet() }
+    ) {
+        val selected = events.sortedByDescending { it.createdAt }
+        val window = _recentMissedWindow.value
+        val windowed = if (window <= 0) selected else selected.take(window)
+        val windowedIds = windowed.map { it.eventId }.toSet()
+        val windowedMembers = currentMembers.filter { it.eventId in windowedIds }
         (recentMissed as MutableStateFlow).value =
-            StatsCalculator.computeRecentMissed(
-                events.sortedByDescending { it.createdAt }, members, 0
-            )
+            StatsCalculator.computeRecentMissed(windowed, windowedMembers, window)
     }
 }
