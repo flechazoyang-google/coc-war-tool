@@ -10,6 +10,7 @@ import com.cocwar.domain.MemberMonthlyStat
 import com.cocwar.domain.RecentMissedRank
 import com.cocwar.domain.StatsCalculator
 import com.cocwar.domain.StatsOverview
+import com.cocwar.domain.TopMemberScore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -48,6 +49,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     val memberStats: StateFlow<List<MemberMonthlyStat>> = MutableStateFlow(emptyList())
     val eventSummaries: StateFlow<List<EventStatSummary>> = MutableStateFlow(emptyList())
     val recentMissed: StateFlow<List<RecentMissedRank>> = MutableStateFlow(emptyList())
+    val topMembers: StateFlow<List<TopMemberScore>> = MutableStateFlow(emptyList())
     val loading: StateFlow<Boolean> = MutableStateFlow(false)
 
     // --- 排序 ---
@@ -185,8 +187,13 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         val eventIds = events.map { it.eventId }.toSet()
         val members = currentMembers.filter { it.eventId in eventIds }
 
+        // 总览始终使用全量数据，不受类型筛选影响
         (overview as MutableStateFlow).value =
-            StatsCalculator.computeOverview(events, members)
+            StatsCalculator.computeOverview(currentEvents, currentMembers)
+
+        // 本月最佳：仅统计部落战，使用全量数据
+        (topMembers as MutableStateFlow).value =
+            StatsCalculator.computeTopMembers(currentEvents, currentMembers)
 
         val rawMembers = StatsCalculator.computeMonthly(events, members)
         (memberStats as MutableStateFlow).value = rawMembers

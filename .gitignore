@@ -36,3 +36,4 @@ cocwar_test.json
 # Env / secrets（请勿提交真实令牌）
 .env
 .env.*
+node_modules/

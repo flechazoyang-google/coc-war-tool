@@ -80,7 +80,7 @@ class FloatingBallService : Service() {
                 ScreenCaptureService.ACTION_CAPTURE_DONE -> {
                     val pages = intent.getIntExtra("pages", 0)
                     Log.i(TAG, "截图完成：共 $pages 页")
-                    Toast.makeText(this@FloatingBallService, "截图完成：共 $pages 页", Toast.LENGTH_LONG).show()
+                    showCaptureDoneNotification(pages)
                 }
             }
         }
@@ -104,6 +104,9 @@ class FloatingBallService : Service() {
         try { createBall() } catch (e: Exception) {
             Log.e(TAG, "悬浮球创建失败", e); stopSelf(); return
         }
+
+        // 自动启动部落冲突
+        launchGame()
 
         val filter = IntentFilter().apply {
             addAction(ScreenCaptureService.ACTION_HIDE_OVERLAY)
@@ -290,6 +293,65 @@ class FloatingBallService : Service() {
         progressOverlay?.let { runCatching { windowManager.removeView(it) } }
         progressOverlay = null
         progressText = null
+    }
+
+    // ==================== 启动游戏 ====================
+
+    private fun launchGame() {
+        try {
+            // 尝试多个版本的部落冲突包名（国际版 / 昆仑版 / 腾讯版）
+            val pkgs = listOf(
+                "com.supercell.clashofclans",
+                "com.supercell.clashofclans.kunlun",
+                "com.tencent.tmgp.supercell.clashofclans"
+            )
+            for (pkg in pkgs) {
+                val intent = packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    Log.i(TAG, "已启动部落冲突 ($pkg)")
+                    return
+                }
+            }
+            Log.w(TAG, "未找到部落冲突，尝试的包名: $pkgs")
+            Toast.makeText(this, "未找到部落冲突，请确认已安装", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e(TAG, "启动游戏失败", e)
+        }
+    }
+
+    // ==================== 截图完成通知 ====================
+
+    private fun showCaptureDoneNotification(pages: Int) {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+        // 使用高优先级渠道确保弹窗可见
+        val channelId = "screenshot_done"
+        val channel = NotificationChannel(
+            channelId,
+            "截图完成",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            enableVibration(true)
+        }
+        nm.createNotificationChannel(channel)
+
+        val clickIntent = PendingIntent.getActivity(
+            this, 1,
+            Intent(this, com.cocwar.ui.MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("截图完成")
+            .setContentText("共保存 $pages 张截图到相册")
+            .setSmallIcon(R.drawable.ic_app_logo)
+            .setContentIntent(clickIntent)
+            .setAutoCancel(true)
+            .build()
+
+        nm.notify(1001, notification)
     }
 
     private fun removeBall() {

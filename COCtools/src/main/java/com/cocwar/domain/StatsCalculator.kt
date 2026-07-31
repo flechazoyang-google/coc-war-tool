@@ -79,6 +79,18 @@ data class RecentMissedRank(
     val missedCount: Int           // 参与但未进攻次数
 )
 
+/** 本月最佳积分制评分条目（仅统计部落战） */
+data class TopMemberScore(
+    val playerName: String,
+    val role: String,
+    val totalStars: Int,
+    val attacked: Int,              // 有效参战次数（部落战）
+    val totalWarEvents: Int,        // 本月部落战总次数
+    val threeStarCount: Int,        // 三星次数
+    val threeStarRate: Float,       // 三星率（分母含 unused）
+    val score: Float                // 总得分（满分 100）
+)
+
 /**
  * Aggregate statistics computed from one event's members.
  */
@@ -162,12 +174,13 @@ object StatsCalculator {
 
             // 增强指标
             val totalStars = monthMembers.sumOf { it.totalStars }
-            val allUsedAttacks = monthMembers.flatMap { it.attacks }.filter { it.status == "used" }
+            val allAttacks = monthMembers.flatMap { it.attacks }
+            val allUsedAttacks = allAttacks.filter { it.status == "used" }
             val avgStars = if (participated > 0) totalStars.toFloat() / participated else 0f
             val avgDestruction = if (allUsedAttacks.isNotEmpty())
                 allUsedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
             val threeStarCount = allUsedAttacks.count { it.destructionPercentage == 100 }
-            val threeStarRate = if (allUsedAttacks.isNotEmpty()) threeStarCount.toFloat() / allUsedAttacks.size else 0f
+            val threeStarRate = if (allAttacks.isNotEmpty()) threeStarCount.toFloat() / allAttacks.size else 0f
             // 归一化：部落战单成员最多 6 星（2 次×3），联赛最多 3 星（1 次×3）；
             // 用「每次进攻可得星数」归一，使两类战报的星率可比（0~1）。
             val starRate = if (allUsedAttacks.isNotEmpty())
@@ -336,5 +349,49 @@ object StatsCalculator {
                 missedCount = missed
             )
         }.sortedByDescending { it.missedCount }
+    }
+
+    /**
+     * 本月最佳积分制评选（仅统计部落战）。
+     *
+     * 总分 = 三星率×50 + 总星数/(部落战次数×6)×30 + 有效参战次数/部落战次数×20
+     * 满分 100。
+     */
+    fun computeTopMembers(
+        events: List<WarEventEntity>,
+        allMembers: List<MemberEntity>
+    ): List<TopMemberScore> {
+        val warEvents = events.filter { it.eventType != "league" }
+        if (warEvents.isEmpty()) return emptyList()
+
+        val warEventIds = warEvents.map { it.eventId }.toSet()
+        val totalWar = warEvents.size
+        val warMembers = allMembers.filter { it.eventId in warEventIds }
+        val byPlayer = warMembers.groupBy { it.playerName }
+
+        return byPlayer.map { (name, members) ->
+            val allAttacks = members.flatMap { it.attacks }
+            val usedAttacks = allAttacks.filter { it.status == "used" }
+            val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
+            val totalStars = members.sumOf { it.totalStars }
+            val attacked = members.count { m -> m.attacks.any { a -> a.status == "used" } }
+            val role = members.lastOrNull()?.role ?: "member"
+
+            val threeStarRate = if (allAttacks.isNotEmpty()) threeStarCount.toFloat() / allAttacks.size else 0f
+            val starScore = if (totalWar > 0) (totalStars.toFloat() / (totalWar * 6)) * 30f else 0f
+            val partScore = if (totalWar > 0) (attacked.toFloat() / totalWar) * 20f else 0f
+            val score = (threeStarRate * 50f) + starScore + partScore
+
+            TopMemberScore(
+                playerName = name,
+                role = role,
+                totalStars = totalStars,
+                attacked = attacked,
+                totalWarEvents = totalWar,
+                threeStarCount = threeStarCount,
+                threeStarRate = threeStarRate,
+                score = score
+            )
+        }.sortedByDescending { it.score }
     }
 }

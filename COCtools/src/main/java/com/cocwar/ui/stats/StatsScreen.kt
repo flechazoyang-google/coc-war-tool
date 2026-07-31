@@ -95,6 +95,7 @@ fun StatsScreen(onBack: () -> Unit) {
     val selectedMonth by viewModel.selectedMonth.collectAsStateWithLifecycle()
     val sortBy by viewModel.sortBy.collectAsStateWithLifecycle()
     val recentMissedWindow by viewModel.recentMissedWindow.collectAsStateWithLifecycle()
+    val topMembers by viewModel.topMembers.collectAsStateWithLifecycle()
 
     var tab by rememberSaveable { mutableIntStateOf(0) }  // 0=总览, 1=排名, 2=预警
 
@@ -172,7 +173,7 @@ fun StatsScreen(onBack: () -> Unit) {
                 }
             }
             else -> when (tab) {
-                0 -> OverviewTab(overview, memberStats, Modifier.weight(1f))
+                0 -> OverviewTab(overview, topMembers, Modifier.weight(1f))
                 1 -> MembersTab(memberStats, Modifier.weight(1f))
                 2 -> MissedTab(recentMissed, Modifier.weight(1f))
             }
@@ -361,7 +362,7 @@ fun StatsScreen(onBack: () -> Unit) {
 @Composable
 private fun OverviewTab(
     overview: StatsOverview?,
-    memberStats: List<MemberMonthlyStat>,
+    topMembers: List<com.cocwar.domain.TopMemberScore>,
     modifier: Modifier = Modifier
 ) {
     if (overview == null || overview.totalEvents == 0) {
@@ -390,18 +391,12 @@ private fun OverviewTab(
             item { TypeStatsCard(league) }
         } ?: item { EmptyTypeHint("本月无联赛") }
 
-        // === 本月最佳（按归一化星率排名，部落战与联赛可比） ===
-        val top3 = memberStats
-            .filter { it.totalStars > 0 }
-            .sortedWith(
-                compareByDescending<MemberMonthlyStat> { it.starRate }
-                    .thenByDescending { it.totalStars }
-            )
-            .take(3)
+        // === 本月最佳（积分制，仅统计部落战） ===
+        val top3 = topMembers.take(3)
         if (top3.isNotEmpty()) {
             item { SectionTitle("本月最佳") }
-            itemsIndexed(top3, key = { _, s -> s.playerName }) { index, stat ->
-                TopMemberRow(index = index + 1, stat = stat)
+            itemsIndexed(top3, key = { _, s -> s.playerName }) { index, score ->
+                TopScoreRow(index = index + 1, score = score)
                 if (index < top3.lastIndex) {
                     Box(
                         Modifier
@@ -673,7 +668,7 @@ private fun CountStat(
 // ===== 本月最佳：表格化序号行 =====
 
 @Composable
-private fun TopMemberRow(index: Int, stat: MemberMonthlyStat) {
+private fun TopScoreRow(index: Int, score: com.cocwar.domain.TopMemberScore) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -691,36 +686,29 @@ private fun TopMemberRow(index: Int, stat: MemberMonthlyStat) {
         )
         Column(Modifier.weight(1f)) {
             Text(
-                stat.playerName,
+                score.playerName,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = roleColor(stat.role)
+                color = roleColor(score.role)
             )
             Spacer(Modifier.height(1.dp))
             Text(
-                "${roleLabel(stat.role)} · 参战 ${stat.participated}/${stat.totalEvents}",
+                "${roleLabel(score.role)} · 参战 ${score.attacked}/${score.totalWarEvents} · 三星 ${score.threeStarCount}次",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                "${stat.totalStars} 星",
+                "${"%.1f".format(score.score)}分",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.cocColors.star
+                color = if (index == 1) MaterialTheme.cocColors.star
+                else MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(1.dp))
             Text(
-                "星率 ${formatPercent(stat.starRate * 100)}",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = if (stat.starRate >= 0.8f) MaterialTheme.cocColors.accent
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(1.dp))
-            Text(
-                "三星 ${stat.threeStarCount} 次",
+                "${score.totalStars}星 · 三星率 ${formatPercent(score.threeStarRate * 100)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
