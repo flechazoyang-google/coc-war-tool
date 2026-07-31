@@ -33,6 +33,11 @@ class WarRepository(
         dao.deleteEvent(id)
     }
 
+    /** 清空全部战报与成员（云端备份完整还原时使用）。 */
+    suspend fun clearAllEvents() {
+        dao.clearAll()
+    }
+
     suspend fun getEventsInRange(start: Long, end: Long): List<WarEventEntity> =
         dao.getEventsInRange(start, end)
 
@@ -254,10 +259,13 @@ class WarRepository(
 
     /** 从 SAABBCC 格式名称解析类型和轮次；无法解析时保留原值。 */
     private fun parseTypeAndRound(name: String, fallbackType: String, fallbackRound: Int): Pair<String, Int> {
+        // 严格校验：S ∈ {'0','1'} 且第 1~6 位全为数字、月份合法，避免非标准名称误判
         if (name.length < 7) return fallbackType to fallbackRound
         val s = name[0]
-        // 首字符必须是合法类型标识，否则视为无法解析（避免把 "1212战报01" 之类误判为联赛）
         if (s != '0' && s != '1') return fallbackType to fallbackRound
+        if (!name.substring(1, 7).all { it.isDigit() }) return fallbackType to fallbackRound
+        val month = name.substring(3, 5).toIntOrNull() ?: return fallbackType to fallbackRound
+        if (month !in 1..12) return fallbackType to fallbackRound
         val cc = name.substring(5, 7).toIntOrNull() ?: return fallbackType to fallbackRound
         val type = if (s == '1') "league" else "war"
         val round = if (s == '1') {

@@ -15,11 +15,18 @@ class ImportViewModel(private val repo: WarRepository) : ViewModel() {
 
     suspend fun loadRoster(): List<String> = repo.getRoster()
 
-    fun addToRoster(names: List<String>) {
-        viewModelScope.launch { repo.addToRoster(names) }
-    }
-
+    /**
+     * 保存事件：自动把名单外的成员加入花名册，再导入事件，全部串行在
+     * 同一个 viewModelScope 协程中完成。避免 onSaved→popBackStack 后
+     * 名单写入协程被取消导致新成员丢失。
+     */
     fun save(parsed: WarJsonParser.ParsedEvent, onSaved: () -> Unit) {
-        viewModelScope.launch { repo.importEvent(parsed); onSaved() }
+        viewModelScope.launch {
+            val roster = repo.getRoster()
+            val newNames = parsed.members.map { it.playerName }.filter { it !in roster }.distinct()
+            if (newNames.isNotEmpty()) repo.addToRoster(newNames)
+            repo.importEvent(parsed)
+            onSaved()
+        }
     }
 }

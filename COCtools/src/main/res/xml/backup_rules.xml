@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 及以下 (API 30) 全量备份规则：排除 WebDAV 凭据 -->
+<full-backup-content>
+    <exclude
+        domain="sharedpref"
+        path="coc_webdav_prefs.xml" />
+    <exclude
+        domain="sharedpref"
+        path="coc_webdav_secure_prefs.xml" />
+</full-backup-content>

@@ -48,6 +48,7 @@ import com.cocwar.di.warViewModel
 import com.cocwar.domain.MemberMonthlyStat
 import com.cocwar.domain.RecentMissedRank
 import com.cocwar.domain.StatsOverview
+import com.cocwar.domain.TopMemberScore
 import com.cocwar.domain.TypeStats
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
@@ -97,13 +98,13 @@ fun StatsScreen(onBack: () -> Unit) {
     val recentMissedWindow by viewModel.recentMissedWindow.collectAsStateWithLifecycle()
     val topMembers by viewModel.topMembers.collectAsStateWithLifecycle()
 
-    var tab by rememberSaveable { mutableIntStateOf(0) }  // 0=总览, 1=排名, 2=预警
+    var tab by rememberSaveable { mutableIntStateOf(0) }  // 0=总览, 1=排名, 2=预警, 3=本月最佳
 
     // 视图标签
-    val viewLabels = listOf("总览", "排名", "预警")
+    val viewLabels = listOf("总览", "排名", "预警", "本月最佳")
 
     // 筛选持久化 —— rememberSaveable
-    var typeFilterIndex by rememberSaveable { mutableIntStateOf(0) }  // 0=ALL, 1=WAR, 2=LEAGUE
+    var typeFilterIndex by rememberSaveable { mutableIntStateOf(0) }  // 0=部落战(默认), 1=联赛
     var savedMonthLabel by rememberSaveable { mutableStateOf("") }   // 持久化月份标签
     var showFilterDialog by remember { mutableStateOf(false) }
 
@@ -124,6 +125,13 @@ fun StatsScreen(onBack: () -> Unit) {
             editMonthLabel = selectedMonth?.label ?: ""
         }
     }
+
+    // 跨版本恢复保护：旧版枚举含 ALL(0,1,2)，新版仅 WAR/LEAGUE(0,1)。
+    // rememberSaveable 恢复旧值 2 会越界崩溃、旧值 1 会静默错位，这里统一收敛到合法范围。
+    val safeTypeIndex = typeFilterIndex.coerceIn(0, TypeFilter.entries.lastIndex)
+    if (typeFilterIndex != safeTypeIndex) typeFilterIndex = safeTypeIndex
+    val safeEditTypeIndex = editTypeIndex.coerceIn(0, TypeFilter.entries.lastIndex)
+    if (editTypeIndex != safeEditTypeIndex) editTypeIndex = safeEditTypeIndex
 
     val currentTypeFilter = TypeFilter.entries[typeFilterIndex]
 
@@ -173,9 +181,10 @@ fun StatsScreen(onBack: () -> Unit) {
                 }
             }
             else -> when (tab) {
-                0 -> OverviewTab(overview, topMembers, Modifier.weight(1f))
+                0 -> OverviewTab(overview, Modifier.weight(1f))
                 1 -> MembersTab(memberStats, Modifier.weight(1f))
                 2 -> MissedTab(recentMissed, Modifier.weight(1f))
+                3 -> TopMembersTab(topMembers, Modifier.weight(1f))
             }
         }
     }
@@ -201,8 +210,8 @@ fun StatsScreen(onBack: () -> Unit) {
                         }
                     }
 
-                    // 类型区（仅排名/预警时显示）
-                    if (editViewTab != 0) {
+                    // 类型区（仅排名/预警时显示；总览与本月最佳固定展示全量数据）
+                    if (editViewTab == 1 || editViewTab == 2) {
                         Spacer(Modifier.height(14.dp))
                         Box(
                             Modifier
@@ -329,13 +338,22 @@ fun StatsScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     // 应用所有选择
                     tab = editViewTab
-                    typeFilterIndex = editTypeIndex
-                    viewModel.setTypeFilter(TypeFilter.entries[editTypeIndex])
+                    // 类型筛选仅对排名/预警生效（总览与本月最佳固定全量数据）
+                    if (editViewTab == 1 || editViewTab == 2) {
+                        typeFilterIndex = editTypeIndex.coerceIn(0, TypeFilter.entries.lastIndex)
+                        viewModel.setTypeFilter(TypeFilter.entries[typeFilterIndex])
+                    }
 
-                    val newSort = MemberSortBy.entries[editSortByIndex]
-                    viewModel.setSortBy(newSort)
+                    // 排序方式仅对排名生效
+                    if (editViewTab == 1) {
+                        val newSort = MemberSortBy.entries[editSortByIndex]
+                        viewModel.setSortBy(newSort)
+                    }
 
-                    viewModel.setRecentMissedWindow(editRecentN)
+                    // 时间段仅对预警生效
+                    if (editViewTab == 2) {
+                        viewModel.setRecentMissedWindow(editRecentN)
+                    }
 
                     val newMonth = availableMonths.find { it.label == editMonthLabel }
                     if (newMonth != null && newMonth != selectedMonth) {
@@ -362,7 +380,6 @@ fun StatsScreen(onBack: () -> Unit) {
 @Composable
 private fun OverviewTab(
     overview: StatsOverview?,
-    topMembers: List<com.cocwar.domain.TopMemberScore>,
     modifier: Modifier = Modifier
 ) {
     if (overview == null || overview.totalEvents == 0) {
@@ -391,24 +408,55 @@ private fun OverviewTab(
             item { TypeStatsCard(league) }
         } ?: item { EmptyTypeHint("本月无联赛") }
 
-        // === 本月最佳（积分制，仅统计部落战） ===
-        val top3 = topMembers.take(3)
-        if (top3.isNotEmpty()) {
-            item { SectionTitle("本月最佳") }
-            itemsIndexed(top3, key = { _, s -> s.playerName }) { index, score ->
-                TopScoreRow(index = index + 1, score = score)
-                if (index < top3.lastIndex) {
-                    Box(
-                        Modifier
-                            .padding(start = 44.dp)
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(MaterialTheme.cocColors.hairline)
-                    )
-                }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+// ===== 本月最佳：独立视图，展示全部成员得分（按得分降序） =====
+
+@Composable
+private fun TopMembersTab(
+    topMembers: List<TopMemberScore>,
+    modifier: Modifier = Modifier
+) {
+    if (topMembers.isEmpty()) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            EmptyState(title = "本月暂无部落战数据", body = "本月最佳积分制仅统计部落战")
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier.padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
+    ) {
+        item { SectionTitle("本月最佳 · 积分制") }
+        item {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 34.dp, end = 2.dp, top = 6.dp, bottom = 4.dp)
+            ) {
+                Text("排名", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                Text("得分", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End, modifier = Modifier.weight(1f))
             }
         }
-
+        // 全部成员按得分降序展示（computeTopMembers 已按 score 排序）
+        itemsIndexed(topMembers, key = { _, s -> s.playerName }) { index, score ->
+            TopScoreRow(index = index + 1, score = score)
+            if (index < topMembers.lastIndex) {
+                Box(
+                    Modifier
+                        .padding(start = 44.dp)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.cocColors.hairline)
+                )
+            }
+        }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
@@ -668,7 +716,7 @@ private fun CountStat(
 // ===== 本月最佳：表格化序号行 =====
 
 @Composable
-private fun TopScoreRow(index: Int, score: com.cocwar.domain.TopMemberScore) {
+private fun TopScoreRow(index: Int, score: TopMemberScore) {
     Row(
         Modifier
             .fillMaxWidth()

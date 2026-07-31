@@ -25,6 +25,7 @@ import com.cocwar.data.model.EVENT_TYPE_WAR
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.repository.WarRepository
 import com.cocwar.ui.importflow.MatchOption
+import com.cocwar.ui.util.parseEventRoundFromName
 import com.cocwar.ui.importflow.MemberMatchPreview
 import com.cocwar.ui.importflow.MemberMatchState
 import com.cocwar.ui.importflow.WarNameField
@@ -70,7 +71,12 @@ fun ClipboardImportDialog(
                     } else m
                 }
                 val adjusted = parsed.copy(
-                    event = parsed.event.copy(eventName = name.trim(), eventType = eventType, eventRound = 0),
+                    // eventRound 从名称解析（联赛 SAABBCC 的 CC 段），避免丢失轮次
+                    event = parsed.event.copy(
+                        eventName = name.trim(),
+                        eventType = eventType,
+                        eventRound = parseEventRoundFromName(name.trim())
+                    ),
                     members = editedMembers
                 )
                 scope.launch {

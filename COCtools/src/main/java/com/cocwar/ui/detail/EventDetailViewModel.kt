@@ -46,30 +46,14 @@ class EventDetailViewModel(private val repo: WarRepository, private val eventId:
 
     // === 成员编辑 ===
 
-    /** 切换某个成员的某次进攻状态 used ↔ unused */
-    fun toggleAttackStatus(member: MemberEntity, attackOrder: Int) {
+    /** 修改某次进攻的状态与摧毁率（一次原子写入，避免双协程竞态） */
+    fun updateAttack(member: MemberEntity, attackOrder: Int, used: Boolean, destruction: Int) {
         viewModelScope.launch {
             val newAttacks = member.attacks.map { attack ->
                 if (attack.attackOrder == attackOrder) {
                     attack.copy(
-                        status = if (attack.status == "used") "unused" else "used",
-                        destructionPercentage = if (attack.status == "used") 0 else attack.destructionPercentage
-                    )
-                } else attack
-            }
-            val newTotalStars = computeTotalStars(newAttacks)
-            repo.updateMember(member.copy(attacks = newAttacks, totalStars = newTotalStars))
-        }
-    }
-
-    /** 修改某次进攻的摧毁率 */
-    fun updateAttackDestruction(member: MemberEntity, attackOrder: Int, destruction: Int) {
-        viewModelScope.launch {
-            val newAttacks = member.attacks.map { attack ->
-                if (attack.attackOrder == attackOrder) {
-                    attack.copy(
-                        destructionPercentage = destruction.coerceIn(0, 100),
-                        status = "used"
+                        status = if (used) "used" else "unused",
+                        destructionPercentage = if (used) destruction.coerceIn(0, 100) else 0
                     )
                 } else attack
             }

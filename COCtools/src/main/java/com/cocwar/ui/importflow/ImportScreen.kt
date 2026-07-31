@@ -53,6 +53,7 @@ import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.theme.cocColors
 import kotlinx.coroutines.launch
+import com.cocwar.ui.util.parseEventRoundFromName
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,9 +83,15 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
     }
 
     fun doParse(text: String) {
-        when (val r = viewModel.parse(text)) {
-            is WarJsonParser.ParseResult.Success -> { parsedEvent = r.data; errorMsg = null }
-            is WarJsonParser.ParseResult.Error -> { parsedEvent = null; errorMsg = r.message }
+        // 大 JSON 解析放到 IO 线程，避免阻塞主线程
+        scope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                viewModel.parse(text)
+            }
+            when (result) {
+                is WarJsonParser.ParseResult.Success -> { parsedEvent = result.data; errorMsg = null }
+                is WarJsonParser.ParseResult.Error -> { parsedEvent = null; errorMsg = result.message }
+            }
         }
     }
 
@@ -244,15 +251,15 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                             } else m
                         }
                         val adjusted = parsed.copy(
-                            event = parsed.event.copy(eventName = name.trim(), eventType = eventType, eventRound = 0),
+                            // eventRound 从名称解析（联赛 SAABBCC 的 CC 段），避免丢失轮次
+                            event = parsed.event.copy(
+                                eventName = name.trim(),
+                                eventType = eventType,
+                                eventRound = parseEventRoundFromName(name.trim())
+                            ),
                             members = editedMembers
                         )
-                        // 新成员加入名单
-                        scope.launch {
-                            val roster = viewModel.loadRoster()
-                            val newNames = editedMembers.map { it.playerName }.filter { it !in roster }.distinct()
-                            if (newNames.isNotEmpty()) viewModel.addToRoster(newNames)
-                        }
+                        // save 内部串行完成「新成员入名单 → 导入事件」，避免页面退出后名单丢失
                         viewModel.save(adjusted) { onSaved() }
                     },
                     modifier = Modifier

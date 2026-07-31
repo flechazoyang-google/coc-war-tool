@@ -13,8 +13,8 @@ android {
         applicationId = "com.cocwar"
         minSdk = 30
         targetSdk = 34
-        versionCode = 10
-        versionName = "3.2"
+        versionCode = 11
+        versionName = "3.3"
     }
 
     buildTypes {
@@ -92,6 +92,9 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // 敏感配置加密存储（WebDAV 密码）
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Force core to a compileSdk-34-compatible version (overrides Compose BOM 1.15.0)
     constraints {

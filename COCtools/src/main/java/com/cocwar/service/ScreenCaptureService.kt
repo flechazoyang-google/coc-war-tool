@@ -17,6 +17,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
+import android.net.Uri
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
@@ -97,6 +98,10 @@ class ScreenCaptureService : AccessibilityService() {
                 Log.i(TAG, "截图完成：共 $pageCount 页")
                 showToast("截图完成：共 $pageCount 页")
                 broadcastResult(pageCount)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 用户主动取消：协程取消异常不视为失败，直接重新抛出（配合 finally 收尾）
+                Log.i(TAG, "截图已取消")
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "截图失败", e)
                 showToast("截图失败：${e.message}")
@@ -121,39 +126,64 @@ class ScreenCaptureService : AccessibilityService() {
         try {
             var prevSmall: Bitmap? = null
             var lowDiffStreak = 0
+            // 上一张已保存的 Uri，判定到底时连同当前重复页一起移除
+            var lastSavedUri: Uri? = null
             for (page in 0 until maxPages) {
                 val shot = takeScreenshotWithRetry() ?: break
                 Log.d(TAG, "page=$page 截图成功 ${shot.width}x${shot.height}")
 
-                saveToGallery(shot)
-                savedCount++
-
                 if (page == maxPages - 1) {
+                    saveToGallery(shot)
+                    savedCount++
                     shot.recycle()
                     break
                 }
 
                 val small = downscale(shot)
+                var reachedBottom = false
                 if (prevSmall != null) {
                     val diff = bitmapDiff(prevSmall, small)
                     Log.d(TAG, "page=$page 差异=${"%.3f".format(diff)}")
                     if (diff < 0.03f) {
                         lowDiffStreak++
                         if (lowDiffStreak >= 2) {
-                            // 连续2页无变化，删除最后一张重复截图
-                            // (MediaStore 删除较复杂，这里跳过，最终靠定期清理)
+                            // 连续2页无变化，判定到底：不保存当前重复页，
+                            // 并删除上一张同样重复的截图（它先于判定保存了）
                             Log.d(TAG, "连续${lowDiffStreak}页无变化，判定到底")
-                            small.recycle(); prevSmall?.recycle()
-                            shot.recycle(); break
+                            reachedBottom = true
                         }
                     } else {
                         lowDiffStreak = 0
                     }
                 }
+
+                if (reachedBottom) {
+                    // 移除上一张与当前页重复的截图
+                    lastSavedUri?.let { uri ->
+                        runCatching {
+                            contentResolver.delete(uri, null, null)
+                            savedCount--
+                            Log.d(TAG, "已删除重复截图")
+                        }
+                    }
+                    lastSavedUri = null
+                    small.recycle(); prevSmall?.recycle()
+                    shot.recycle(); break
+                }
+
+                // 非重复页才保存
+                lastSavedUri = saveToGallery(shot)
+                savedCount++
+
                 prevSmall?.recycle()
                 prevSmall = small
 
-                dispatchSwipeUp()
+                val swipeOk = dispatchSwipeUp()
+                if (!swipeOk) {
+                    Log.w(TAG, "上滑手势派发失败，停止滚动截图")
+                    small.recycle(); prevSmall?.recycle()
+                    shot.recycle(); break
+                }
                 delay(900)
                 shot.recycle()
             }
@@ -200,35 +230,48 @@ class ScreenCaptureService : AccessibilityService() {
 
     // ==================== 保存到相册 ====================
 
-    private fun saveToGallery(bitmap: Bitmap) {
-        try {
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "COC_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.png")
-                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/CocWarTool")
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
+    /** 保存到相册；返回可删除的 Uri（供后续移除重复截图），fallback 到私有目录时返回 null。 */
+    private suspend fun saveToGallery(bitmap: Bitmap): Uri? {
+        // PNG 压缩 + 写盘是重 IO 操作，移到 IO 线程，避免阻塞主线程导致卡顿/ANR
+        return withContext(Dispatchers.IO) {
+            var uri: Uri? = null
+            try {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "COC_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.png")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/CocWarTool")
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
                 }
+                uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    contentResolver.openOutputStream(uri)?.use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        values.clear()
+                        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                        contentResolver.update(uri, values, null, null)
+                    }
+                    Log.i(TAG, "截图已保存到相册")
+                }
+            } catch (e: Exception) {
+                // fallback: 保存到私有目录
+                Log.e(TAG, "保存到相册失败，fallback 到私有目录", e)
+                // 清理已插入的 pending 条目，避免 MediaStore 残留幽灵记录
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri != null) {
+                    try {
+                        contentResolver.delete(uri!!, null, null)
+                    } catch (_: Exception) {}
+                }
+                uri = null
+                val dir = File(filesDir, "screenshots")
+                if (!dir.exists()) dir.mkdirs()
+                val file = File(dir, "COC_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.png")
+                FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             }
-            val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            if (uri != null) {
-                contentResolver.openOutputStream(uri)?.use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    values.clear()
-                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    contentResolver.update(uri, values, null, null)
-                }
-                Log.i(TAG, "截图已保存到相册")
-            }
-        } catch (e: Exception) {
-            // fallback: 保存到私有目录
-            Log.e(TAG, "保存到相册失败，fallback 到私有目录", e)
-            val dir = File(filesDir, "screenshots")
-            if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "COC_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.png")
-            FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            uri
         }
     }
 

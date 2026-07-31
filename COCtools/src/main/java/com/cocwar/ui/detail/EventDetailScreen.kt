@@ -206,11 +206,8 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
             onConfirm = {
                 val destruction = editDestructionText.toIntOrNull()?.coerceIn(0, 100) ?: 0
                 val member = info.member
-                viewModel.updateAttackDestruction(member, info.attackOrder, destruction)
-                if (!editStatusUsed) {
-                    // 标记为未使用：切换状态
-                    viewModel.toggleAttackStatus(member, info.attackOrder)
-                }
+                // 一次原子写入状态+摧毁率，避免旧的两次并发写竞态
+                viewModel.updateAttack(member, info.attackOrder, used = editStatusUsed, destruction = destruction)
                 editingAttack = null
             }
         )

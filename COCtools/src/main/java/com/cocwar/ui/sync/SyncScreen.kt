@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,10 +35,13 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +65,9 @@ fun SyncScreen(onBack: () -> Unit) {
     val config = rememberSyncConfig(context)
     val viewModel: SyncViewModel = warViewModel { SyncViewModel(app.repository, config) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // 下载恢复前的二次确认（还原会清空本地数据）
+    var showRestoreConfirm by androidx.compose.runtime.remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -166,7 +173,7 @@ fun SyncScreen(onBack: () -> Unit) {
                     Text("上传备份", fontWeight = FontWeight.SemiBold)
                 }
                 OutlinedButton(
-                    onClick = { viewModel.downloadAndRestore() },
+                    onClick = { showRestoreConfirm = true },
                     modifier = Modifier
                         .weight(1f)
                         .height(46.dp),
@@ -178,6 +185,24 @@ fun SyncScreen(onBack: () -> Unit) {
                     Spacer(Modifier.width(6.dp))
                     Text("下载恢复")
                 }
+            }
+
+            // 下载恢复二次确认对话框
+            if (showRestoreConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showRestoreConfirm = false },
+                    title = { Text("确认恢复备份？") },
+                    text = { Text("将从云端下载备份并完整还原：本地现有战报/成员将被云端数据覆盖（不会清空正式名单），此操作不可撤销。") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showRestoreConfirm = false
+                            viewModel.downloadAndRestore()
+                        }) { Text("确认恢复") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRestoreConfirm = false }) { Text("取消") }
+                    }
+                )
             }
 
             // 状态信息

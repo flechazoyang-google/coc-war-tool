@@ -48,18 +48,21 @@ class WebDavClient(
                 connectTimeout = 15_000
                 readTimeout = 30_000
             }
-            conn.outputStream.use { it.write(data); it.flush() }
-            val code = conn.responseCode
-            val msg = if (code !in 200..299) {
-                val errBody = runCatching {
-                    conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText().orEmpty()
-                }.getOrDefault("")
-                "上传失败 — 目标: $fileUrl — 服务器返回 $code${
-                    if (errBody.isNotBlank()) " — $errBody" else ""
-                }"
-            } else null
-            conn.disconnect()
-            if (msg != null) throw Exception(msg)
+            try {
+                conn.outputStream.use { it.write(data); it.flush() }
+                val code = conn.responseCode
+                val msg = if (code !in 200..299) {
+                    val errBody = runCatching {
+                        conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText().orEmpty()
+                    }.getOrDefault("")
+                    "上传失败 — 目标: $fileUrl — 服务器返回 $code${
+                        if (errBody.isNotBlank()) " — $errBody" else ""
+                    }"
+                } else null
+                if (msg != null) throw Exception(msg)
+            } finally {
+                conn.disconnect()
+            }
         }
     }
 
@@ -73,14 +76,15 @@ class WebDavClient(
                 connectTimeout = 15_000
                 readTimeout = 30_000
             }
-            val code = conn.responseCode
-            if (code !in 200..299) {
+            try {
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    throw Exception("下载失败 — 目标: $fileUrl — 服务器返回 $code（文件可能不存在）")
+                }
+                BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+            } finally {
                 conn.disconnect()
-                throw Exception("下载失败 — 目标: $fileUrl — 服务器返回 $code（文件可能不存在）")
             }
-            val text = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-            conn.disconnect()
-            text
         }
     }
 
@@ -94,9 +98,13 @@ class WebDavClient(
                 connectTimeout = 10_000
                 readTimeout = 10_000
             }
-            val code = conn.responseCode
-            conn.disconnect()
-            code in 200..399
+            try {
+                val code = conn.responseCode
+                // 严格判定：仅 2xx 算连接成功；3xx 通常是没有重定向处理的欢迎页/认证跳转
+                code in 200..299
+            } finally {
+                conn.disconnect()
+            }
         }
     }
 
@@ -110,8 +118,11 @@ class WebDavClient(
                 connectTimeout = 10_000
                 readTimeout = 10_000
             }
-            conn.responseCode
-            conn.disconnect()
+            try {
+                conn.responseCode
+            } finally {
+                conn.disconnect()
+            }
         }
     }
 }

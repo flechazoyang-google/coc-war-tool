@@ -109,7 +109,7 @@ class SyncViewModel(
         }
     }
 
-    /** 从 WebDAV 下载备份并恢复 */
+    /** 从 WebDAV 下载备份并完整还原（先校验内容，再清空本地写入）。 */
     fun downloadAndRestore() {
         saveConfig()
         _state.value = _state.value.copy(isWorking = true, statusMessage = "正在下载…")
@@ -122,8 +122,16 @@ class SyncViewModel(
                 val json = withContext(Dispatchers.IO) {
                     client.download().getOrThrow()
                 }
+                // 先校验备份内容，非法内容绝不执行清空/写入，避免“假成功”
+                val validated = withContext(Dispatchers.IO) {
+                    validateBackup(json)
+                }
+                if (validated == null) {
+                    _state.value = _state.value.copy(isWorking = false, statusMessage = "✗ 远程内容不是有效备份，未做任何修改")
+                    return@launch
+                }
                 _state.value = _state.value.copy(statusMessage = "正在导入数据…")
-                // 解析并导入
+                // 完整还原：先全部解析成功，再清空本地写入，避免半途失败导致数据清空却未还原
                 withContext(Dispatchers.IO) {
                     restoreFromJson(json)
                 }
@@ -134,14 +142,26 @@ class SyncViewModel(
         }
     }
 
-    /** 解析备份 JSON 并导入所有事件（含花名册）。 */
+    /** 校验备份 JSON 是否为合法的备份结构；非法返回 null。 */
+    private fun validateBackup(json: String): Boolean? {
+        val trimmed = json.trim()
+        if (trimmed.isBlank()) return null
+        return try {
+            val root = com.google.gson.Gson().fromJson(trimmed, BackupData::class.java)
+            if (root == null || (root.events == null && root.roster == null)) null
+            else true
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 解析备份 JSON 并完整还原（先全部解析成功，再清空本地事件/成员后写入，含花名册）。 */
     private suspend fun restoreFromJson(json: String) {
         val gson = com.google.gson.Gson()
         val root = gson.fromJson(json, BackupData::class.java) ?: return
 
-        // 恢复花名册（addToRoster 内部去重/忽略已存在）
-        root.roster?.takeIf { it.isNotEmpty() }?.let { repo.addToRoster(it) }
-
+        // 第一步：解析全部事件并保留原始名称，任一事件解析失败则整体放弃（不碰本地数据）
+        val parsedEvents = mutableListOf<com.cocwar.data.parser.WarJsonParser.ParsedEvent>()
         root.events?.forEach { eventDto ->
             val parsed = com.cocwar.data.parser.WarJsonParser.parse(
                 eventDto.toWarJson(),
@@ -152,11 +172,22 @@ class SyncViewModel(
             if (parsed is com.cocwar.data.parser.WarJsonParser.ParseResult.Success) {
                 // 用备份里的原始名称覆盖，避免被重置为空
                 val src = parsed.data
-                val restored = src.copy(
+                parsedEvents += src.copy(
                     event = src.event.copy(eventName = eventDto.event_name ?: src.event.eventName)
                 )
-                repo.importEvent(restored)
+            } else {
+                throw Exception("备份中某场战报数据损坏，已中止还原（本地数据未改动）")
             }
+        }
+
+        // 第二步：全部解析成功后才清空本地并写入
+        repo.clearAllEvents()
+
+        // 恢复花名册（addToRoster 内部去重/忽略已存在）
+        root.roster?.takeIf { it.isNotEmpty() }?.let { repo.addToRoster(it) }
+
+        parsedEvents.forEach { restored ->
+            repo.importEvent(restored)
         }
     }
 

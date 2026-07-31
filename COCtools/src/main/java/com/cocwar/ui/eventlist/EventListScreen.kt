@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +58,7 @@ import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.util.parseEventDisplayName
 import com.cocwar.ui.util.parseEventTypeFromName
 import com.cocwar.ui.util.parseMonthFromName
+import kotlinx.coroutines.launch
 import com.cocwar.ui.util.parseYearFromName
 
 @Composable
@@ -68,13 +70,17 @@ fun EventListScreen(
     val events by viewModel.events.collectAsStateWithLifecycle()
     var toDelete by remember { mutableStateOf<WarEventEntity?>(null) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // 剪切板读取状态（由右上角按钮触发，不再自动检测）
     var clipboardParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
     val clipboardManager = LocalClipboardManager.current
 
     // 筛选状态 —— rememberSaveable 保证切换页面或退出应用后筛选条件不丢失
-    var typeFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    // 部落战和联赛完全独立，类型筛选无「全部」选项，默认部落战
+    var typeFilter by rememberSaveable { mutableStateOf("0") }
+    // 跨版本恢复保护：旧版 typeFilter 可为 null（全部），恢复后收敛到默认「部落战」
+    if (typeFilter != "0" && typeFilter != "1") typeFilter = "0"
     var yearFilter by rememberSaveable { mutableStateOf<Int?>(null) }
     var monthFilter by rememberSaveable { mutableStateOf<Int?>(null) }
 
@@ -97,7 +103,7 @@ fun EventListScreen(
                 ?: if (event.eventType == "league") "1" else "0"
             val y = parseYearFromName(event.eventName)
             val m = parseMonthFromName(event.eventName)
-            (typeFilter == null || t == typeFilter) &&
+            (t == typeFilter) &&
             (yearFilter == null || y == yearFilter) &&
             (monthFilter == null || m == monthFilter)
         }
@@ -126,9 +132,15 @@ fun EventListScreen(
                             Toast.makeText(context, "剪切板中没有检测到战报数据", Toast.LENGTH_SHORT).show()
                             return@CocIconButton
                         }
-                        when (val result = WarJsonParser.parse(text)) {
-                            is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
-                            is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "战报解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                        // 大 JSON 解析放到 IO 线程，避免阻塞主线程
+                        scope.launch {
+                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                WarJsonParser.parse(text)
+                            }
+                            when (result) {
+                                is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
+                                is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "战报解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 )
@@ -149,13 +161,12 @@ fun EventListScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilterDropdown(
-                label = when (typeFilter) { "0" -> "部落战"; "1" -> "联赛"; else -> "类型" },
-                isActive = typeFilter != null,
+                label = if (typeFilter == "1") "联赛" else "部落战",
+                isActive = typeFilter != "0",
                 expanded = typeExpanded,
                 onToggle = { typeExpanded = true },
                 onDismiss = { typeExpanded = false }
             ) {
-                DropdownMenuItem(text = { Text("全部") }, onClick = { typeFilter = null; typeExpanded = false })
                 DropdownMenuItem(text = { Text("部落战") }, onClick = { typeFilter = "0"; typeExpanded = false })
                 DropdownMenuItem(text = { Text("联赛") }, onClick = { typeFilter = "1"; typeExpanded = false })
             }

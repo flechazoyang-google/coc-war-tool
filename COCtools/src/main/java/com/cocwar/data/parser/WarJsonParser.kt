@@ -79,10 +79,14 @@ object WarJsonParser {
 
         // event_id 自动生成；eventName 由用户在导入时填写
         val eventId = "${eventType}_${createdAt}"
+        // 每人进攻槽位：部落战 2 槽，联赛 1 槽（attackOrder 从 1 开始）。
+        // 官方 CoC API 中未进攻成员没有 attacks 字段，这里补 unused 占位，
+        // 使进攻率/未进攻统计口径正确；已有攻击记录保留原样。
+        val slotCount = if (eventType == EVENT_TYPE_LEAGUE) 1 else 2
 
         val members = (dto.members ?: emptyList()).mapIndexed { index, m ->
             val rank = (m.rank ?: (index + 1)).coerceAtLeast(1)
-            val attacks = (m.attacks ?: emptyList()).map { a ->
+            val rawAttacks = (m.attacks ?: emptyList()).map { a ->
                 val status = (a.status?.trim().orEmpty().lowercase())
                 Attack(
                     attackOrder = (a.attackOrder ?: 0).coerceAtLeast(0),
@@ -90,6 +94,9 @@ object WarJsonParser {
                     destructionPercentage = (a.destructionPercentage ?: 0).coerceIn(0, 100)
                 )
             }
+            val attacks = rawAttacks + (1..slotCount)
+                .filterNot { order -> rawAttacks.any { it.attackOrder == order } }
+                .map { Attack(attackOrder = it, status = "unused", destructionPercentage = 0) }
             MemberEntity(
                 id = "$eventId#$rank",
                 eventId = eventId,

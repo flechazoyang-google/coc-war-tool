@@ -150,7 +150,10 @@ fun ToolsScreen(
                     onClick = {
                         scope.launch {
                             val app = context.applicationContext as CocWarApplication
-                            val json = app.repository.exportAllDataJson()
+                            // JSON 拼接在 IO 线程执行，避免大数据量时卡主线程
+                            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                app.repository.exportAllDataJson()
+                            }
                             val intent = Intent(Intent.ACTION_SEND).apply {
                                 type = "application/json"
                                 putExtra(Intent.EXTRA_TEXT, json)

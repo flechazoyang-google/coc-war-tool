@@ -20,8 +20,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.cocwar.R
@@ -34,8 +32,6 @@ class FloatingBallService : Service() {
 
     private lateinit var windowManager: WindowManager
     private var ballView: ImageView? = null
-    private var progressOverlay: LinearLayout? = null
-    private var progressText: TextView? = null
 
     // 拖动
     private var initialX = 0
@@ -70,17 +66,20 @@ class FloatingBallService : Service() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
             when (intent?.action) {
                 ScreenCaptureService.ACTION_HIDE_OVERLAY -> {
+                    // 截图期间隐藏悬浮球，且不显示任何进度浮层：
+                    // 否则进度条/Toast 会被截进截图画面（用户看到的“通知弹窗被截图”）
                     ballView?.visibility = View.GONE
-                    showProgressOverlay()
                 }
                 ScreenCaptureService.ACTION_SHOW_OVERLAY -> {
-                    removeProgressOverlay()
                     ballView?.visibility = View.VISIBLE
+                    updateForegroundProgress("截图悬浮球运行中")
                 }
                 ScreenCaptureService.ACTION_CAPTURE_DONE -> {
                     val pages = intent.getIntExtra("pages", 0)
                     Log.i(TAG, "截图完成：共 $pages 页")
-                    showCaptureDoneNotification(pages)
+                    updateForegroundProgress("截图悬浮球运行中")
+                    // 0 页说明截图流程失败/被中断，不弹「保存 0 张」误导通知
+                    if (pages > 0) showCaptureDoneNotification(pages)
                 }
             }
         }
@@ -91,14 +90,17 @@ class FloatingBallService : Service() {
         instance = this
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        // 必须先进入前台：startForegroundService 启动的服务若在 5 秒内（Android 12+）未调用
+        // startForeground，系统会抛 ForegroundServiceDidNotStartInTimeException 导致崩溃。
+        // 因此无论后续悬浮窗权限是否满足，都先启动前台通知。
+        try { startForegroundSafe() } catch (e: Exception) {
+            Log.e(TAG, "startForeground 失败", e); stopSelf(); return
+        }
+
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "悬浮窗权限未授予", Toast.LENGTH_LONG).show()
             stopSelf()
             return
-        }
-
-        try { startForegroundSafe() } catch (e: Exception) {
-            Log.e(TAG, "startForeground 失败", e); stopSelf(); return
         }
 
         try { createBall() } catch (e: Exception) {
@@ -124,7 +126,6 @@ class FloatingBallService : Service() {
     override fun onDestroy() {
         instance = null
         removeBall()
-        removeProgressOverlay()
         runCatching { unregisterReceiver(receiver) }
         super.onDestroy()
     }
@@ -187,12 +188,26 @@ class FloatingBallService : Service() {
     }
 
     private fun handleBallTouch(event: MotionEvent, params: WindowManager.LayoutParams) {
-        when (event.action) {
+        when (event.action and MotionEvent.ACTION_MASK) {
             MotionEvent.ACTION_DOWN -> {
                 initialX = params.x; initialY = params.y
                 initialTouchX = event.rawX; initialTouchY = event.rawY
                 isDragging = false
                 startClickTime = System.currentTimeMillis()
+            }
+            // 第二根手指按下/抬起：忽略，避免多指交错时位移跳变或误判为点击
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // 保持第一根手指的基准坐标
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                // 若第一根手指已抬起，重新以剩余手指建立基准，避免跳变
+                if (event.pointerCount > 1) {
+                    val idx = if (event.actionIndex == 0) 1 else 0
+                    initialTouchX = event.getRawX(idx)
+                    initialTouchY = event.getRawY(idx)
+                    initialX = params.x
+                    initialY = params.y
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = (event.rawX - initialTouchX).toInt()
@@ -200,7 +215,8 @@ class FloatingBallService : Service() {
                 if (kotlin.math.abs(dx) > 10 || kotlin.math.abs(dy) > 10) isDragging = true
                 if (isDragging) {
                     params.x = initialX - dx
-                    params.y = initialY + dy
+                    val maxY = resources.displayMetrics.heightPixels - (ballView?.height ?: 0)
+                    params.y = (initialY + dy).coerceIn(0, maxY)
                     windowManager.updateViewLayout(ballView, params)
                 }
             }
@@ -222,8 +238,20 @@ class FloatingBallService : Service() {
         // 获取屏幕宽度后吸附到最近边缘
         val dm = resources.displayMetrics
         val screenWidth = dm.widthPixels
-        // 如果球在左半边就吸附左边，否则右边
-        params.x = if (params.x < screenWidth / 2) 24 else 24
+        val ballWidth = ballView?.width ?: 0
+        val margin = 24
+        // 布局 gravity 为 TOP|END：params.x 表示距右边缘的距离。
+        // 球距左边缘 ≈ screenWidth - ballWidth - params.x，据此判断吸附到左还是右。
+        val distanceToLeft = screenWidth - ballWidth - params.x
+        params.x = if (distanceToLeft < params.x) {
+            // 距左边更近：吸附左边（x 需为整屏宽减球宽减边距）
+            (screenWidth - ballWidth - margin).coerceAtLeast(margin)
+        } else {
+            // 距右边更近：吸附右边
+            margin
+        }
+        // 防止拖出屏幕上下边界
+        params.y = params.y.coerceIn(0, dm.heightPixels - (ballView?.height ?: 0))
         windowManager.updateViewLayout(ballView, params)
     }
 
@@ -233,66 +261,42 @@ class FloatingBallService : Service() {
 
         val a11y = ScreenCaptureService.instance
         if (a11y == null) {
+            // 无障碍未开启：提示并直接跳转系统无障碍设置页（该权限只能由用户在系统设置中手动开启）
             Toast.makeText(this, "无障碍服务未开启：请到 设置→无障碍→部落战数据管家 开启", Toast.LENGTH_LONG).show()
+            runCatching {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+            }
         } else {
-            Toast.makeText(this, "开始截图，长按进度条可取消", Toast.LENGTH_SHORT).show()
+            // 注意：这里不弹「开始截图」Toast——截图立即开始，Toast 会被截进画面。
+            // 进度反馈通过前台通知的「截图进行中」文案与悬浮球闪动体现。
+            updateForegroundProgress("截图进行中…")
             a11y.requestCapture()
         }
     }
 
-    // ==================== 进度条浮层 ====================
-
-    private fun showProgressOverlay() {
-        try {
-            removeProgressOverlay()
-
-            val container = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setPadding(32, 16, 32, 16)
-                setBackgroundColor(0xCC000000.toInt())
-                setOnLongClickListener {
-                    // 长按取消截图
-                    ScreenCaptureService.instance?.cancelCapture()
-                    sendBroadcast(Intent(ScreenCaptureService.ACTION_CANCEL_CAPTURE))
-                    true
-                }
-            }
-
-            progressText = TextView(this).apply {
-                text = "📷 截图进行中…"
-                setTextColor(0xFFFFFFFF.toInt())
-                textSize = 14f
-            }
-            container.addView(progressText)
-
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                else WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.TOP
-            }
-            // 取消 FLAG_NOT_TOUCHABLE 让长按可接收
-            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-
-            windowManager.addView(container, params)
-            progressOverlay = container
-        } catch (e: Exception) {
-            Log.e(TAG, "创建进度条失败", e)
+    /** 更新前台服务通知文案（不遮挡游戏画面，也不会被截进截图），附「取消截图」入口。 */
+    private fun updateForegroundProgress(text: String) {
+        runCatching {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val cancelIntent = PendingIntent.getBroadcast(
+                this, 2,
+                Intent(ScreenCaptureService.ACTION_CANCEL_CAPTURE).setPackage(packageName),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notification = NotificationCompat.Builder(this, "screenshot_ball")
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText(text)
+                .setSmallIcon(R.drawable.ic_app_logo)
+                .setContentIntent(PendingIntent.getActivity(this, 0,
+                    Intent(this, com.cocwar.ui.MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                .addAction(0, "取消截图", cancelIntent)
+                .setOngoing(true)
+                .build()
+            nm.notify(1, notification)
         }
-    }
-
-    private fun removeProgressOverlay() {
-        progressOverlay?.let { runCatching { windowManager.removeView(it) } }
-        progressOverlay = null
-        progressText = null
     }
 
     // ==================== 启动游戏 ====================

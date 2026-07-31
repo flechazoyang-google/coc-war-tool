@@ -60,6 +60,7 @@ object UpdateChecker {
 
             val code = connection.responseCode
             if (code != HttpURLConnection.HTTP_OK) {
+                connection.disconnect()
                 return@withContext Result.failure(Exception("API 返回 $code"))
             }
 
@@ -124,33 +125,37 @@ object UpdateChecker {
 
             val code = connection.responseCode
             if (code != HttpURLConnection.HTTP_OK) {
+                connection.disconnect()
                 return@withContext Result.failure(Exception("下载失败 HTTP $code"))
             }
 
             val total = connection.contentLengthLong
             var downloaded = 0L
 
-            connection.inputStream.use { input ->
-                FileOutputStream(downloadFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var lastNotifyTime = 0L
-                    while (true) {
-                        bytesRead = input.read(buffer)
-                        if (bytesRead == -1) break
-                        output.write(buffer, 0, bytesRead)
-                        downloaded += bytesRead
-                        // 每秒更新一次通知
-                        val now = System.currentTimeMillis()
-                        if (now - lastNotifyTime > 1000 && total > 0) {
-                            lastNotifyTime = now
-                            val progress = (downloaded * 100 / total).toInt()
-                            nm.notify(100, buildProgressNotification(context, progress))
+            try {
+                connection.inputStream.use { input ->
+                    FileOutputStream(downloadFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var lastNotifyTime = 0L
+                        while (true) {
+                            bytesRead = input.read(buffer)
+                            if (bytesRead == -1) break
+                            output.write(buffer, 0, bytesRead)
+                            downloaded += bytesRead
+                            // 每秒更新一次通知
+                            val now = System.currentTimeMillis()
+                            if (now - lastNotifyTime > 1000 && total > 0) {
+                                lastNotifyTime = now
+                                val progress = (downloaded * 100 / total).toInt()
+                                nm.notify(100, buildProgressNotification(context, progress))
+                            }
                         }
                     }
                 }
+            } finally {
+                connection.disconnect()
             }
-            connection.disconnect()
 
             // 校验下载内容是否为有效的 APK（ZIP 格式以 "PK" 开头）。
             val magic = ByteArray(2)
@@ -197,14 +202,28 @@ object UpdateChecker {
 
     /** 版本号比较：按 "." 分割后逐段比较。返回 >0 表示 v1 > v2。 */
     private fun compareVersion(v1: String, v2: String): Int {
-        val parts1 = v1.split(".").map { it.toIntOrNull() ?: 0 }
-        val parts2 = v2.split(".").map { it.toIntOrNull() ?: 0 }
-        val maxLen = maxOf(parts1.size, parts2.size)
+        val (nums1, pre1) = parseVersion(v1)
+        val (nums2, pre2) = parseVersion(v2)
+        val maxLen = maxOf(nums1.size, nums2.size)
         for (i in 0 until maxLen) {
-            val a = parts1.getOrElse(i) { 0 }
-            val b = parts2.getOrElse(i) { 0 }
+            val a = nums1.getOrElse(i) { 0 }
+            val b = nums2.getOrElse(i) { 0 }
             if (a != b) return a - b
         }
+        // 数值段相等时：正式版 > 预发布版（"1.2" > "1.2-beta"）
+        if (pre1 != pre2) return if (pre1) -1 else 1
         return 0
+    }
+
+    /**
+     * 解析版本号为数字段列表 + 是否预发布（带 -alpha/-beta 等后缀）。
+     * 如 "v1.2.3-beta" → ([1,2,3], true)；"3.2" → ([3,2], false)。
+     */
+    private fun parseVersion(v: String): Pair<List<Int>, Boolean> {
+        val cleaned = v.trim().removePrefix("v").removePrefix("V")
+        val match = Regex("""^(\d+(?:\.\d+)*)(.*)$""").find(cleaned) ?: return emptyList<Int>() to false
+        val nums = match.groupValues[1].split(".").mapNotNull { it.toIntOrNull() }
+        val isPreRelease = match.groupValues[2].isNotBlank()
+        return nums to isPreRelease
     }
 }

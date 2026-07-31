@@ -11,6 +11,7 @@ import com.cocwar.domain.RecentMissedRank
 import com.cocwar.domain.StatsCalculator
 import com.cocwar.domain.StatsOverview
 import com.cocwar.domain.TopMemberScore
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -22,9 +23,8 @@ enum class MemberSortBy(val label: String) {
     THREE_STAR_RATE("三星率")
 }
 
-/** 类型筛选 */
+/** 类型筛选 —— 部落战和联赛完全独立，无「全部」选项 */
 enum class TypeFilter(val label: String) {
-    ALL("全部"),
     WAR("部落战"),
     LEAGUE("联赛")
 }
@@ -56,7 +56,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     val sortBy: StateFlow<MemberSortBy> = MutableStateFlow(MemberSortBy.ATTACKED_COUNT)
 
     // --- 类型筛选 ---
-    val typeFilter: StateFlow<TypeFilter> = MutableStateFlow(TypeFilter.ALL)
+    val typeFilter: StateFlow<TypeFilter> = MutableStateFlow(TypeFilter.WAR)
 
     // --- 未进攻窗口 ---
     private val _recentMissedWindow = MutableStateFlow(0)
@@ -65,6 +65,9 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     // 缓存当月原始数据
     private var currentEvents: List<WarEventEntity> = emptyList()
     private var currentMembers: List<MemberEntity> = emptyList()
+
+    // 月份加载任务（切换月份时取消旧任务，防止乱序覆盖）
+    private var monthLoadJob: Job? = null
 
     // 缓存所有事件用于近N次计算
     private var allEventsDesc: List<WarEventEntity> = emptyList()
@@ -142,7 +145,9 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     }
 
     private fun loadMonth(option: MonthOption) {
-        viewModelScope.launch {
+        // 取消上一次未完成的月份加载，避免快速切换月份时旧请求后完成覆盖新数据
+        monthLoadJob?.cancel()
+        monthLoadJob = viewModelScope.launch {
             (loading as MutableStateFlow).value = true
             val events = repo.getEventsInRange(option.startMs, option.endMs)
             currentEvents = events
@@ -176,7 +181,6 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
 
     private fun filterEventsByType(events: List<WarEventEntity>): List<WarEventEntity> {
         return when (typeFilter.value) {
-            TypeFilter.ALL -> events
             TypeFilter.WAR -> events.filter { it.eventType != "league" }
             TypeFilter.LEAGUE -> events.filter { it.eventType == "league" }
         }
@@ -187,11 +191,11 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         val eventIds = events.map { it.eventId }.toSet()
         val members = currentMembers.filter { it.eventId in eventIds }
 
-        // 总览始终使用全量数据，不受类型筛选影响
+        // 总览固定同时展示部落战和联赛，不受类型筛选影响
         (overview as MutableStateFlow).value =
             StatsCalculator.computeOverview(currentEvents, currentMembers)
 
-        // 本月最佳：仅统计部落战，使用全量数据
+        // 本月最佳独立视图：固定使用全量数据（积分制仅统计部落战），不受类型筛选影响
         (topMembers as MutableStateFlow).value =
             StatsCalculator.computeTopMembers(currentEvents, currentMembers)
 

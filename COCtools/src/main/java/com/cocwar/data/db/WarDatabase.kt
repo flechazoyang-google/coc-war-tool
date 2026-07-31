@@ -52,10 +52,12 @@ class Converters {
     fun attacksToJson(list: List<Attack>): String = gson.toJson(list)
 
     @TypeConverter
-    fun jsonToAttacks(json: String): List<Attack> {
-        if (json.isBlank()) return emptyList()
+    fun jsonToAttacks(json: String?): List<Attack> {
+        // DB 列可能为 NULL 或字面量 "null"，统一安全兜底，避免 NPE 或返回 null 击穿非空类型
+        if (json == null || json.isBlank() || json == "null") return emptyList()
         return runCatching {
             gson.fromJson<List<Attack>>(json, object : TypeToken<List<Attack>>() {}.type)
+                ?: emptyList()
         }.getOrDefault(emptyList())
     }
 }
@@ -100,6 +102,19 @@ interface WarDao {
     @Query("DELETE FROM war_events WHERE eventId = :id")
     suspend fun deleteEvent(id: String)
 
+    /** 清空全部战报与成员（用于从云端备份完整还原）。 */
+    @Transaction
+    suspend fun clearAll() {
+        deleteAllMembers()
+        deleteAllEvents()
+    }
+
+    @Query("DELETE FROM members")
+    suspend fun deleteAllMembers()
+
+    @Query("DELETE FROM war_events")
+    suspend fun deleteAllEvents()
+
     @Query("SELECT COUNT(*) FROM war_events")
     suspend fun countEvents(): Int
 
@@ -110,7 +125,14 @@ interface WarDao {
     suspend fun getEventsInRange(start: Long, end: Long): List<WarEventEntity>
 
     @Query("SELECT * FROM members WHERE eventId IN (:eventIds) ORDER BY rank ASC")
-    suspend fun getMembersByEventIds(eventIds: List<String>): List<MemberEntity>
+    suspend fun getMembersByEventIds(eventIds: List<String>): List<MemberEntity> {
+        // Room 对空列表生成 "IN ()" 非法 SQL 会崩溃，这里在 DAO 层兜底
+        if (eventIds.isEmpty()) return emptyList()
+        return getMembersByEventIdsInternal(eventIds)
+    }
+
+    @Query("SELECT * FROM members WHERE eventId IN (:eventIds) ORDER BY rank ASC")
+    suspend fun getMembersByEventIdsInternal(eventIds: List<String>): List<MemberEntity>
 
     @Query("SELECT DISTINCT playerName FROM members ORDER BY playerName")
     suspend fun getAllPlayerNames(): List<String>
@@ -141,10 +163,19 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-// v2→v3: members 表新增 totalStars 列
+// v2→v3: members 表新增 totalStars 列（幂等：已存在则跳过）
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        try { db.execSQL("ALTER TABLE members ADD COLUMN totalStars INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+        val hasColumn = db.query("PRAGMA table_info(members)").use { cursor ->
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(1) == "totalStars") { found = true; break }
+            }
+            found
+        }
+        if (!hasColumn) {
+            db.execSQL("ALTER TABLE members ADD COLUMN totalStars INTEGER NOT NULL DEFAULT 0")
+        }
     }
 }
 
@@ -180,7 +211,6 @@ abstract class WarDatabase : RoomDatabase() {
         fun build(context: android.content.Context): WarDatabase =
             Room.databaseBuilder(context.applicationContext, WarDatabase::class.java, NAME)
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5)
-                .fallbackToDestructiveMigration()
                 .build()
     }
 }
