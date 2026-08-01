@@ -22,15 +22,17 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,9 +70,28 @@ fun EventListScreen(
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
-    var toDelete by remember { mutableStateOf<WarEventEntity?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // 删除战报：立即落库删除 → Snackbar 提供撤销（重插快照），防误触
+    fun deleteEventWithUndo(event: WarEventEntity) {
+        scope.launch {
+            val snapshot = viewModel.deleteEventWithSnapshot(event.eventId)
+            if (snapshot == null) {
+                Toast.makeText(context, "删除失败：战报不存在", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val result = snackbarHostState.showSnackbar(
+                message = "已删除「${parseEventDisplayName(event.eventName)}」",
+                actionLabel = "撤销",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.undoDelete(snapshot)
+            }
+        }
+    }
 
     // 剪切板读取状态（由右上角按钮触发，不再自动检测）
     var clipboardParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
@@ -112,141 +133,130 @@ fun EventListScreen(
     val warCount = remember(events) { events.count { it.eventType != "league" } }
     val leagueCount = events.size - warCount
 
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader(
-            title = "战报",
-            overline = "战报档案",
-            subtitle = if (events.isEmpty()) "尚无归档"
-            else "共 ${events.size} 份 · 部落战 $warCount · 联赛 $leagueCount",
-            actions = {
-                CocIconButton(
-                    icon = Icons.Filled.ContentPaste,
-                    contentDescription = "读取剪切板",
-                    onClick = {
-                        val text = clipboardManager.getText()?.text ?: ""
-                        if (text.isBlank()) {
-                            Toast.makeText(context, "剪切板为空，没有可读取的内容", Toast.LENGTH_SHORT).show()
-                            return@CocIconButton
-                        }
-                        if (!looksLikeWarJson(text)) {
-                            Toast.makeText(context, "剪切板中没有检测到战报数据", Toast.LENGTH_SHORT).show()
-                            return@CocIconButton
-                        }
-                        // 大 JSON 解析放到 IO 线程，避免阻塞主线程
-                        scope.launch {
-                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                WarJsonParser.parse(text)
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            ScreenHeader(
+                title = "战报",
+                overline = "战报档案",
+                subtitle = if (events.isEmpty()) "尚无归档"
+                else "共 ${events.size} 份 · 部落战 $warCount · 联赛 $leagueCount",
+                actions = {
+                    CocIconButton(
+                        icon = Icons.Filled.ContentPaste,
+                        contentDescription = "读取剪切板",
+                        onClick = {
+                            val text = clipboardManager.getText()?.text ?: ""
+                            if (text.isBlank()) {
+                                Toast.makeText(context, "剪切板为空，没有可读取的内容", Toast.LENGTH_SHORT).show()
+                                return@CocIconButton
                             }
-                            when (result) {
-                                is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
-                                is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "战报解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                            if (!looksLikeWarJson(text)) {
+                                Toast.makeText(context, "剪切板中没有检测到战报数据", Toast.LENGTH_SHORT).show()
+                                return@CocIconButton
+                            }
+                            // 大 JSON 解析放到 IO 线程，避免阻塞主线程
+                            scope.launch {
+                                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    WarJsonParser.parse(text)
+                                }
+                                when (result) {
+                                    is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
+                                    is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "战报解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
+                    )
+                    CocIconButton(
+                        icon = Icons.Filled.Add,
+                        contentDescription = "导入战报",
+                        onClick = onImport,
+                        filled = true
+                    )
+                }
+            )
+    
+            // 筛选栏 —— 细线胶囊下拉
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterDropdown(
+                    label = if (typeFilter == "1") "联赛" else "部落战",
+                    isActive = typeFilter != "0",
+                    expanded = typeExpanded,
+                    onToggle = { typeExpanded = true },
+                    onDismiss = { typeExpanded = false }
+                ) {
+                    DropdownMenuItem(text = { Text("部落战") }, onClick = { typeFilter = "0"; typeExpanded = false })
+                    DropdownMenuItem(text = { Text("联赛") }, onClick = { typeFilter = "1"; typeExpanded = false })
+                }
+                FilterDropdown(
+                    label = yearFilter?.let { "${it}年" } ?: "年份",
+                    isActive = yearFilter != null,
+                    expanded = yearExpanded,
+                    onToggle = { yearExpanded = true },
+                    onDismiss = { yearExpanded = false }
+                ) {
+                    DropdownMenuItem(text = { Text("全部") }, onClick = { yearFilter = null; yearExpanded = false })
+                    years.forEach { y ->
+                        DropdownMenuItem(text = { Text("${y}年") }, onClick = { yearFilter = y; yearExpanded = false })
                     }
-                )
-                CocIconButton(
-                    icon = Icons.Filled.Add,
-                    contentDescription = "导入战报",
-                    onClick = onImport,
-                    filled = true
-                )
-            }
-        )
-
-        // 筛选栏 —— 细线胶囊下拉
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterDropdown(
-                label = if (typeFilter == "1") "联赛" else "部落战",
-                isActive = typeFilter != "0",
-                expanded = typeExpanded,
-                onToggle = { typeExpanded = true },
-                onDismiss = { typeExpanded = false }
-            ) {
-                DropdownMenuItem(text = { Text("部落战") }, onClick = { typeFilter = "0"; typeExpanded = false })
-                DropdownMenuItem(text = { Text("联赛") }, onClick = { typeFilter = "1"; typeExpanded = false })
-            }
-            FilterDropdown(
-                label = yearFilter?.let { "${it}年" } ?: "年份",
-                isActive = yearFilter != null,
-                expanded = yearExpanded,
-                onToggle = { yearExpanded = true },
-                onDismiss = { yearExpanded = false }
-            ) {
-                DropdownMenuItem(text = { Text("全部") }, onClick = { yearFilter = null; yearExpanded = false })
-                years.forEach { y ->
-                    DropdownMenuItem(text = { Text("${y}年") }, onClick = { yearFilter = y; yearExpanded = false })
+                }
+                FilterDropdown(
+                    label = monthFilter?.let { "${it}月" } ?: "月份",
+                    isActive = monthFilter != null,
+                    expanded = monthExpanded,
+                    onToggle = { monthExpanded = true },
+                    onDismiss = { monthExpanded = false }
+                ) {
+                    DropdownMenuItem(text = { Text("全部") }, onClick = { monthFilter = null; monthExpanded = false })
+                    months.forEach { m ->
+                        DropdownMenuItem(text = { Text("${m}月") }, onClick = { monthFilter = m; monthExpanded = false })
+                    }
                 }
             }
-            FilterDropdown(
-                label = monthFilter?.let { "${it}月" } ?: "月份",
-                isActive = monthFilter != null,
-                expanded = monthExpanded,
-                onToggle = { monthExpanded = true },
-                onDismiss = { monthExpanded = false }
-            ) {
-                DropdownMenuItem(text = { Text("全部") }, onClick = { monthFilter = null; monthExpanded = false })
-                months.forEach { m ->
-                    DropdownMenuItem(text = { Text("${m}月") }, onClick = { monthFilter = m; monthExpanded = false })
-                }
-            }
-        }
-
-        Spacer(Modifier.height(6.dp))
-
-        if (filtered.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                if (events.isEmpty()) {
-                    EmptyState(
-                        title = "还没有战报",
-                        body = "点击右上角 + 导入 JSON\n复制战报 JSON 后打开 App 会自动识别"
-                    )
-                } else {
-                    EmptyState(title = "没有匹配的战报", body = "试试调整筛选条件")
-                }
-            }
-        } else {
-            // 无卡片列表：发丝线分隔的编辑式条目
-            LazyColumn(Modifier.fillMaxSize()) {
-                itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
-                    EventRow(
-                        event = event,
-                        onClick = { onOpen(event.eventId) },
-                        onDelete = { toDelete = event }
-                    )
-                    if (index < filtered.lastIndex) {
-                        Box(
-                            Modifier
-                                .padding(start = 20.dp)
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(MaterialTheme.cocColors.hairline)
+    
+            Spacer(Modifier.height(6.dp))
+    
+            if (filtered.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (events.isEmpty()) {
+                        EmptyState(
+                            title = "还没有战报",
+                            body = "点击右上角 + 导入 JSON\n复制战报 JSON 后打开 App 会自动识别"
                         )
+                    } else {
+                        EmptyState(title = "没有匹配的战报", body = "试试调整筛选条件")
                     }
                 }
-                item { Spacer(Modifier.height(24.dp)) }
+            } else {
+                // 无卡片列表：发丝线分隔的编辑式条目
+                LazyColumn(Modifier.fillMaxSize()) {
+                    itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
+                        EventRow(
+                            event = event,
+                            onClick = { onOpen(event.eventId) },
+                            onDelete = { deleteEventWithUndo(event) }
+                        )
+                        if (index < filtered.lastIndex) {
+                            Box(
+                                Modifier
+                                    .padding(start = 20.dp)
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(MaterialTheme.cocColors.hairline)
+                            )
+                        }
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
             }
         }
-    }
-
-    toDelete?.let { event ->
-        AlertDialog(
-            onDismissRequest = { toDelete = null },
-            title = { Text("删除战报") },
-            text = { Text("确定删除「${parseEventDisplayName(event.eventName)}」吗？此操作不可撤销。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteEvent(event.eventId)
-                    toDelete = null
-                }) { Text("删除", color = MaterialTheme.cocColors.danger) }
-            },
-            dismissButton = {
-                TextButton(onClick = { toDelete = null }) { Text("取消") }
-            }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
 

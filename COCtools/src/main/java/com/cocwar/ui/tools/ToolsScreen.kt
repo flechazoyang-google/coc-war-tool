@@ -7,6 +7,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -32,7 +34,10 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
@@ -93,7 +98,10 @@ fun ToolsScreen(
     var showJsonFormatDialog by remember { mutableStateOf(false) }
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showScreenshotGallery by remember { mutableStateOf(false) }
+    var showRestoreConfirm by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    // 待写入文件的导出 JSON（SAF 选择保存位置后写入）
+    var pendingExportJson by remember { mutableStateOf<String?>(null) }
 
     // 悬浮球与权限状态：用响应式 state，并在返回页面时（onResume）重新读取，
     // 解决「开启后状态不刷新」「授予权限后弹窗不消失」的问题。
@@ -121,6 +129,54 @@ fun ToolsScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 导出备份：SAF 选择保存位置后写入 JSON 文件
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        val json = pendingExportJson
+        pendingExportJson = null
+        if (uri != null && json != null) {
+            scope.launch {
+                runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            out.write(json.toByteArray(Charsets.UTF_8))
+                        } ?: throw IllegalStateException("无法打开输出流")
+                    }
+                }.onSuccess {
+                    Toast.makeText(context, "备份已导出", Toast.LENGTH_SHORT).show()
+                }.onFailure { e ->
+                    Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // 从备份文件导入：选文件后先校验，再完整还原
+    val restorePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val json = context.contentResolver.openInputStream(it)
+                            ?.bufferedReader()?.use { r -> r.readText() } ?: ""
+                        val app = context.applicationContext as CocWarApplication
+                        if (!app.repository.validateBackupJson(json)) {
+                            throw IllegalStateException("所选文件不是有效的备份 JSON")
+                        }
+                        app.repository.restoreFromBackupJson(json)
+                    }
+                }.onSuccess {
+                    Toast.makeText(context, "备份导入成功", Toast.LENGTH_SHORT).show()
+                }.onFailure { e ->
+                    Toast.makeText(context, "导入失败：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     Column(
@@ -175,7 +231,7 @@ fun ToolsScreen(
                 ToolsRow(
                     icon = Icons.Filled.SaveAlt,
                     title = "导出所有数据",
-                    subtitle = "导出全量战报备份为 JSON 文件",
+                    subtitle = "导出全量战报与名单为备份 JSON 文件",
                     onClick = {
                         scope.launch {
                             val app = context.applicationContext as CocWarApplication
@@ -183,14 +239,20 @@ fun ToolsScreen(
                             val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 app.repository.exportAllDataJson()
                             }
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/json"
-                                putExtra(Intent.EXTRA_TEXT, json)
-                                putExtra(Intent.EXTRA_SUBJECT, "COC战报数据备份")
-                            }
-                            context.startActivity(Intent.createChooser(intent, "导出备份"))
+                            pendingExportJson = json
+                            val ts = java.text.SimpleDateFormat(
+                                "yyyyMMdd_HHmmss", java.util.Locale.US
+                            ).format(java.util.Date())
+                            exportLauncher.launch("coc_war_backup_$ts.json")
                         }
                     }
+                )
+                ToolsDivider()
+                ToolsRow(
+                    icon = Icons.Filled.FileOpen,
+                    title = "从备份导入",
+                    subtitle = "选择备份 JSON 文件完整还原（会覆盖当前数据）",
+                    onClick = { showRestoreConfirm = true }
                 )
                 ToolsDivider()
                 ToolsRow(
@@ -402,6 +464,26 @@ fun ToolsScreen(
         )
     }
 
+    // ── 从备份导入确认 ──
+    if (showRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRestoreConfirm = false },
+            title = { Text("从备份导入") },
+            text = {
+                Text("将清空当前全部战报与名单，并用备份文件内容完整还原。\n\n确定继续？")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestoreConfirm = false
+                    restorePicker.launch("application/json")
+                }) { Text("选择文件") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreConfirm = false }) { Text("取消") }
+            }
+        )
+    }
+
     // ── 权限引导弹窗 ──
     if (showPermissionDialog) {
         val overlayGranted = Settings.canDrawOverlays(context)
@@ -587,7 +669,7 @@ private fun ToolsRow(
     }
 }
 
-/** 设置滑杆：标签 + 当前值同行，滑杆松绿 */
+/** 设置滑杆：默认收起，点击标签行展开/收起；展开后显示滑杆 */
 @Composable
 private fun SettingSlider(
     label: String,
@@ -598,29 +680,44 @@ private fun SettingSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int
 ) {
-    Column(Modifier.padding(vertical = 8.dp)) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.padding(vertical = 4.dp)) {
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 6.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(label, style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium)
-            Text(valueText, style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.cocColors.accent)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(valueText, style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.cocColors.accent)
+                Spacer(Modifier.width(2.dp))
+                Icon(
+                    if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            onValueChangeFinished = onValueChangeFinished,
-            valueRange = valueRange,
-            steps = steps,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.cocColors.accent,
-                activeTrackColor = MaterialTheme.cocColors.accent,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+        if (expanded) {
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                onValueChangeFinished = onValueChangeFinished,
+                valueRange = valueRange,
+                steps = steps,
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.cocColors.accent,
+                    activeTrackColor = MaterialTheme.cocColors.accent,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             )
-        )
+        }
     }
 }

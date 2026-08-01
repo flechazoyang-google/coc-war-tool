@@ -6,8 +6,10 @@ import com.cocwar.data.db.WarDatabase
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.MemberRosterEntity
+import com.cocwar.data.model.EVENT_TYPE_WAR
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.samples.SampleDataProvider
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import java.util.Calendar
 
@@ -24,6 +26,9 @@ class WarRepository(
 
     fun getEvent(id: String): Flow<WarEventEntity?> = dao.observeEvent(id)
     fun getMembers(id: String): Flow<List<MemberEntity>> = dao.observeMembers(id)
+
+    /** 一次性获取单个事件（删除前快照/撤销等场景）。 */
+    suspend fun getEventById(id: String): WarEventEntity? = dao.getEventById(id)
 
     suspend fun importEvent(parsed: WarJsonParser.ParsedEvent) {
         dao.insertEvent(parsed.event, parsed.members)
@@ -134,6 +139,7 @@ class WarRepository(
                 sb.append("      \"clan_total_stars\": ${event.clanTotalStars},\n")
                 sb.append("      \"clan_total_destruction\": \"${escapeJson(event.clanTotalDestruction)}\",\n")
                 sb.append("      \"created_at\": ${event.createdAt},\n")
+                sb.append("      \"is_sample\": ${event.isSample},\n")
                 sb.append("      \"members\": [\n")
                 members.forEachIndexed { j, m ->
                     sb.append("        {\n")
@@ -275,4 +281,128 @@ class WarRepository(
         } else 0
         return type to round
     }
+
+    // === 备份 JSON：校验与完整还原（导出文件/云端同步共用格式） ===
+
+    /** 校验备份 JSON 是否为合法的备份结构（顶层含 roster 或 events）；非法返回 false。 */
+    fun validateBackupJson(json: String): Boolean {
+        val trimmed = json.trim()
+        if (trimmed.isBlank()) return false
+        return try {
+            val root = Gson().fromJson(trimmed, BackupData::class.java)
+            root != null && (root.events != null || root.roster != null)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * 解析备份 JSON 并完整还原（先全部解析成功，再清空本地事件/成员后写入，含花名册）。
+     * 任一事件损坏则抛异常且不触碰本地数据，避免「假成功」导致数据清空却未还原。
+     */
+    suspend fun restoreFromBackupJson(json: String) {
+        val root = Gson().fromJson(json, BackupData::class.java) ?: return
+
+        // 第一步：解析全部事件并保留原始名称，任一事件解析失败则整体放弃（不碰本地数据）
+        val parsedEvents = mutableListOf<WarJsonParser.ParsedEvent>()
+        root.events?.forEach { eventDto ->
+            val parsed = WarJsonParser.parse(
+                eventDto.toWarJson(),
+                isSample = eventDto.is_sample == true,
+                createdAt = eventDto.created_at?.takeIf { it > 0 } ?: System.currentTimeMillis(),
+                eventType = eventDto.event_type ?: EVENT_TYPE_WAR,
+                eventRound = eventDto.event_round ?: 0
+            )
+            if (parsed is WarJsonParser.ParseResult.Success) {
+                // 用备份里的原始名称覆盖，避免被重置为空
+                val src = parsed.data
+                parsedEvents += src.copy(
+                    event = src.event.copy(eventName = eventDto.event_name ?: src.event.eventName)
+                )
+            } else {
+                throw IllegalStateException("备份中某场战报数据损坏，已中止还原（本地数据未改动）")
+            }
+        }
+
+        // 第二步：全部解析成功后才清空本地并写入
+        clearAllEvents()
+
+        // 恢复花名册（addToRoster 内部去重/忽略已存在）
+        root.roster?.takeIf { it.isNotEmpty() }?.let { addToRoster(it) }
+
+        parsedEvents.forEach { restored ->
+            importEvent(restored)
+        }
+    }
 }
+
+/** 备份 JSON 的顶层结构（导出文件 / 云端同步 / 文件导入共用格式） */
+private data class BackupData(
+    val roster: List<String>? = null,
+    val events: List<BackupEvent>? = null
+)
+
+private data class BackupEvent(
+    val event_name: String? = null,
+    val event_type: String? = null,
+    val event_round: Int? = 0,
+    val clan_total_stars: Int? = 0,
+    val clan_total_destruction: String? = "0%",
+    val created_at: Long? = 0,
+    val is_sample: Boolean? = null,
+    val members: List<BackupMember>? = null
+) {
+    /** 将备份格式转换为 WarJsonParser 可解析的导入 JSON 格式 */
+    fun toWarJson(): String {
+        val sb = StringBuilder()
+        sb.append("{\n  \"members\": [\n")
+        members?.forEachIndexed { i, m ->
+            sb.append("    {\n")
+            sb.append("      \"rank\": ${m.rank},\n")
+            sb.append("      \"player_name\": \"${escape(m.player_name ?: "")}\",\n")
+            sb.append("      \"role\": \"${escape(m.role ?: "member")}\",\n")
+            sb.append("      \"total_stars\": ${m.total_stars ?: 0},\n")
+            sb.append("      \"attacks\": [\n")
+            m.attacks?.forEachIndexed { j, a ->
+                sb.append("        {\n")
+                sb.append("          \"attack_order\": ${a.attack_order ?: 0},\n")
+                sb.append("          \"status\": \"${escape(a.status ?: "unused")}\",\n")
+                sb.append("          \"destruction_percentage\": ${a.destruction_percentage ?: 0}\n")
+                sb.append("        }${if (j < (m.attacks?.lastIndex ?: 0)) "," else ""}\n")
+            }
+            sb.append("      ]\n")
+            sb.append("    }${if (i < (members?.lastIndex ?: 0)) "," else ""}\n")
+        }
+        sb.append("  ]\n}")
+        return sb.toString()
+    }
+
+    private fun escape(s: String): String = buildString(s.length + 8) {
+        for (c in s) {
+            when (c) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                else -> if (c < '\u0020') append("\\u%04x".format(c.code)) else append(c)
+            }
+        }
+    }
+}
+
+private data class BackupMember(
+    val rank: Int? = 0,
+    val player_name: String? = null,
+    val role: String? = null,
+    val total_stars: Int? = 0,
+    val attacks: List<BackupAttack>? = null
+)
+
+private data class BackupAttack(
+    val attack_order: Int? = 0,
+    val status: String? = null,
+    val destruction_percentage: Int? = 0
+)
