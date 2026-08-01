@@ -30,6 +30,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +48,8 @@ import com.cocwar.ui.members.MemberManageScreen
 import com.cocwar.ui.stats.StatsScreen
 import com.cocwar.ui.sync.SyncScreen
 import com.cocwar.ui.theme.CocWarTheme
+import com.cocwar.ui.theme.ThemePrefs
+import com.cocwar.ui.theme.ThemeStyle
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.tools.ToolsScreen
 
@@ -60,9 +65,17 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 100)
         }
         setContent {
-            CocWarTheme {
+            val context = this
+            var themeStyle by remember { mutableStateOf(ThemePrefs.load(context)) }
+            CocWarTheme(style = themeStyle) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    CocWarNavHost()
+                    CocWarNavHost(
+                        themeStyle = themeStyle,
+                        onThemeChange = { style ->
+                            themeStyle = style
+                            ThemePrefs.save(context, style)
+                        }
+                    )
                 }
             }
         }
@@ -86,7 +99,10 @@ private val BottomNavItems = listOf(
 private val TopLevelRoutes = setOf("event_list", "stats", "member_manage", "tools")
 
 @Composable
-private fun CocWarNavHost() {
+private fun CocWarNavHost(
+    themeStyle: ThemeStyle = ThemeStyle.LEDGER,
+    onThemeChange: (ThemeStyle) -> Unit = {},
+) {
     val nav = rememberNavController()
     val navBackStackEntry by nav.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: "event_list"
@@ -176,6 +192,8 @@ private fun CocWarNavHost() {
             composable("tools") {
                 ToolsScreen(
                     onSync = { nav.navigate("sync") },
+                    themeStyle = themeStyle,
+                    onThemeChange = onThemeChange,
                 )
             }
         }

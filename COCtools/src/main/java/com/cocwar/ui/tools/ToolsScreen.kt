@@ -12,6 +12,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,10 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -54,6 +57,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -69,11 +73,14 @@ import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.theme.cocColors
+import com.cocwar.ui.theme.ThemeStyle
 import kotlinx.coroutines.launch
 
 @Composable
 fun ToolsScreen(
     onSync: () -> Unit = {},
+    themeStyle: ThemeStyle = ThemeStyle.LEDGER,
+    onThemeChange: (ThemeStyle) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -125,8 +132,27 @@ fun ToolsScreen(
         ScreenHeader(
             title = "工具",
             overline = "设置与辅助",
-            subtitle = "数据管理 · 截图 · 关于"
+            subtitle = "外观 · 数据 · 截图 · 关于"
         )
+
+        // ── 外观：主题选择 ──
+        SectionTitleWithPadding("外观")
+        CocCard(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+        ) {
+            Column {
+                ThemeStyle.entries.forEachIndexed { index, style ->
+                    ThemeOptionRow(
+                        style = style,
+                        selected = style == themeStyle,
+                        onClick = { onThemeChange(style) }
+                    )
+                    if (index < ThemeStyle.entries.lastIndex) ToolsDivider()
+                }
+            }
+        }
 
         // ── 数据管理 ──
         SectionTitleWithPadding("数据管理")
@@ -480,6 +506,76 @@ private fun ToolsDivider(horizontal: androidx.compose.ui.unit.Dp = 16.dp) {
             .height(1.dp)
             .background(MaterialTheme.cocColors.hairline)
     )
+}
+
+/** 主题选择行：双色徽章（浅色/深色强调色）+ 名称 + 副标语 + 选中标记 */
+@Composable
+private fun ThemeOptionRow(
+    style: ThemeStyle,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(CocShape.panel)
+                .background(style.palette(false).accent),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(style.palette(true).accent)
+                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+            )
+        }
+        Spacer(Modifier.width(13.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                style.label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (selected) MaterialTheme.cocColors.accent
+                else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(1.dp))
+            Text(
+                style.tagline,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (selected) {
+            Box(
+                Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.cocColors.accent),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = "已选择",
+                    tint = MaterialTheme.colorScheme.onSecondary,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        } else {
+            Box(
+                Modifier
+                    .size(22.dp)
+                    .border(1.5.dp, MaterialTheme.cocColors.hairline, CircleShape)
+            )
+        }
+    }
 }
 
 /** 分组列表行：图标 + 标题/副标题 + 尾端箭头，整行可点 */

@@ -15,7 +15,7 @@ private fun normRole(role: String): String =
 
 fun roleLabel(role: String): String = when (normRole(role)) {
     "leader" -> "首领"
-    "coleader" -> "副首领"
+    "coleader", "viceleader" -> "副首领"
     "elder" -> "长老"
     "member" -> "成员"
     else -> role

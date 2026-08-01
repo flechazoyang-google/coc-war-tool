@@ -44,7 +44,7 @@ data class StatsOverview(
     val leagueCount: Int,
     // 合并统计
     val totalStars: Int,
-    val fullStarRate: Float,        // 满星率：获得总星数达到理论最大值的场次占比
+    val fullStarRate: Float,        // 满星率：获得总星数达到理论最大值（参与人数×3）的场次占比
     val avgStarsPerEvent: Float,
     val avgDestruction: Float,
     val totalUsedAttacks: Int,
@@ -283,8 +283,8 @@ object StatsCalculator {
     }
 
     /**
-     * 满星率：单场战报获得的总星数达到该场理论最大星数（可用攻击槽位×3）即计为满星。
-     * 部落战每名成员 2 个进攻槽位、联赛 1 个；无成员数据（最大星数为 0）的场次不参与统计。
+     * 满星率：单场战报获得的总星数达到该场理论最大星数（参与人数×3）即计为满星。
+     * 无成员数据（最大星数为 0）的场次不参与统计。
      */
     private fun computeFullStarRate(
         events: List<WarEventEntity>,
@@ -296,7 +296,7 @@ object StatsCalculator {
         var evaluableEvents = 0
         for (event in events) {
             val eventMembers = membersByEvent[event.eventId] ?: emptyList()
-            val maxStars = possibleAttackSlots(listOf(event), eventMembers) * 3
+            val maxStars = eventMembers.size * 3
             if (maxStars <= 0) continue
             evaluableEvents++
             if (event.clanTotalStars >= maxStars) fullStarEvents++
