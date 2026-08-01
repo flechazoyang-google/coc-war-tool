@@ -639,7 +639,10 @@ private fun TopScoreRow(index: Int, score: TopMemberScore) {
             )
             Spacer(Modifier.height(1.dp))
             Text(
-                "${roleLabel(score.role)} · 参战 ${score.attacked}/${score.totalWarEvents} · 三星 ${score.threeStarCount}次",
+                buildString {
+                    append("${roleLabel(score.role)} · 参战 ${score.attacked}/${score.totalWarEvents} · 三星 ${score.threeStarCount}次")
+                    if (score.fullStarEvents > 0) append(" · 满星 ${score.fullStarEvents}次")
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -654,7 +657,12 @@ private fun TopScoreRow(index: Int, score: TopMemberScore) {
             )
             Spacer(Modifier.height(1.dp))
             Text(
-                "${score.totalStars}星 · 三星率 ${formatPercent(score.threeStarRate * 100)}",
+                buildString {
+                    append("${score.totalStars}星 · 三星率 ${formatPercent(score.threeStarRate * 100)}")
+                    if (score.missedAttackCount > 0) append(" · 空刀 ${score.missedAttackCount}次")
+                    if (score.noAttackCount > 0) append(" · 未进攻 ${score.noAttackCount}次")
+                    if (score.absentCount > 0) append(" · 未参与 ${score.absentCount}次")
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

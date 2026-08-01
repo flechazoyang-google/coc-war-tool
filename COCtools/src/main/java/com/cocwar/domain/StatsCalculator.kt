@@ -88,8 +88,12 @@ data class TopMemberScore(
     val attacked: Int,              // 有效参战次数（部落战）
     val totalWarEvents: Int,        // 本月部落战总次数
     val threeStarCount: Int,        // 三星次数
-    val threeStarRate: Float,       // 三星率（分母含 unused）
-    val score: Float                // 总得分（满分 100）
+    val threeStarRate: Float,       // 三星率（分母为已使用进攻）
+    val fullStarEvents: Int = 0,    // 单场拿满 6 星场次（+2）
+    val missedAttackCount: Int = 0, // 空 1 个进攻机会场次（-3）
+    val noAttackCount: Int = 0,     // 两次进攻全空场次（-10）
+    val absentCount: Int = 0,       // 名单成员未参与场次（-4）
+    val score: Float                // 总得分
 )
 
 /**
@@ -404,12 +408,19 @@ object StatsCalculator {
     /**
      * 本月最佳积分制评选（仅统计部落战）。
      *
-     * 总分 = 三星率×50 + 总星数/(部落战次数×6)×30 + 有效参战次数/部落战次数×20
-     * 满分 100。
+     * 积分规则：
+     * - 每获得一颗星 +1
+     * - 每次 100% 摧毁率 +1
+     * - 单场部落战拿满 6 星 +2
+     * - 参战但空 1 个进攻机会 -3；两次进攻全空 -10
+     * - 名单成员未参与该场部落战 -4
+     *
+     * @param roster 正式成员名单（花名册），用于未参战扣分。
      */
     fun computeTopMembers(
         events: List<WarEventEntity>,
-        allMembers: List<MemberEntity>
+        allMembers: List<MemberEntity>,
+        roster: List<String> = emptyList()
     ): List<TopMemberScore> {
         val warEvents = events.filter { it.eventType != "league" }
         if (warEvents.isEmpty()) return emptyList()
@@ -419,8 +430,12 @@ object StatsCalculator {
         val warMembers = allMembers.filter { it.eventId in warEventIds }
         val byPlayer = warMembers.groupBy { it.playerName }
         val timeByEvent = eventTimeByEvent(warEvents)
+        val rosterSet = roster.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        // 评选范围 = 名单成员 ∪ 参战成员，保证未参战的名单成员也被计入扣分
+        val playerNames = (rosterSet + byPlayer.keys).toSet()
 
-        return byPlayer.map { (name, members) ->
+        return playerNames.map { name ->
+            val members = byPlayer[name] ?: emptyList()
             val allAttacks = members.flatMap { it.attacks }
             val usedAttacks = allAttacks.filter { it.status == "used" }
             val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
@@ -428,11 +443,48 @@ object StatsCalculator {
             val attacked = members.count { m -> m.attacks.any { a -> a.status == "used" } }
             val role = members.maxByOrNull { timeByEvent[it.eventId] ?: 0L }?.role ?: "member"
 
+            // 逐场累计积分
+            val membersByEvent = members.groupBy { it.eventId }
+            var score = 0f
+            var fullStarEvents = 0
+            var missedAttackCount = 0
+            var noAttackCount = 0
+            var absentCount = 0
+            for (event in warEvents) {
+                val m = membersByEvent[event.eventId]?.firstOrNull()
+                if (m == null) {
+                    // 名单成员未出现在该场战报数据中：未参战扣 4 分
+                    if (name in rosterSet) {
+                        score -= 4f
+                        absentCount++
+                    }
+                    continue
+                }
+                // 每颗星 +1
+                score += m.totalStars
+                // 每次 100% 摧毁率 +1
+                score += m.attacks.count { it.status == "used" && it.destructionPercentage == 100 }
+                // 单场拿满 6 星 +2
+                if (m.totalStars >= 6) {
+                    score += 2f
+                    fullStarEvents++
+                }
+                // 空 1 个进攻机会 -3；两次进攻全空 -10
+                val unused = m.attacks.count { it.status != "used" }
+                when {
+                    unused >= 2 -> {
+                        score -= 10f
+                        noAttackCount++
+                    }
+                    unused == 1 -> {
+                        score -= 3f
+                        missedAttackCount++
+                    }
+                }
+            }
+
             // 三星率分母统一为已使用进攻，与其余统计口径一致
             val threeStarRate = if (usedAttacks.isNotEmpty()) threeStarCount.toFloat() / usedAttacks.size else 0f
-            val starScore = if (totalWar > 0) (totalStars.toFloat() / (totalWar * 6)) * 30f else 0f
-            val partScore = if (totalWar > 0) (attacked.toFloat() / totalWar) * 20f else 0f
-            val score = (threeStarRate * 50f) + starScore + partScore
 
             TopMemberScore(
                 playerName = name,
@@ -442,6 +494,10 @@ object StatsCalculator {
                 totalWarEvents = totalWar,
                 threeStarCount = threeStarCount,
                 threeStarRate = threeStarRate,
+                fullStarEvents = fullStarEvents,
+                missedAttackCount = missedAttackCount,
+                noAttackCount = noAttackCount,
+                absentCount = absentCount,
                 score = score
             )
         }.sortedByDescending { it.score }

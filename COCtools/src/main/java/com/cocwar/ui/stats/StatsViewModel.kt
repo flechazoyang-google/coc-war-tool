@@ -81,6 +81,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     // 缓存当月原始数据
     private var currentEvents: List<WarEventEntity> = emptyList()
     private var currentMembers: List<MemberEntity> = emptyList()
+    private var currentRoster: List<String> = emptyList()
 
     // 月份加载任务（切换月份时取消旧任务，防止乱序覆盖）
     private var monthLoadJob: Job? = null
@@ -170,6 +171,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
             val eventIds = events.map { it.eventId }
             val members = if (eventIds.isNotEmpty()) repo.getMembersByEventIds(eventIds) else emptyList()
             currentMembers = members
+            currentRoster = repo.getRoster()
 
             // 应用当前类型筛选
             recomputeForFilter()
@@ -213,7 +215,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
 
         // 本月最佳独立视图：固定使用全量数据（积分制仅统计部落战），不受类型筛选影响
         (topMembers as MutableStateFlow).value =
-            StatsCalculator.computeTopMembers(currentEvents, currentMembers)
+            StatsCalculator.computeTopMembers(currentEvents, currentMembers, currentRoster)
 
         val rawMembers = StatsCalculator.computeMonthly(events, members)
         (memberStats as MutableStateFlow).value = rawMembers

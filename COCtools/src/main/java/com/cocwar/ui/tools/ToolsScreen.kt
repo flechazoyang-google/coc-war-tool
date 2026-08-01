@@ -30,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -142,14 +141,18 @@ fun ToolsScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            Column {
-                ThemeStyle.entries.forEachIndexed { index, style ->
-                    ThemeOptionRow(
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 8.dp)
+            ) {
+                ThemeStyle.entries.forEach { style ->
+                    ThemeChip(
+                        modifier = Modifier.weight(1f),
                         style = style,
                         selected = style == themeStyle,
                         onClick = { onThemeChange(style) }
                     )
-                    if (index < ThemeStyle.entries.lastIndex) ToolsDivider()
                 }
             }
         }
@@ -508,23 +511,27 @@ private fun ToolsDivider(horizontal: androidx.compose.ui.unit.Dp = 16.dp) {
     )
 }
 
-/** 主题选择行：双色徽章（浅色/深色强调色）+ 名称 + 副标语 + 选中标记 */
+/** 主题选择 chip：双色徽章 + 名称，横向紧凑排列；选中项徽章描边 + 名称高亮 */
 @Composable
-private fun ThemeOptionRow(
+private fun ThemeChip(
+    modifier: Modifier = Modifier,
     style: ThemeStyle,
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
+    Column(
+        modifier
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             Modifier
                 .size(34.dp)
+                .then(
+                    if (selected) Modifier.border(2.dp, MaterialTheme.cocColors.accent, CocShape.panel)
+                    else Modifier
+                )
                 .clip(CocShape.panel)
                 .background(style.palette(false).accent),
             contentAlignment = Alignment.Center
@@ -537,44 +544,14 @@ private fun ThemeOptionRow(
                     .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
             )
         }
-        Spacer(Modifier.width(13.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                style.label,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (selected) MaterialTheme.cocColors.accent
-                else MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(1.dp))
-            Text(
-                style.tagline,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (selected) {
-            Box(
-                Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.cocColors.accent),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.Check,
-                    contentDescription = "已选择",
-                    tint = MaterialTheme.colorScheme.onSecondary,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-        } else {
-            Box(
-                Modifier
-                    .size(22.dp)
-                    .border(1.5.dp, MaterialTheme.cocColors.hairline, CircleShape)
-            )
-        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            style.label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) MaterialTheme.cocColors.accent
+            else MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
