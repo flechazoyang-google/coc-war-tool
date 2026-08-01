@@ -29,6 +29,22 @@ enum class TypeFilter(val label: String) {
     LEAGUE("联赛")
 }
 
+/** 统计视图（二级筛选，随类型变化：部落战四项、联赛两项） */
+enum class StatsView(val label: String) {
+    OVERVIEW("总览"),
+    RANKING("排名"),
+    WARNING("预警"),
+    TOP("本月最佳");
+
+    companion object {
+        /** 指定类型可用的视图集合 */
+        fun forType(type: TypeFilter): List<StatsView> = when (type) {
+            TypeFilter.WAR -> entries
+            TypeFilter.LEAGUE -> listOf(OVERVIEW, WARNING)
+        }
+    }
+}
+
 /** 可选月份 */
 data class MonthOption(
     val year: Int,
@@ -191,9 +207,9 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         val eventIds = events.map { it.eventId }.toSet()
         val members = currentMembers.filter { it.eventId in eventIds }
 
-        // 总览固定同时展示部落战和联赛，不受类型筛选影响
+        // 总览按当前类型筛选，展示对应类型的数据
         (overview as MutableStateFlow).value =
-            StatsCalculator.computeOverview(currentEvents, currentMembers)
+            StatsCalculator.computeOverview(events, members)
 
         // 本月最佳独立视图：固定使用全量数据（积分制仅统计部落战），不受类型筛选影响
         (topMembers as MutableStateFlow).value =

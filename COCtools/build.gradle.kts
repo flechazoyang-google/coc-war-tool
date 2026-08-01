@@ -13,8 +13,8 @@ android {
         applicationId = "com.cocwar"
         minSdk = 30
         targetSdk = 34
-        versionCode = 11
-        versionName = "3.3"
+        versionCode = 12
+        versionName = "3.4"
     }
 
     buildTypes {

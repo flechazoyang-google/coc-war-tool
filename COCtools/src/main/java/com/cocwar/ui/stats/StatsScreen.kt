@@ -45,11 +45,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.di.warViewModel
+import com.cocwar.domain.EventStatSummary
 import com.cocwar.domain.MemberMonthlyStat
 import com.cocwar.domain.RecentMissedRank
 import com.cocwar.domain.StatsOverview
 import com.cocwar.domain.TopMemberScore
-import com.cocwar.domain.TypeStats
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
@@ -97,11 +97,9 @@ fun StatsScreen(onBack: () -> Unit) {
     val sortBy by viewModel.sortBy.collectAsStateWithLifecycle()
     val recentMissedWindow by viewModel.recentMissedWindow.collectAsStateWithLifecycle()
     val topMembers by viewModel.topMembers.collectAsStateWithLifecycle()
+    val eventSummaries by viewModel.eventSummaries.collectAsStateWithLifecycle()
 
-    var tab by rememberSaveable { mutableIntStateOf(0) }  // 0=总览, 1=排名, 2=预警, 3=本月最佳
-
-    // 视图标签
-    val viewLabels = listOf("总览", "排名", "预警", "本月最佳")
+    var currentView by rememberSaveable { mutableStateOf(StatsView.OVERVIEW) }
 
     // 筛选持久化 —— rememberSaveable
     var typeFilterIndex by rememberSaveable { mutableIntStateOf(0) }  // 0=部落战(默认), 1=联赛
@@ -109,7 +107,7 @@ fun StatsScreen(onBack: () -> Unit) {
     var showFilterDialog by remember { mutableStateOf(false) }
 
     // 筛选对话框的编辑状态（级联选择用）
-    var editViewTab by rememberSaveable { mutableIntStateOf(0) }
+    var editView by rememberSaveable { mutableStateOf(StatsView.OVERVIEW) }
     var editTypeIndex by rememberSaveable { mutableIntStateOf(0) }
     var editSortByIndex by remember { mutableIntStateOf(0) }
     var editRecentN by rememberSaveable { mutableIntStateOf(0) }
@@ -118,7 +116,7 @@ fun StatsScreen(onBack: () -> Unit) {
     // 打开对话框时用当前值初始化编辑状态
     LaunchedEffect(showFilterDialog) {
         if (showFilterDialog) {
-            editViewTab = tab
+            editView = currentView
             editTypeIndex = typeFilterIndex
             editSortByIndex = MemberSortBy.entries.indexOf(sortBy)
             editRecentN = recentMissedWindow
@@ -134,6 +132,10 @@ fun StatsScreen(onBack: () -> Unit) {
     if (editTypeIndex != safeEditTypeIndex) editTypeIndex = safeEditTypeIndex
 
     val currentTypeFilter = TypeFilter.entries[typeFilterIndex]
+
+    // 类型变化或状态恢复后，若当前视图不属于该类型，回落到总览
+    val availableViews = StatsView.forType(currentTypeFilter)
+    if (currentView !in availableViews) currentView = StatsView.OVERVIEW
 
     // 同步筛选到 ViewModel
     LaunchedEffect(typeFilterIndex) {
@@ -152,11 +154,11 @@ fun StatsScreen(onBack: () -> Unit) {
 
     // 判断筛选是否激活
     val defaultMonth = availableMonths.firstOrNull()
-    val isFilterActive = typeFilterIndex != 0 || (selectedMonth != null && selectedMonth != defaultMonth) || tab != 0
+    val isFilterActive = selectedMonth != null && selectedMonth != defaultMonth
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
-            title = "统计·${viewLabels[tab]}",
+            title = "统计·${currentView.label}",
             overline = "月度复盘",
             subtitle = selectedMonth?.label ?: "选择月份",
             actions = {
@@ -180,62 +182,66 @@ fun StatsScreen(onBack: () -> Unit) {
                     EmptyState(title = "暂无战报数据", body = "导入战报后这里会生成月度复盘")
                 }
             }
-            else -> when (tab) {
-                0 -> OverviewTab(overview, Modifier.weight(1f))
-                1 -> MembersTab(memberStats, Modifier.weight(1f))
-                2 -> MissedTab(recentMissed, Modifier.weight(1f))
-                3 -> TopMembersTab(topMembers, Modifier.weight(1f))
+            else -> when (currentView) {
+                StatsView.OVERVIEW -> OverviewTab(
+                    overview, eventSummaries, currentTypeFilter, Modifier.weight(1f)
+                )
+                StatsView.RANKING -> MembersTab(memberStats, Modifier.weight(1f))
+                StatsView.WARNING -> MissedTab(recentMissed, Modifier.weight(1f))
+                StatsView.TOP -> TopMembersTab(topMembers, Modifier.weight(1f))
             }
         }
     }
 
-    // 筛选对话框：级联选择（视图 → 类型/排序/时间段 → 月份）
+    // 筛选对话框：级联选择（类型 → 视图 → 排序/时间段 → 月份）
     if (showFilterDialog) {
         AlertDialog(
             onDismissRequest = { showFilterDialog = false },
             title = { Text("筛选") },
             text = {
                 Column {
-                    // 视图区（始终显示）
-                    Text("视图", style = MaterialTheme.typography.labelSmall,
+                    // 类型区（一级筛选，始终显示）
+                    Text("类型", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        viewLabels.forEachIndexed { index, label ->
+                        TypeFilter.entries.forEach { filter ->
                             FilterPill(
-                                label = label,
-                                selected = editViewTab == index,
-                                onClick = { editViewTab = index }
+                                label = filter.label,
+                                selected = editTypeIndex == filter.ordinal,
+                                onClick = {
+                                    editTypeIndex = filter.ordinal
+                                    val views = StatsView.forType(filter)
+                                    if (editView !in views) editView = StatsView.OVERVIEW
+                                }
                             )
                         }
                     }
 
-                    // 类型区（仅排名/预警时显示；总览与本月最佳固定展示全量数据）
-                    if (editViewTab == 1 || editViewTab == 2) {
-                        Spacer(Modifier.height(14.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(MaterialTheme.cocColors.hairline)
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        Text("类型", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TypeFilter.entries.forEach { filter ->
-                                FilterPill(
-                                    label = filter.label,
-                                    selected = editTypeIndex == filter.ordinal,
-                                    onClick = { editTypeIndex = filter.ordinal }
-                                )
-                            }
+                    // 视图区（二级筛选，随类型变化）
+                    Spacer(Modifier.height(14.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.cocColors.hairline)
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Text("视图", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatsView.forType(TypeFilter.entries[editTypeIndex]).forEach { view ->
+                            FilterPill(
+                                label = view.label,
+                                selected = editView == view,
+                                onClick = { editView = view }
+                            )
                         }
                     }
 
                     // 排序方式（仅排名时显示）
-                    if (editViewTab == 1) {
+                    if (editView == StatsView.RANKING) {
                         Spacer(Modifier.height(14.dp))
                         Box(
                             Modifier
@@ -259,7 +265,7 @@ fun StatsScreen(onBack: () -> Unit) {
                     }
 
                     // 时间段（仅预警时显示）
-                    if (editViewTab == 2) {
+                    if (editView == StatsView.WARNING) {
                         Spacer(Modifier.height(14.dp))
                         Box(
                             Modifier
@@ -337,21 +343,19 @@ fun StatsScreen(onBack: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     // 应用所有选择
-                    tab = editViewTab
-                    // 类型筛选仅对排名/预警生效（总览与本月最佳固定全量数据）
-                    if (editViewTab == 1 || editViewTab == 2) {
-                        typeFilterIndex = editTypeIndex.coerceIn(0, TypeFilter.entries.lastIndex)
-                        viewModel.setTypeFilter(TypeFilter.entries[typeFilterIndex])
-                    }
+                    // 类型为一级筛选，始终生效
+                    typeFilterIndex = editTypeIndex.coerceIn(0, TypeFilter.entries.lastIndex)
+                    viewModel.setTypeFilter(TypeFilter.entries[typeFilterIndex])
+                    currentView = editView
 
                     // 排序方式仅对排名生效
-                    if (editViewTab == 1) {
+                    if (editView == StatsView.RANKING) {
                         val newSort = MemberSortBy.entries[editSortByIndex]
                         viewModel.setSortBy(newSort)
                     }
 
                     // 时间段仅对预警生效
-                    if (editViewTab == 2) {
+                    if (editView == StatsView.WARNING) {
                         viewModel.setRecentMissedWindow(editRecentN)
                     }
 
@@ -380,13 +384,24 @@ fun StatsScreen(onBack: () -> Unit) {
 @Composable
 private fun OverviewTab(
     overview: StatsOverview?,
+    eventSummaries: List<EventStatSummary>,
+    typeFilter: TypeFilter,
     modifier: Modifier = Modifier
 ) {
     if (overview == null || overview.totalEvents == 0) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            EmptyState(title = "本月暂无战报", body = "切换月份查看历史复盘")
+            EmptyState(title = "本月暂无${typeFilter.label}数据", body = "切换月份或类型查看历史复盘")
         }
         return
+    }
+
+    // 折线图数据：每场星数，按创建时间升序
+    val chartValues = remember(eventSummaries) {
+        eventSummaries.sortedBy { it.createdAt }.map { it.totalStars.toFloat() }
+    }
+    val chartLabels = remember(eventSummaries, typeFilter) {
+        val suffix = if (typeFilter == TypeFilter.LEAGUE) "轮" else "场"
+        eventSummaries.sortedBy { it.createdAt }.indices.map { "第${it + 1}$suffix" }
     }
 
     LazyColumn(
@@ -396,20 +411,54 @@ private fun OverviewTab(
         // === 月度总览平面卡片 ===
         item { HeroCard(overview) }
 
-        // === 部落战区块 ===
-        item { SectionTitle("部落战") }
-        overview.war?.let { war ->
-            item { TypeStatsCard(war) }
-        } ?: item { EmptyTypeHint("本月无部落战") }
+        // === 每场星数趋势（折线图） ===
+        item { SectionTitle("每场星数") }
+        item {
+            CocCard(Modifier.fillMaxWidth()) {
+                if (chartValues.isEmpty()) {
+                    Text(
+                        "本月暂无${typeFilter.label}战报",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(20.dp)
+                    )
+                } else {
+                    StarTrendLineChart(
+                        values = chartValues,
+                        xLabels = chartLabels,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
+                    )
+                }
+            }
+        }
 
-        // === 联赛区块 ===
-        item { SectionTitle("联赛") }
-        overview.league?.let { league ->
-            item { TypeStatsCard(league) }
-        } ?: item { EmptyTypeHint("本月无联赛") }
+        // === 整体指标雷达图 ===
+        item { SectionTitle("整体指标") }
+        item {
+            CocCard(Modifier.fillMaxWidth()) {
+                OverviewRadarChart(
+                    axes = radarAxes(overview),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
+                )
+            }
+        }
 
         item { Spacer(Modifier.height(24.dp)) }
     }
+}
+
+/** 雷达图五维指标：全部归一化到 0~1 */
+private fun radarAxes(overview: StatsOverview): List<RadarAxis> {
+    val starRate = if (overview.totalPossibleAttacks > 0)
+        (overview.totalStars.toFloat() / (overview.totalPossibleAttacks * 3)).coerceIn(0f, 1f)
+    else 0f
+    return listOf(
+        RadarAxis("进攻率", overview.overallAttackRate.coerceIn(0f, 1f)),
+        RadarAxis("三星率", overview.threeStarRate.coerceIn(0f, 1f)),
+        RadarAxis("均摧毁", (overview.avgDestruction / 100f).coerceIn(0f, 1f)),
+        RadarAxis("星率", starRate),
+        RadarAxis("满星率", overview.fullStarRate.coerceIn(0f, 1f))
+    )
 }
 
 // ===== 本月最佳：独立视图，展示全部成员得分（按得分降序） =====
@@ -474,7 +523,7 @@ private fun HeroCard(overview: StatsOverview) {
                 HeroStat("战报", "${overview.totalEvents}", Modifier.weight(1f))
                 HeroDivider()
                 HeroStat(
-                    "总星数", "${overview.totalStars}", Modifier.weight(1f),
+                    "满星率", formatPercent(overview.fullStarRate * 100), Modifier.weight(1f),
                     valueColor = MaterialTheme.cocColors.star
                 )
                 HeroDivider()
@@ -493,66 +542,6 @@ private fun HeroCard(overview: StatsOverview) {
                         "进攻率",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 部落战 vs 联赛对比条
-            if (overview.war != null || overview.league != null) {
-                val warStars = overview.war?.totalStars ?: 0
-                val leagueStars = overview.league?.totalStars ?: 0
-                val totalTypeStars = warStars + leagueStars
-                val warRatio = if (totalTypeStars > 0) warStars.toFloat() / totalTypeStars else 0.5f
-
-                Spacer(Modifier.height(16.dp))
-                Box(
-                    Modifier
-                        .padding(horizontal = 18.dp)
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(MaterialTheme.cocColors.hairline)
-                )
-                Spacer(Modifier.height(12.dp))
-
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "部落战 ${overview.war?.eventCount ?: 0}场 · ${warStars}星",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.cocColors.accent
-                    )
-                    Text(
-                        "联赛 ${overview.league?.eventCount ?: 0}场 · ${leagueStars}星",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.cocColors.star
-                    )
-                }
-                Spacer(Modifier.height(7.dp))
-                Row(
-                    Modifier
-                        .padding(horizontal = 18.dp)
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .clip(RoundedCornerShape(2.5.dp))
-                ) {
-                    Box(
-                        Modifier
-                            .weight(warRatio.coerceIn(0.04f, 0.96f))
-                            .height(5.dp)
-                            .background(MaterialTheme.cocColors.accent)
-                    )
-                    Spacer(Modifier.width(2.dp))
-                    Box(
-                        Modifier
-                            .weight((1f - warRatio).coerceIn(0.04f, 0.96f))
-                            .height(5.dp)
-                            .background(MaterialTheme.cocColors.star)
                     )
                 }
             }
@@ -618,97 +607,6 @@ private fun RingStat(
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = labelColor
-        )
-    }
-}
-
-@Composable
-private fun EmptyTypeHint(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(vertical = 6.dp)
-    )
-}
-
-// ===== 单类型统计卡片 =====
-
-@Composable
-private fun TypeStatsCard(stats: TypeStats) {
-    CocCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(vertical = 16.dp)) {
-            Row(Modifier.fillMaxWidth()) {
-                CountStat("场次", "${stats.eventCount}", Modifier.weight(1f))
-                CountStat("总星数", "${stats.totalStars}", Modifier.weight(1f),
-                    valueColor = MaterialTheme.cocColors.star)
-                CountStat("均星", "%.1f".format(stats.avgStarsPerEvent), Modifier.weight(1f))
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Box(
-                Modifier
-                    .padding(horizontal = 18.dp)
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(MaterialTheme.cocColors.hairline)
-            )
-            Spacer(Modifier.height(14.dp))
-
-            Row(Modifier.fillMaxWidth()) {
-                RingStatTile("进攻率", stats.attackRate, attackRateColor(stats.attackRate), Modifier.weight(1f))
-                RingStatTile("三星率", stats.threeStarRate, threeStarRateColor(stats.threeStarRate), Modifier.weight(1f))
-                RingStatTile(
-                    "均摧毁", stats.avgDestruction / 100f,
-                    if (stats.avgDestruction >= 90f) MaterialTheme.cocColors.accent
-                    else if (stats.avgDestruction >= 70f) MaterialTheme.cocColors.star
-                    else MaterialTheme.cocColors.danger,
-                    Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-/** 环形进度 + 标签 */
-@Composable
-private fun RingStatTile(
-    label: String,
-    rate: Float,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
-        RingStat(rate = rate, color = color, size = 50.dp, strokeWidth = 4.dp)
-        Spacer(Modifier.height(5.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-/** 大数字 + 标签 */
-@Composable
-private fun CountStat(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
-        Text(
-            value,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = valueColor
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
