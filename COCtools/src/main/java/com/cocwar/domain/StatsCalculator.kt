@@ -2,6 +2,7 @@ package com.cocwar.domain
 
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.WarEventEntity
+import com.cocwar.data.model.isUsed
 
 /**
  * 月度成员参战统计。
@@ -143,11 +144,11 @@ object StatsCalculator {
         events.associate { it.eventId to it.createdAt }
 
     fun compute(event: WarEventEntity, members: List<MemberEntity>): WarStats {
-        val usedAttacks = members.flatMap { it.attacks }.filter { it.status == "used" }
+        val usedAttacks = members.flatMap { it.attacks }.filter { it.isUsed() }
         val totalUsedAttacks = usedAttacks.size
 
-        val attackerCount = members.count { m -> m.attacks.any { it.status == "used" } }
-        val nonAttackers = members.filter { m -> m.attacks.none { it.status == "used" } }
+        val attackerCount = members.count { m -> m.attacks.any { it.isUsed() } }
+        val nonAttackers = members.filter { m -> m.attacks.none { it.isUsed() } }
         val nonAttackerNames = nonAttackers.sortedBy { it.rank }.map { it.playerName }
 
         // 三星次数：摧毁率百分之百即认定为三星
@@ -196,7 +197,7 @@ object StatsCalculator {
             // 只统计当月事件的参与
             val monthMembers = members.filter { it.eventId in eventIds }
             val participated = monthMembers.size
-            val attacked = monthMembers.count { m -> m.attacks.any { a -> a.status == "used" } }
+            val attacked = monthMembers.count { m -> m.attacks.any { a -> a.isUsed() } }
             // 角色取「最近一次参与事件」中的职务，避免 lastOrNull 随机取到任意一场
             val timeByEvent = eventTimeByEvent(events)
             val role = monthMembers.maxByOrNull { timeByEvent[it.eventId] ?: 0L }?.role ?: "member"
@@ -204,7 +205,7 @@ object StatsCalculator {
             // 增强指标
             val totalStars = monthMembers.sumOf { it.totalStars }
             val allAttacks = monthMembers.flatMap { it.attacks }
-            val allUsedAttacks = allAttacks.filter { it.status == "used" }
+            val allUsedAttacks = allAttacks.filter { it.isUsed() }
             val avgStars = if (participated > 0) totalStars.toFloat() / participated else 0f
             val avgDestruction = if (allUsedAttacks.isNotEmpty())
                 allUsedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
@@ -259,7 +260,7 @@ object StatsCalculator {
         val leagueEvents = events.filter { it.eventType == "league" }
 
         val allAttacks = members.flatMap { it.attacks }
-        val usedAttacks = allAttacks.filter { it.status == "used" }
+        val usedAttacks = allAttacks.filter { it.isUsed() }
         val totalUsedAttacks = usedAttacks.size
         val totalPossibleAttacks = possibleAttackSlots(events, members)
         val overallAttackRate = if (totalPossibleAttacks > 0) totalUsedAttacks.toFloat() / totalPossibleAttacks else 0f
@@ -317,7 +318,7 @@ object StatsCalculator {
         val members = allMembers.filter { it.eventId in eventIds }
         val totalStars = events.sumOf { it.clanTotalStars }
         val allAttacks = members.flatMap { it.attacks }
-        val usedAttacks = allAttacks.filter { it.status == "used" }
+        val usedAttacks = allAttacks.filter { it.isUsed() }
         val totalUsedAttacks = usedAttacks.size
         val totalPossibleAttacks = possibleAttackSlots(events, members)
         val attackRate = if (totalPossibleAttacks > 0) totalUsedAttacks.toFloat() / totalPossibleAttacks else 0f
@@ -351,8 +352,8 @@ object StatsCalculator {
 
         return events.map { event ->
             val members = membersByEvent[event.eventId] ?: emptyList()
-            val usedAttacks = members.flatMap { it.attacks }.filter { it.status == "used" }
-            val attackerCount = members.count { m -> m.attacks.any { it.status == "used" } }
+            val usedAttacks = members.flatMap { it.attacks }.filter { it.isUsed() }
+            val attackerCount = members.count { m -> m.attacks.any { it.isUsed() } }
             val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
             val avgDestruction = if (usedAttacks.isNotEmpty())
                 usedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
@@ -394,7 +395,7 @@ object StatsCalculator {
         val timeByEvent = eventTimeByEvent(selected)
 
         return byPlayer.mapNotNull { (name, members) ->
-            val attacked = members.count { m -> m.attacks.any { a -> a.status == "used" } }
+            val attacked = members.count { m -> m.attacks.any { a -> a.isUsed() } }
             val missed = members.size - attacked
             if (missed <= 0) null
             else RecentMissedRank(
@@ -420,7 +421,8 @@ object StatsCalculator {
     fun computeTopMembers(
         events: List<WarEventEntity>,
         allMembers: List<MemberEntity>,
-        roster: List<String> = emptyList()
+        roster: List<String> = emptyList(),
+        rosterRoles: Map<String, String> = emptyMap()
     ): List<TopMemberScore> {
         val warEvents = events.filter { it.eventType != "league" }
         if (warEvents.isEmpty()) return emptyList()
@@ -437,11 +439,13 @@ object StatsCalculator {
         return playerNames.map { name ->
             val members = byPlayer[name] ?: emptyList()
             val allAttacks = members.flatMap { it.attacks }
-            val usedAttacks = allAttacks.filter { it.status == "used" }
+            val usedAttacks = allAttacks.filter { it.isUsed() }
             val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
             val totalStars = members.sumOf { it.totalStars }
-            val attacked = members.count { m -> m.attacks.any { a -> a.status == "used" } }
-            val role = members.maxByOrNull { timeByEvent[it.eventId] ?: 0L }?.role ?: "member"
+            val attacked = members.count { m -> m.attacks.any { a -> a.isUsed() } }
+            val role = members.maxByOrNull { timeByEvent[it.eventId] ?: 0L }?.role
+                ?: rosterRoles[name]
+                ?: "member"
 
             // 逐场累计积分
             val membersByEvent = members.groupBy { it.eventId }
@@ -463,14 +467,14 @@ object StatsCalculator {
                 // 每颗星 +1
                 score += m.totalStars
                 // 每次 100% 摧毁率 +1
-                score += m.attacks.count { it.status == "used" && it.destructionPercentage == 100 }
+                score += m.attacks.count { it.isUsed() && it.destructionPercentage == 100 }
                 // 单场拿满 6 星 +2
                 if (m.totalStars >= 6) {
                     score += 2f
                     fullStarEvents++
                 }
                 // 空 1 个进攻机会 -3；两次进攻全空 -10
-                val unused = m.attacks.count { it.status != "used" }
+                val unused = m.attacks.count { !it.isUsed() }
                 when {
                     unused >= 2 -> {
                         score -= 10f

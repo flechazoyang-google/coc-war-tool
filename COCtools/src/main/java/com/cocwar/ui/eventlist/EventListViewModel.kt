@@ -37,4 +37,10 @@ class EventListViewModel(private val repo: WarRepository) : ViewModel() {
     suspend fun undoDelete(snapshot: DeletedWar) {
         repo.importEvent(WarJsonParser.ParsedEvent(snapshot.event, snapshot.members))
     }
+
+    /** 解析剪切板战报 JSON：注入花名册职位映射，使预览阶段名字颜色即按花名册职位展示。 */
+    suspend fun parseWarJson(text: String): WarJsonParser.ParseResult {
+        val roleMap = repo.rosterRoleMap()
+        return WarJsonParser.parse(text, rosterRoles = roleMap)
+    }
 }

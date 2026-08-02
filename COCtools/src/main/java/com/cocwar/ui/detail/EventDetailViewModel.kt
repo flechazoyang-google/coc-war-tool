@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.model.Attack
+import com.cocwar.data.model.isUsed
 import com.cocwar.data.repository.WarRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,15 +47,12 @@ class EventDetailViewModel(private val repo: WarRepository, private val eventId:
 
     // === 成员编辑 ===
 
-    /** 修改某次进攻的状态与摧毁率（一次原子写入，避免双协程竞态） */
-    fun updateAttack(member: MemberEntity, attackOrder: Int, used: Boolean, destruction: Int) {
+    /** 修改某次进攻的摧毁率（>0 视为已使用，0 视为未进攻），一次原子写入 */
+    fun updateAttack(member: MemberEntity, attackOrder: Int, destruction: Int) {
         viewModelScope.launch {
             val newAttacks = member.attacks.map { attack ->
                 if (attack.attackOrder == attackOrder) {
-                    attack.copy(
-                        status = if (used) "used" else "unused",
-                        destructionPercentage = if (used) destruction.coerceIn(0, 100) else 0
-                    )
+                    attack.copy(destructionPercentage = destruction.coerceIn(0, 100))
                 } else attack
             }
             val newTotalStars = computeTotalStars(newAttacks)
@@ -62,9 +60,9 @@ class EventDetailViewModel(private val repo: WarRepository, private val eventId:
         }
     }
 
-    /** 根据攻击列表计算总星数（每 50% 摧毁 = 1 星，100% = 3 星） */
+    /** 根据攻击列表计算总星数（摧毁率 50% = 1 星，100% = 3 星；0 视为未使用） */
     private fun computeTotalStars(attacks: List<Attack>): Int {
-        return attacks.filter { it.status == "used" }.fold(0) { acc, attack ->
+        return attacks.filter { it.isUsed() }.fold(0) { acc, attack ->
             acc + when {
                 attack.destructionPercentage >= 100 -> 3
                 attack.destructionPercentage >= 50 -> 2

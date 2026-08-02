@@ -14,15 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,14 +33,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cocwar.data.model.Attack
+import com.cocwar.data.model.isUsed
 import com.cocwar.di.warViewModel
 import com.cocwar.domain.EventStatSummary
 import com.cocwar.domain.MemberMonthlyStat
@@ -77,13 +76,6 @@ private fun threeStarRateColor(rate: Float): Color = when {
     else -> MaterialTheme.cocColors.danger
 }
 
-@Composable
-private fun progressBarColor(progress: Float): Color = when {
-    progress >= 0.8f -> MaterialTheme.cocColors.accent
-    progress >= 0.5f -> MaterialTheme.cocColors.star
-    else -> MaterialTheme.cocColors.danger
-}
-
 // ==================== 主屏幕 ====================
 
 @Composable
@@ -101,6 +93,9 @@ fun StatsScreen(onBack: () -> Unit) {
     val eventSummaries by viewModel.eventSummaries.collectAsStateWithLifecycle()
 
     var currentView by rememberSaveable { mutableStateOf(StatsView.OVERVIEW) }
+
+    // 排名页成员详情弹窗：点击成员行后展示本月逐场数据
+    var detailPlayer by remember { mutableStateOf<MemberMonthlyStat?>(null) }
 
     // 筛选持久化 —— rememberSaveable
     var typeFilterIndex by rememberSaveable { mutableIntStateOf(0) }  // 0=部落战(默认), 1=联赛
@@ -187,7 +182,9 @@ fun StatsScreen(onBack: () -> Unit) {
                 StatsView.OVERVIEW -> OverviewTab(
                     overview, eventSummaries, currentTypeFilter, Modifier.weight(1f)
                 )
-                StatsView.RANKING -> MembersTab(memberStats, Modifier.weight(1f))
+                StatsView.RANKING -> MembersTab(memberStats, Modifier.weight(1f)) { stat ->
+                    detailPlayer = stat
+                }
                 StatsView.WARNING -> MissedTab(recentMissed, Modifier.weight(1f))
                 StatsView.TOP -> TopMembersTab(topMembers, Modifier.weight(1f))
             }
@@ -376,6 +373,15 @@ fun StatsScreen(onBack: () -> Unit) {
                     Text("取消")
                 }
             }
+        )
+    }
+
+    // 排名页成员详情弹窗（表格展示本月逐场战报）
+    detailPlayer?.let { stat ->
+        MemberDetailDialog(
+            stat = stat,
+            details = viewModel.memberEventDetails(stat.playerName),
+            onDismiss = { detailPlayer = null }
         )
     }
 }
@@ -768,7 +774,8 @@ private fun ScoreRuleRow(label: String, unit: String, count: Int, per: Int) {
 @Composable
 private fun MembersTab(
     stats: List<MemberMonthlyStat>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onMemberClick: (MemberMonthlyStat) -> Unit
 ) {
     if (stats.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -778,99 +785,215 @@ private fun MembersTab(
     }
 
     Column(modifier) {
-        // 表头
+        // 表头：名次 / 成员 / 参战 / 星数 / 三星率
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 22.dp)
-                .padding(top = 14.dp, bottom = 6.dp)
+                .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 6.dp)
         ) {
+            Text("名次", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(36.dp))
             Text("成员", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1.5f))
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text("参战", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.8f))
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(40.dp))
             Text("星数", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.8f))
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(40.dp))
             Text("三星率", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.9f))
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(56.dp))
         }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(stats, key = { it.playerName }) { stat -> MemberStatCard(stat) }
+        // 无卡片行列表，发丝线分隔；点击行弹出成员详情
+        LazyColumn(Modifier.fillMaxSize()) {
+            itemsIndexed(stats, key = { _, s -> s.playerName }) { index, stat ->
+                MemberStatRow(stat = stat, rank = index + 1, onClick = { onMemberClick(stat) })
+                if (index < stats.lastIndex) {
+                    Box(
+                        Modifier
+                            .padding(start = 56.dp)
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.cocColors.hairline)
+                    )
+                }
+            }
             item { Spacer(Modifier.height(16.dp)) }
         }
     }
 }
 
 @Composable
-private fun MemberStatCard(stat: MemberMonthlyStat) {
-    val progress = if (stat.totalEvents > 0) stat.attacked.toFloat() / stat.totalEvents else 0f
-    val barColor = progressBarColor(progress)
-
-    CocCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1.5f)) {
-                    Text(
-                        stat.playerName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = roleColor(stat.role)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        roleLabel(stat.role),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Text("${stat.participated}/${stat.totalEvents}",
-                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.8f))
-                Text("${stat.totalStars}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
-                Text(formatPercent(stat.threeStarRate * 100),
-                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
-                    color = threeStarRateColor(stat.threeStarRate),
-                    modifier = Modifier.weight(0.9f))
-            }
-
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("均星 ${"%.1f".format(stat.avgStars)}", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("均摧毁 ${formatPercent(stat.avgDestruction)}", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("三星 ${stat.threeStarCount}次", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (stat.missedCount > 0) {
-                    Text("未进攻 ${stat.missedCount}次", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.cocColors.danger)
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(1.5.dp)),
-                color = barColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                strokeCap = StrokeCap.Round
-            )
-        }
+private fun MemberStatRow(
+    stat: MemberMonthlyStat,
+    rank: Int,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = 20.dp, end = 20.dp, top = 13.dp, bottom = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "%02d".format(rank),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.width(36.dp)
+        )
+        Text(
+            stat.playerName,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = roleColor(stat.role),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            "${stat.attacked}/${stat.totalEvents}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(40.dp)
+        )
+        Text(
+            "${stat.totalStars}",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.width(40.dp)
+        )
+        Text(
+            formatPercent(stat.threeStarRate * 100),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = threeStarRateColor(stat.threeStarRate),
+            modifier = Modifier.width(56.dp)
+        )
     }
 }
+
+/** 排名页成员详情弹窗：表格展示本月逐场战报数据。 */
+@Composable
+private fun MemberDetailDialog(
+    stat: MemberMonthlyStat,
+    details: List<MemberEventDetail>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("${stat.playerName} · ${stat.totalStars}★", fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "本月 ${roleLabel(stat.role)} · 参战 ${stat.attacked}/${stat.totalEvents} · 三星率 ${formatPercent(stat.threeStarRate * 100)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column {
+                // 表头：战报 / 进攻1 / 进攻2 / 星数
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("战报", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1.4f))
+                    Text("进攻1", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.7f))
+                    Text("进攻2", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.7f))
+                    Text("星数", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.4f))
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.cocColors.hairline)
+                )
+                if (details.isEmpty()) {
+                    Text(
+                        "本月无参战记录",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 14.dp)
+                    )
+                } else {
+                    details.forEachIndexed { index, detail ->
+                        MemberDetailRow(detail)
+                        if (index < details.lastIndex) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(1.dp)
+                                    .background(MaterialTheme.cocColors.hairline.copy(alpha = 0.6f))
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
+}
+
+/** 弹窗内单行：战报名 + 两次进攻摧毁率 + 该场星数。 */
+@Composable
+private fun MemberDetailRow(detail: MemberEventDetail) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val displayName = detail.eventName.ifBlank {
+            if (detail.eventType == "league") "联赛" else "部落战"
+        }
+        Text(
+            displayName,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1.4f)
+        )
+        Text(
+            attackCell(detail.attacks.getOrNull(0)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.7f)
+        )
+        Text(
+            attackCell(detail.attacks.getOrNull(1)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.7f)
+        )
+        Text(
+            "${detail.stars}★",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = when {
+                detail.stars >= 6 -> MaterialTheme.cocColors.accent
+                detail.stars >= 3 -> MaterialTheme.cocColors.star
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+            modifier = Modifier.weight(0.4f)
+        )
+    }
+}
+
+/** 进攻单元格：已使用显示摧毁率百分比，未使用显示 —。 */
+private fun attackCell(attack: Attack?): String =
+    if (attack != null && attack.isUsed()) "${attack.destructionPercentage}%" else "—"
 
 // ==================== Tab 2: 未进攻排行 ====================
 

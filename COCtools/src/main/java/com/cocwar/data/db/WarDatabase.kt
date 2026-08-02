@@ -42,7 +42,8 @@ data class MemberEntity(
 
 @Entity(tableName = "member_roster")
 data class MemberRosterEntity(
-    @PrimaryKey val name: String
+    @PrimaryKey val name: String,
+    val role: String = "member"
 )
 
 class Converters {
@@ -151,6 +152,9 @@ interface RosterDao {
 
     @Query("DELETE FROM member_roster WHERE name = :name")
     suspend fun delete(name: String)
+
+    @Query("UPDATE member_roster SET role = :role WHERE name = :name")
+    suspend fun updateRole(name: String, role: String)
 }
 
 // v1→v2: 移除 war_events 中的敌方部落字段
@@ -195,9 +199,25 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+// v5→v6: member_roster 新增 role 列（职位由花名册维护，默认成员；幂等：已存在则跳过）
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val hasColumn = db.query("PRAGMA table_info(member_roster)").use { cursor ->
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(1) == "role") { found = true; break }
+            }
+            found
+        }
+        if (!hasColumn) {
+            db.execSQL("ALTER TABLE member_roster ADD COLUMN role TEXT NOT NULL DEFAULT 'member'")
+        }
+    }
+}
+
 @Database(
     entities = [WarEventEntity::class, MemberEntity::class, MemberRosterEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -210,7 +230,7 @@ abstract class WarDatabase : RoomDatabase() {
 
         fun build(context: android.content.Context): WarDatabase =
             Room.databaseBuilder(context.applicationContext, WarDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
     }
 }

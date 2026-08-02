@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.WarEventEntity
+import com.cocwar.data.model.isUsed
 import com.cocwar.di.warViewModel
 import com.cocwar.domain.StatsCalculator
 import com.cocwar.domain.WarStats
@@ -92,7 +93,6 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
     // 攻击编辑弹窗状态
     var editingAttack by remember { mutableStateOf<EditAttackInfo?>(null) }
     var editDestructionText by remember { mutableStateOf("") }
-    var editStatusUsed by remember { mutableStateOf(true) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -187,27 +187,23 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
                 2 -> MembersTab(members, Modifier.weight(1f)) { member, attackOrder ->
                     val attack = member.attacks.find { it.attackOrder == attackOrder }
                     editingAttack = EditAttackInfo(member, attackOrder)
-                    editStatusUsed = attack?.status == "used"
                     editDestructionText = attack?.destructionPercentage?.toString() ?: "0"
                 }
             }
         }
     }
 
-    // 攻击编辑弹窗
+    // 攻击编辑弹窗（精简结构：只编辑摧毁率，>0 视为已使用，0 视为未进攻）
     editingAttack?.let { info ->
         AttackEditDialog(
             attackOrder = info.attackOrder,
-            statusUsed = editStatusUsed,
             destructionText = editDestructionText,
-            onStatusChange = { editStatusUsed = it },
             onDestructionChange = { editDestructionText = it },
             onDismiss = { editingAttack = null },
             onConfirm = {
                 val destruction = editDestructionText.toIntOrNull()?.coerceIn(0, 100) ?: 0
                 val member = info.member
-                // 一次原子写入状态+摧毁率，避免旧的两次并发写竞态
-                viewModel.updateAttack(member, info.attackOrder, used = editStatusUsed, destruction = destruction)
+                viewModel.updateAttack(member, info.attackOrder, destruction)
                 editingAttack = null
             }
         )
@@ -217,9 +213,7 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
 @Composable
 private fun AttackEditDialog(
     attackOrder: Int,
-    statusUsed: Boolean,
     destructionText: String,
-    onStatusChange: (Boolean) -> Unit,
     onDestructionChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
@@ -228,31 +222,26 @@ private fun AttackEditDialog(
         onDismissRequest = onDismiss,
         title = { Text("编辑第${attackOrder}次进攻") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("状态", style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.width(12.dp))
-                    FilterPill(label = "已使用", selected = statusUsed, onClick = { onStatusChange(true) })
-                    Spacer(Modifier.width(8.dp))
-                    FilterPill(label = "未使用", selected = !statusUsed, onClick = { onStatusChange(false) })
-                }
-                if (statusUsed) {
-                    OutlinedTextField(
-                        value = destructionText,
-                        onValueChange = { text ->
-                            // 只允许数字输入
-                            if (text.isEmpty() || text.all { it.isDigit() } && text.length <= 3) {
-                                onDestructionChange(text)
-                            }
-                        },
-                        label = { Text("摧毁率 (0-100)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        shape = CocShape.field,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = destructionText,
+                    onValueChange = { text ->
+                        // 只允许数字输入
+                        if (text.isEmpty() || text.all { it.isDigit() } && text.length <= 3) {
+                            onDestructionChange(text)
+                        }
+                    },
+                    label = { Text("摧毁率 (0-100)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    shape = CocShape.field,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "摧毁率大于 0 视为已进攻，填 0 表示未进攻",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         confirmButton = {
@@ -504,7 +493,7 @@ private fun MemberCard(
     member: MemberEntity,
     onEditAttack: (MemberEntity, Int) -> Unit = { _, _ -> }
 ) {
-    val hasAttack = member.attacks.any { it.status == "used" }
+    val hasAttack = member.attacks.any { it.isUsed() }
     val nameColor = roleColor(member.role)
 
     CocCard(Modifier.fillMaxWidth()) {
@@ -571,14 +560,14 @@ private fun MemberCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        if (attack.status == "used") "第${attack.attackOrder}次进攻"
+                        if (attack.isUsed()) "第${attack.attackOrder}次进攻"
                         else "第${attack.attackOrder}次 · 未使用",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (attack.status == "used") MaterialTheme.colorScheme.onSurface
+                        color = if (attack.isUsed()) MaterialTheme.colorScheme.onSurface
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (attack.status == "used") {
+                        if (attack.isUsed()) {
                             Text(
                                 "${attack.destructionPercentage}%",
                                 style = MaterialTheme.typography.labelLarge,

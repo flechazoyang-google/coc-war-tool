@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.WarEventEntity
+import com.cocwar.data.model.Attack
 import com.cocwar.data.repository.WarRepository
 import com.cocwar.domain.EventStatSummary
 import com.cocwar.domain.MemberMonthlyStat
@@ -54,6 +55,14 @@ data class MonthOption(
     val endMs: Long
 )
 
+/** 成员单场战报明细（排名页详情弹窗表格用） */
+data class MemberEventDetail(
+    val eventName: String,
+    val eventType: String,
+    val stars: Int,
+    val attacks: List<Attack>
+)
+
 class StatsViewModel(private val repo: WarRepository) : ViewModel() {
 
     // --- 月份选择 ---
@@ -82,6 +91,10 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     private var currentEvents: List<WarEventEntity> = emptyList()
     private var currentMembers: List<MemberEntity> = emptyList()
     private var currentRoster: List<String> = emptyList()
+    private var currentRosterRoles: Map<String, String> = emptyMap()
+
+    // 当前类型筛选后的事件列表（详情弹窗用）
+    private var filteredEvents: List<WarEventEntity> = emptyList()
 
     // 月份加载任务（切换月份时取消旧任务，防止乱序覆盖）
     private var monthLoadJob: Job? = null
@@ -170,7 +183,11 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
             currentEvents = events
             val eventIds = events.map { it.eventId }
             val members = if (eventIds.isNotEmpty()) repo.getMembersByEventIds(eventIds) else emptyList()
-            currentMembers = members
+            // 职位以花名册为准：统计前用花名册角色覆盖成员快照，花名册改职位后历史统计同步更新
+            currentRosterRoles = repo.rosterRoleMap()
+            currentMembers = if (currentRosterRoles.isEmpty()) members else members.map {
+                it.copy(role = currentRosterRoles[it.playerName] ?: it.role)
+            }
             currentRoster = repo.getRoster()
 
             // 应用当前类型筛选
@@ -206,6 +223,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
 
     private fun recomputeForFilter() {
         val events = filterEventsByType(currentEvents)
+        filteredEvents = events
         val eventIds = events.map { it.eventId }.toSet()
         val members = currentMembers.filter { it.eventId in eventIds }
 
@@ -215,7 +233,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
 
         // 本月最佳独立视图：固定使用全量数据（积分制仅统计部落战），不受类型筛选影响
         (topMembers as MutableStateFlow).value =
-            StatsCalculator.computeTopMembers(currentEvents, currentMembers, currentRoster)
+            StatsCalculator.computeTopMembers(currentEvents, currentMembers, currentRoster, currentRosterRoles)
 
         val rawMembers = StatsCalculator.computeMonthly(events, members)
         (memberStats as MutableStateFlow).value = rawMembers
@@ -238,5 +256,26 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         val windowedMembers = currentMembers.filter { it.eventId in windowedIds }
         (recentMissed as MutableStateFlow).value =
             StatsCalculator.computeRecentMissed(windowed, windowedMembers, window)
+    }
+
+    /**
+     * 该成员本月（当前筛选类型内）逐场参战明细，按时间升序，仅实际参战场次。
+     * 供排名页点击成员后弹出表格展示。
+     */
+    fun memberEventDetails(playerName: String): List<MemberEventDetail> {
+        val eventTime = filteredEvents.associate { it.eventId to it.createdAt }
+        val nameToEvent = filteredEvents.associate { it.eventId to it }
+        return currentMembers
+            .filter { it.playerName == playerName && it.eventId in eventTime.keys }
+            .sortedBy { eventTime[it.eventId] ?: 0L }
+            .map { m ->
+                val ev = nameToEvent[m.eventId]
+                MemberEventDetail(
+                    eventName = ev?.eventName.orEmpty(),
+                    eventType = ev?.eventType ?: "war",
+                    stars = m.totalStars,
+                    attacks = m.attacks
+                )
+            }
     }
 }

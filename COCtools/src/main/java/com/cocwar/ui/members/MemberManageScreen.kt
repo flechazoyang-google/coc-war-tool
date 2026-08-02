@@ -1,6 +1,7 @@
 package com.cocwar.ui.members
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -28,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +51,8 @@ import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.EmptyState
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.theme.cocColors
+import com.cocwar.ui.theme.roleColor
+import com.cocwar.ui.util.roleLabel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -54,6 +61,7 @@ fun MemberManageScreen(onBack: () -> Unit) {
     val roster by viewModel.roster.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
+    var editingRoleName by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -154,9 +162,9 @@ fun MemberManageScreen(onBack: () -> Unit) {
                     )
                 }
             } else {
-                // 无卡片名册：序号 + 名字，发丝线分隔
+                // 无卡片名册：序号 + 名字 + 职位（点击设置） + 删除，发丝线分隔
                 LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(roster, key = { _, name -> name }) { index, name ->
+                    itemsIndexed(roster, key = { _, entry -> entry.name }) { index, entry ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -171,14 +179,47 @@ fun MemberManageScreen(onBack: () -> Unit) {
                                 modifier = Modifier.width(30.dp)
                             )
                             Text(
-                                name,
+                                entry.name,
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
                             )
+                            // 职位徽标：非默认职位用「色点 + 文字」，默认成员弱化为纯文字；点击弹出职位选择
+                            if (entry.role.equals("member", ignoreCase = true)) {
+                                Text(
+                                    roleLabel(entry.role),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier
+                                        .clickable { editingRoleName = entry.name }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                )
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .clickable { editingRoleName = entry.name }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(6.dp)
+                                            .background(roleColor(entry.role), CircleShape)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        roleLabel(entry.role),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = roleColor(entry.role)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(4.dp))
                             IconButton(
-                                onClick = { removeNameWithUndo(name) },
+                                onClick = { removeNameWithUndo(entry.name) },
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(
@@ -208,4 +249,76 @@ fun MemberManageScreen(onBack: () -> Unit) {
             modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
+
+    // 职位选择弹窗（首领/副首领/长老/成员，默认成员）
+    editingRoleName?.let { name ->
+        val currentRole = roster.find { it.name == name }?.role ?: "member"
+        RoleSelectDialog(
+            currentRole = currentRole,
+            onSelect = { role ->
+                viewModel.updateRole(name, role)
+                editingRoleName = null
+            },
+            onDismiss = { editingRoleName = null }
+        )
+    }
+}
+
+/** 职位选择对话框：单选首领/副首领/长老/成员。 */
+@Composable
+private fun RoleSelectDialog(
+    currentRole: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val roles = listOf(
+        "leader" to "首领",
+        "coLeader" to "副首领",
+        "elder" to "长老",
+        "member" to "成员"
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("设置职位") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                roles.forEach { (role, label) ->
+                    val selected = role == currentRole
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(role) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier
+                                .size(8.dp)
+                                .background(roleColor(role), CircleShape)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (selected) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.cocColors.accent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }

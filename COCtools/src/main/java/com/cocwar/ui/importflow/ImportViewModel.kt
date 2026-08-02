@@ -8,7 +8,11 @@ import kotlinx.coroutines.launch
 
 class ImportViewModel(private val repo: WarRepository) : ViewModel() {
 
-    fun parse(json: String): WarJsonParser.ParseResult = WarJsonParser.parse(json)
+    /** 解析战报：解析时注入花名册职位映射，使预览阶段名字颜色即按花名册职位展示。 */
+    suspend fun parse(json: String): WarJsonParser.ParseResult {
+        val roleMap = repo.rosterRoleMap()
+        return WarJsonParser.parse(json, rosterRoles = roleMap)
+    }
 
     suspend fun generateName(eventType: String, eventRound: Int): String =
         repo.generateEventName(eventType, eventRound)

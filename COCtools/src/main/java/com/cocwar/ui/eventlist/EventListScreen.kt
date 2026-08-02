@@ -157,7 +157,7 @@ fun EventListScreen(
                             // 大 JSON 解析放到 IO 线程，避免阻塞主线程
                             scope.launch {
                                 val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    WarJsonParser.parse(text)
+                                    viewModel.parseWarJson(text)
                                 }
                                 when (result) {
                                     is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data

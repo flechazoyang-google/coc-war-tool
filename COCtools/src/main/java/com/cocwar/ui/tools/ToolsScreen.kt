@@ -429,16 +429,11 @@ fun ToolsScreen(
         val jsonSample = """{
   "members": [
     {
-      "rank": 1,
       "player_name": "陈平安",
-      "role": "elder",
       "total_stars": 6,
       "attacks": [
-        {
-          "attack_order": 1,
-          "status": "used",
-          "destruction_percentage": 100
-        }
+        { "attack_order": 1, "destruction_percentage": 100 },
+        { "attack_order": 2, "destruction_percentage": 0 }
       ]
     }
   ]
@@ -447,8 +442,17 @@ fun ToolsScreen(
             onDismissRequest = { showJsonFormatDialog = false },
             title = { Text("JSON 数据格式") },
             text = {
-                Text(jsonSample, style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace)
+                Column {
+                    Text(jsonSample, style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace)
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "说明：未进攻成员的攻击记录可省略，系统自动补占位；" +
+                        "摧毁率为 0 视为未进攻；职位在「成员」页花名册中设置，无需填写 rank/role/status。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             },
             dismissButton = {
                 TextButton(onClick = {

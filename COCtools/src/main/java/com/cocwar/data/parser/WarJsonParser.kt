@@ -47,7 +47,8 @@ object WarJsonParser {
         isSample: Boolean = false,
         createdAt: Long = System.currentTimeMillis(),
         eventType: String = EVENT_TYPE_WAR,
-        eventRound: Int = 0
+        eventRound: Int = 0,
+        rosterRoles: Map<String, String> = emptyMap()
     ): ParseResult {
         val trimmed = json.trim()
         if (trimmed.isBlank()) return ParseResult.Error("JSON 内容为空")
@@ -61,19 +62,21 @@ object WarJsonParser {
         } ?: return ParseResult.Error("JSON 解析结果为空")
 
         return try {
-            ParseResult.Success(fromDto(dto, isSample, createdAt, eventType, eventRound))
+            ParseResult.Success(fromDto(dto, isSample, createdAt, eventType, eventRound, rosterRoles))
         } catch (e: Exception) {
             ParseResult.Error("数据校验失败：${e.message}")
         }
     }
 
-    /** Build entities from an already-parsed DTO (used by samples too). */
+    /** Build entities from an already-parsed DTO (used by samples too).
+     *  @param rosterRoles 花名册职位映射（名字→职位），职位一律以花名册为准，忽略 JSON 中的 role。 */
     fun fromDto(
         dto: WarDto,
         isSample: Boolean,
         createdAt: Long,
         eventType: String = EVENT_TYPE_WAR,
-        eventRound: Int = 0
+        eventRound: Int = 0,
+        rosterRoles: Map<String, String> = emptyMap()
     ): ParsedEvent {
         val round = eventRound
 
@@ -86,23 +89,26 @@ object WarJsonParser {
 
         val members = (dto.members ?: emptyList()).mapIndexed { index, m ->
             val rank = (m.rank ?: (index + 1)).coerceAtLeast(1)
+            val playerName = m.playerName.clean() ?: "未知玩家#$rank"
+            // 职位一律来自花名册（rosterRoles），JSON 中的 role 字段已不再使用
+            val role = rosterRoles[playerName] ?: "member"
+            // 精简结构：attack 只有 attack_order 与 destruction_percentage，
+            // status 语义由摧毁率推导（>0 即已使用）；旧数据源的 status 字段在 DTO 层被忽略
             val rawAttacks = (m.attacks ?: emptyList()).map { a ->
-                val status = (a.status?.trim().orEmpty().lowercase())
                 Attack(
                     attackOrder = (a.attackOrder ?: 0).coerceAtLeast(0),
-                    status = if (status == "used") "used" else "unused",
                     destructionPercentage = (a.destructionPercentage ?: 0).coerceIn(0, 100)
                 )
             }
             val attacks = rawAttacks + (1..slotCount)
                 .filterNot { order -> rawAttacks.any { it.attackOrder == order } }
-                .map { Attack(attackOrder = it, status = "unused", destructionPercentage = 0) }
+                .map { Attack(attackOrder = it, destructionPercentage = 0) }
             MemberEntity(
                 id = "$eventId#$rank",
                 eventId = eventId,
                 rank = rank,
-                playerName = m.playerName.clean() ?: "未知玩家#$rank",
-                role = m.role.clean() ?: "member",
+                playerName = playerName,
+                role = role,
                 totalStars = (m.totalStars ?: 0).coerceAtLeast(0),
                 attacks = attacks
             )
@@ -113,8 +119,8 @@ object WarJsonParser {
 
         // 我方总星数 = 所有成员 total_stars 之和
         val clanStars = deduped.sumOf { it.totalStars }.coerceAtLeast(0)
-        // 我方总摧毁率 = 已使用攻击的平均摧毁率
-        val usedAttacks = deduped.flatMap { it.attacks }.filter { it.status == "used" }
+        // 我方总摧毁率 = 已使用攻击（摧毁率 > 0）的平均摧毁率
+        val usedAttacks = deduped.flatMap { it.attacks }.filter { it.isUsed() }
         val clanDestructionAvg = if (usedAttacks.isNotEmpty())
             usedAttacks.map { it.destructionPercentage }.average() else 0.0
 

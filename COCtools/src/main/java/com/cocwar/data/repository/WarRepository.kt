@@ -7,9 +7,11 @@ import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.MemberRosterEntity
 import com.cocwar.data.model.EVENT_TYPE_WAR
+import com.cocwar.data.model.isUsed
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.samples.SampleDataProvider
 import com.google.gson.Gson
+import com.google.gson.JsonElement
 import kotlinx.coroutines.flow.Flow
 import java.util.Calendar
 
@@ -31,7 +33,14 @@ class WarRepository(
     suspend fun getEventById(id: String): WarEventEntity? = dao.getEventById(id)
 
     suspend fun importEvent(parsed: WarJsonParser.ParsedEvent) {
-        dao.insertEvent(parsed.event, parsed.members)
+        // 职位一律以花名册为准：导入前按名字映射 role（解析阶段未传 rosterRoles 时在此兑底）
+        val roleMap = rosterRoleMap()
+        val mapped = if (roleMap.isEmpty()) parsed else parsed.copy(
+            members = parsed.members.map {
+                it.copy(role = roleMap[it.playerName] ?: it.role)
+            }
+        )
+        dao.insertEvent(mapped.event, mapped.members)
     }
 
     suspend fun deleteEvent(id: String) {
@@ -62,9 +71,21 @@ class WarRepository(
     /** 一次性获取名单。 */
     suspend fun getRoster(): List<String> = rosterDao.getAll().map { it.name }
 
-    /** 批量添加新成员到名单。 */
+    /** 一次性获取名单（含职位）。 */
+    suspend fun getRosterWithRoles(): List<MemberRosterEntity> = rosterDao.getAll()
+
+    /** 花名册职位映射：名字 → role（职位以花名册为准）。 */
+    suspend fun rosterRoleMap(): Map<String, String> =
+        rosterDao.getAll().associate { it.name to it.role }
+
+    /** 批量添加新成员到名单（默认职位：成员）。 */
     suspend fun addToRoster(names: List<String>) {
-        rosterDao.insertAll(names.map { MemberRosterEntity(it.trim()) })
+        rosterDao.insertAll(names.map { MemberRosterEntity(name = it.trim(), role = "member") })
+    }
+
+    /** 设置名单成员的职位（leader/coLeader/elder/member）。 */
+    suspend fun updateRosterRole(name: String, role: String) {
+        rosterDao.updateRole(name, role)
     }
 
     /** 从名单中删除。 */
@@ -92,7 +113,7 @@ class WarRepository(
         val ev = dao.getEventById(eventId) ?: return
         val members = dao.getMembersByEventIds(listOf(eventId))
         val totalStars = members.sumOf { it.totalStars }
-        val usedAttacks = members.flatMap { it.attacks }.filter { it.status == "used" }
+        val usedAttacks = members.flatMap { it.attacks }.filter { it.isUsed() }
         val totalDestruction = if (usedAttacks.isEmpty()) "0%"
         else {
             val avg = usedAttacks.map { it.destructionPercentage }.average()
@@ -109,14 +130,14 @@ class WarRepository(
     /** 导出所有数据（事件 + 成员 + 花名册）为 JSON 字符串，用于备份。 */
     suspend fun exportAllDataJson(): String {
         val allEvents = dao.getAllEvents()
-        val roster = getRoster()
+        val roster = getRosterWithRoles()
         val sb = StringBuilder()
         sb.append("{\n")
 
-        // 花名册
+        // 花名册（含职位，与新版结构一致）
         sb.append("  \"roster\": [\n")
-        roster.forEachIndexed { i, name ->
-            sb.append("    \"${escapeJson(name)}\"")
+        roster.forEachIndexed { i, entry ->
+            sb.append("    {\"name\": \"${escapeJson(entry.name)}\", \"role\": \"${escapeJson(entry.role)}\"}")
             if (i < roster.lastIndex) sb.append(",")
             sb.append("\n")
         }
@@ -143,15 +164,12 @@ class WarRepository(
                 sb.append("      \"members\": [\n")
                 members.forEachIndexed { j, m ->
                     sb.append("        {\n")
-                    sb.append("          \"rank\": ${m.rank},\n")
                     sb.append("          \"player_name\": \"${escapeJson(m.playerName)}\",\n")
-                    sb.append("          \"role\": \"${escapeJson(m.role)}\",\n")
                     sb.append("          \"total_stars\": ${m.totalStars},\n")
                     sb.append("          \"attacks\": [\n")
                     m.attacks.forEachIndexed { k, a ->
                         sb.append("            {\n")
                         sb.append("              \"attack_order\": ${a.attackOrder},\n")
-                        sb.append("              \"status\": \"${escapeJson(a.status)}\",\n")
                         sb.append("              \"destruction_percentage\": ${a.destructionPercentage}\n")
                         sb.append("            }${if (k < m.attacks.lastIndex) "," else ""}\n")
                     }
@@ -179,15 +197,12 @@ class WarRepository(
         sb.append("{\n  \"members\": [\n")
         members.forEachIndexed { i, m ->
             sb.append("    {\n")
-            sb.append("      \"rank\": ${m.rank},\n")
             sb.append("      \"player_name\": \"${escapeJson(m.playerName)}\",\n")
-            sb.append("      \"role\": \"${escapeJson(m.role)}\",\n")
             sb.append("      \"total_stars\": ${m.totalStars},\n")
             sb.append("      \"attacks\": [\n")
             m.attacks.forEachIndexed { j, a ->
                 sb.append("        {\n")
                 sb.append("          \"attack_order\": ${a.attackOrder},\n")
-                sb.append("          \"status\": \"${escapeJson(a.status)}\",\n")
                 sb.append("          \"destruction_percentage\": ${a.destructionPercentage}\n")
                 sb.append("        }${if (j < m.attacks.lastIndex) "," else ""}\n")
             }
@@ -327,8 +342,27 @@ class WarRepository(
         // 第二步：全部解析成功后才清空本地并写入
         clearAllEvents()
 
-        // 恢复花名册（addToRoster 内部去重/忽略已存在）
-        root.roster?.takeIf { it.isNotEmpty() }?.let { addToRoster(it) }
+        // 恢复花名册：兼容新版对象数组（含职位）与旧版字符串数组（默认成员）
+        val rosterEntries = root.roster
+            ?.mapNotNull { e ->
+                when {
+                    e.isJsonPrimitive -> e.asString to "member"
+                    e.isJsonObject -> {
+                        val obj = e.asJsonObject
+                        val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+                            ?: return@mapNotNull null
+                        val role = obj.get("role")?.takeIf { it.isJsonPrimitive }?.asString ?: "member"
+                        name to role
+                    }
+                    else -> null
+                }
+            }
+            ?.filter { it.first.isNotBlank() }
+            ?: emptyList()
+        if (rosterEntries.isNotEmpty()) {
+            addToRoster(rosterEntries.map { it.first })
+            rosterEntries.forEach { (name, role) -> updateRosterRole(name, role) }
+        }
 
         parsedEvents.forEach { restored ->
             importEvent(restored)
@@ -336,9 +370,10 @@ class WarRepository(
     }
 }
 
-/** 备份 JSON 的顶层结构（导出文件 / 云端同步 / 文件导入共用格式） */
+/** 备份 JSON 的顶层结构（导出文件 / 云端同步 / 文件导入共用格式）。
+ *  roster 兼容两种形态：新版为 {"name":"..","role":".."} 对象数组，旧版为字符串数组（默认成员）。 */
 private data class BackupData(
-    val roster: List<String>? = null,
+    val roster: List<JsonElement>? = null,
     val events: List<BackupEvent>? = null
 )
 
@@ -352,21 +387,18 @@ private data class BackupEvent(
     val is_sample: Boolean? = null,
     val members: List<BackupMember>? = null
 ) {
-    /** 将备份格式转换为 WarJsonParser 可解析的导入 JSON 格式 */
+    /** 将备份格式转换为 WarJsonParser 可解析的精简导入 JSON 格式（旧备份中的 rank/role/status 键由 Gson 自然忽略） */
     fun toWarJson(): String {
         val sb = StringBuilder()
         sb.append("{\n  \"members\": [\n")
         members?.forEachIndexed { i, m ->
             sb.append("    {\n")
-            sb.append("      \"rank\": ${m.rank},\n")
             sb.append("      \"player_name\": \"${escape(m.player_name ?: "")}\",\n")
-            sb.append("      \"role\": \"${escape(m.role ?: "member")}\",\n")
             sb.append("      \"total_stars\": ${m.total_stars ?: 0},\n")
             sb.append("      \"attacks\": [\n")
             m.attacks?.forEachIndexed { j, a ->
                 sb.append("        {\n")
                 sb.append("          \"attack_order\": ${a.attack_order ?: 0},\n")
-                sb.append("          \"status\": \"${escape(a.status ?: "unused")}\",\n")
                 sb.append("          \"destruction_percentage\": ${a.destruction_percentage ?: 0}\n")
                 sb.append("        }${if (j < (m.attacks?.lastIndex ?: 0)) "," else ""}\n")
             }
@@ -394,15 +426,12 @@ private data class BackupEvent(
 }
 
 private data class BackupMember(
-    val rank: Int? = 0,
     val player_name: String? = null,
-    val role: String? = null,
     val total_stars: Int? = 0,
     val attacks: List<BackupAttack>? = null
 )
 
 private data class BackupAttack(
     val attack_order: Int? = 0,
-    val status: String? = null,
     val destruction_percentage: Int? = 0
 )
