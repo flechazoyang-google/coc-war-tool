@@ -45,6 +45,7 @@ import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
 import com.cocwar.ui.importflow.ImportScreen
 import com.cocwar.ui.members.MemberManageScreen
+import com.cocwar.ui.season.LeagueSeasonScreen
 import com.cocwar.ui.stats.StatsScreen
 import com.cocwar.ui.sync.SyncScreen
 import com.cocwar.ui.theme.CocWarTheme
@@ -171,7 +172,16 @@ private fun CocWarNavHost(
                 EventListScreen(
                     onOpen = { nav.navigate("detail/$it") },
                     onImport = { nav.navigate("import") },
+                    onOpenSeason = { year, month, match ->
+                        nav.navigate("league_season/$year/$month/$match")
+                    },
                 )
+            }
+            composable("league_season/{year}/{month}/{match}") {
+                val year = it.arguments?.getString("year")?.toIntOrNull() ?: 0
+                val month = it.arguments?.getString("month")?.toIntOrNull() ?: 0
+                val match = it.arguments?.getString("match")?.toIntOrNull() ?: 1
+                LeagueSeasonScreen(year = year, month = month, match = match, onBack = { nav.popBackStack() })
             }
             composable("detail/{eventId}") {
                 val eventId = it.arguments?.getString("eventId") ?: ""

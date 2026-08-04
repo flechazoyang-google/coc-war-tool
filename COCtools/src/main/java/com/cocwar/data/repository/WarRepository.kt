@@ -264,6 +264,17 @@ class WarRepository(
         prefs.edit().putBoolean(KEY_SAMPLES, true).apply()
     }
 
+    /**
+     * 自动生成 SAABBCC 事件名：S(类型) + AA(年) + BB(月) + CC(序号/轮次编码)。
+     *
+     * - 部落战：CC = 当月第 N 场（自增，上限 99）。
+     * - 联赛：一场联赛含 7 轮，每月 1~2 场（月初场必有、月中场视游戏活动）。
+     *   CC 拆为 C1C2：C1 = 场次归属（0=月初场，1=月中场），C2 = 该场第几轮（1..7），
+     *   合法值 01..07（月初场）/ 11..17（月中场）。
+     *   C1/C2 自动推断：优先续填本月已有联赛所在场次的最小空缺轮次；月初场录满 7 轮后开月中场；
+     *   两场都录满（14 轮）时无法用 CC 表达，退化为当月序号自增兜底。
+     *   @param eventRound 调用方显式指定的轮次提示（C2，1..7，通常为 0/无效值）；有效时优先使用，否则自动推断。
+     */
     suspend fun generateEventName(eventType: String, eventRound: Int): String {
         val cal = Calendar.getInstance()
         val year = cal.get(Calendar.YEAR) % 100
@@ -273,9 +284,31 @@ class WarRepository(
         val monthStart = cal.timeInMillis; cal.add(Calendar.MONTH, 1)
         val prefix = if (eventType == "league") "1" else "0"
         val count = dao.countByTypeInMonth(eventType, monthStart, cal.timeInMillis)
-        // 统一自增：根据本月已有同类型战报数量自动编号（上限 99，避免 SAABBCC 7 位解析断裂）
-        val seq = (count + 1).coerceAtMost(99)
-        return "%s%02d%02d%02d".format(prefix, year, month, seq)
+
+        val cc = if (eventType == "league") {
+            // 联赛：CC = C1C2 —— C1 场次归属（0=月初场，1=月中场），C2 该场第几轮（1..7）
+            val existingNames = dao.getEventNamesByTypeInMonth(eventType, monthStart, cal.timeInMillis)
+            val usedCC = existingNames.mapNotNull { name ->
+                if (name.length < 7 || (name[0] != '0' && name[0] != '1')) null
+                else name.substring(5, 7).toIntOrNull()?.takeIf { it in 1..7 || it in 11..17 }
+            }
+            val seg0 = usedCC.filter { it in 1..7 }.toSet()                     // 月初场已占轮次（C2=1..7）
+            val seg1 = usedCC.filter { it in 11..17 }.map { it - 10 }.toSet()   // 月中场已占轮次（C2=1..7，归一化）
+            val hint = eventRound.takeIf { it in 1..7 }
+            val (c1, round) = when {
+                seg0.isEmpty() -> 0 to (hint ?: 1)
+                seg0.size < 7 -> 0 to (hint?.takeIf { it !in seg0 } ?: (1..7).first { it !in seg0 })
+                seg1.isEmpty() -> 1 to (hint ?: 1)
+                seg1.size < 7 -> 1 to (hint?.takeIf { it !in seg1 } ?: (1..7).first { it !in seg1 })
+                else -> -1 to 0  // 两场联赛共 14 轮已录满，CC 无法表达
+            }
+            if (c1 >= 0) c1 * 10 + round
+            else 99  // 兜底：两场联赛共 14 轮已录满（理论不可达），生成显式无效 CC，解析端视为无法解析
+        } else {
+            // 部落战：CC = 当月第 N 场（上限 99，避免 SAABBCC 7 位解析断裂）
+            (count + 1).coerceAtMost(99)
+        }
+        return "%s%02d%02d%02d".format(prefix, year, month, cc)
     }
 
     companion object { private const val KEY_SAMPLES = "samples_inserted" }
@@ -292,9 +325,10 @@ class WarRepository(
         val cc = name.substring(5, 7).toIntOrNull() ?: return fallbackType to fallbackRound
         val type = if (s == '1') "league" else "war"
         val round = if (s == '1') {
-            // cc 合法范围 1..14（两场联赛各 7 轮），越界视为无法解析
-            if (cc !in 1..14) return fallbackType to fallbackRound
-            (cc - 1) % 7 + 1
+            // 联赛 CC = C1C2：C1 场次归属（0=月初场，1=月中场），C2 该场第几轮（1..7）
+            // 合法值 01..07 / 11..17，其余视为无法解析（与 generateEventName 一致）
+            if (cc !in 1..7 && cc !in 11..17) return fallbackType to fallbackRound
+            cc % 10
         } else 0
         return type to round
     }

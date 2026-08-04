@@ -72,7 +72,7 @@ import com.cocwar.ui.components.StatTile
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.eventTypeLabel
-import com.cocwar.ui.util.parseEventRoundFromName
+import com.cocwar.ui.util.leagueRoundLabel
 import com.cocwar.ui.util.roleLabel
 import kotlinx.coroutines.launch
 
@@ -283,7 +283,7 @@ private fun Masthead(ev: WarEventEntity, stats: WarStats) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    if (ev.eventType == "league") "联赛 · 第${parseEventRoundFromName(ev.eventName)}轮" else "部落战",
+                    if (ev.eventType == "league") "联赛${leagueRoundLabel(ev.eventName, ev.eventRound)}" else "部落战",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = if (ev.eventType == "league") MaterialTheme.cocColors.star else onMastSoft
@@ -378,7 +378,7 @@ private fun OverviewTab(ev: WarEventEntity, stats: WarStats, modifier: Modifier 
                 InfoRow("名称", ev.eventName)
                 InfoRow(
                     "类型",
-                    eventTypeLabel(ev.eventType) + if (ev.eventType == "league") " · 第${parseEventRoundFromName(ev.eventName)}轮" else ""
+                    eventTypeLabel(ev.eventType) + if (ev.eventType == "league") leagueRoundLabel(ev.eventName, ev.eventRound) else ""
                 )
                 InfoRow("总星数", "${ev.clanTotalStars}")
                 InfoRow("成员人数", "${stats.totalMembers}")

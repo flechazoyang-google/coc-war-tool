@@ -68,6 +68,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cocwar.BuildConfig
 import com.cocwar.CocWarApplication
+import com.cocwar.data.migrate.DataMigrator
+import com.cocwar.data.migrate.MigrationPlan
+import com.cocwar.data.migrate.MigrationResult
 import com.cocwar.data.update.UpdateChecker
 import com.cocwar.data.update.UpdateInfo
 import com.cocwar.service.FloatingBallService
@@ -102,6 +105,10 @@ fun ToolsScreen(
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     // 待写入文件的导出 JSON（SAF 选择保存位置后写入）
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
+    // 数据迁移修复：预览计划 / 执行结果 / 执行中标记
+    var migrationPlan by remember { mutableStateOf<MigrationPlan?>(null) }
+    var migrationResult by remember { mutableStateOf<MigrationResult?>(null) }
+    var migrationBusy by remember { mutableStateOf(false) }
 
     // 悬浮球与权限状态：用响应式 state，并在返回页面时（onResume）重新读取，
     // 解决「开启后状态不刷新」「授予权限后弹窗不消失」的问题。
@@ -253,6 +260,34 @@ fun ToolsScreen(
                     title = "从备份导入",
                     subtitle = "选择备份 JSON 文件完整还原（会覆盖当前数据）",
                     onClick = { showRestoreConfirm = true }
+                )
+                ToolsDivider()
+                ToolsRow(
+                    icon = Icons.Filled.SystemUpdateAlt,
+                    title = "数据迁移修复",
+                    subtitle = "将旧版联赛战报名称升级为新编码，迁移前自动备份",
+                    onClick = {
+                        if (migrationBusy) return@ToolsRow
+                        scope.launch {
+                            migrationBusy = true
+                            try {
+                                val app = context.applicationContext as CocWarApplication
+                                val migrator = DataMigrator(app.database.warDao(), app.repository)
+                                val plan = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    migrator.scan()
+                                }
+                                if (plan.items.isEmpty()) {
+                                    Toast.makeText(context, "数据已是最新结构，无需迁移", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    migrationPlan = plan
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "迁移扫描失败：${e.message}", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                migrationBusy = false
+                            }
+                        }
+                    }
                 )
                 ToolsDivider()
                 ToolsRow(
@@ -484,6 +519,74 @@ fun ToolsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreConfirm = false }) { Text("取消") }
+            }
+        )
+    }
+
+    // ── 数据迁移修复：确认 ──
+    migrationPlan?.let { plan ->
+        AlertDialog(
+            onDismissRequest = { migrationPlan = null },
+            title = { Text("数据迁移修复") },
+            text = {
+                Column {
+                    Text(
+                        "发现 ${plan.items.size} 条旧版联赛战报名称需要迁移" +
+                            if (plan.overflowCount > 0) "（其中 ${plan.overflowCount} 条超出编码范围，将标记为无效名称）" else "" +
+                            "。\n\n执行前将自动备份全部数据到应用备份目录，备份可用于「从备份导入」还原。\n\n预览："
+                    )
+                    plan.items.take(3).forEach { item ->
+                        Text("${item.oldName}  →  ${item.newName}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (plan.items.size > 3) {
+                        Text("…共 ${plan.items.size} 条", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    migrationPlan = null
+                    scope.launch {
+                        migrationBusy = true
+                        try {
+                            val app = context.applicationContext as CocWarApplication
+                            val migrator = DataMigrator(app.database.warDao(), app.repository)
+                            val backupDir = context.getExternalFilesDir("backups") ?: context.filesDir
+                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                migrator.execute(backupDir)
+                            }
+                            migrationResult = result
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "迁移失败：${e.message}（数据未改动）", Toast.LENGTH_LONG).show()
+                        } finally {
+                            migrationBusy = false
+                        }
+                    }
+                }) { Text("确认迁移") }
+            },
+            dismissButton = {
+                TextButton(onClick = { migrationPlan = null }) { Text("取消") }
+            }
+        )
+    }
+
+    // ── 数据迁移修复：结果 ──
+    migrationResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { migrationResult = null },
+            title = { Text("迁移完成") },
+            text = {
+                Column {
+                    Text("成功迁移 ${result.migrated} 条，跳过 ${result.skipped} 条，溢出 ${result.overflow} 条。")
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "迁移前备份已保存到：\n${result.backupPath}\n\n" +
+                            "该备份为迁移前的完整数据，可通过「从备份导入」随时还原。"
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { migrationResult = null }) { Text("知道了") }
             }
         )
     }

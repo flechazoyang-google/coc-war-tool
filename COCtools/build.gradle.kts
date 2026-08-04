@@ -13,8 +13,8 @@ android {
         applicationId = "com.cocwar"
         minSdk = 30
         targetSdk = 34
-        versionCode = 17
-        versionName = "3.9"
+        versionCode = 18
+        versionName = "4.0"
     }
 
     buildTypes {
@@ -92,6 +92,9 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // 单元测试（StatsCalculator 等纯函数逻辑）
+    testImplementation("junit:junit:4.13.2")
 
     // 敏感配置加密存储（WebDAV 密码）
     implementation("androidx.security:security-crypto:1.1.0-alpha06")

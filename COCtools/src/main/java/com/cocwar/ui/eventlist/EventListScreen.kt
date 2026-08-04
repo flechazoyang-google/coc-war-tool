@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -62,11 +63,13 @@ import com.cocwar.ui.util.parseEventTypeFromName
 import com.cocwar.ui.util.parseMonthFromName
 import kotlinx.coroutines.launch
 import com.cocwar.ui.util.parseYearFromName
+import com.cocwar.ui.util.parseLeagueMatchFromName
 
 @Composable
 fun EventListScreen(
     onOpen: (String) -> Unit,
     onImport: () -> Unit = {},
+    onOpenSeason: (Int, Int, Int) -> Unit = { _, _, _ -> },
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
@@ -132,6 +135,31 @@ fun EventListScreen(
 
     val warCount = remember(events) { events.count { it.eventType != "league" } }
     val leagueCount = events.size - warCount
+
+    // 联赛视图按「年月 + 月初/月中场」分组，体现同一场联赛 7 轮的相关性；
+    // 组内按轮次升序（第 1 轮在前），组间按年月倒序（最新月份在前）。
+    // 非标准名称（无法解析年月/场次）归入末尾的「其他」组。
+    val leagueGroups = remember(filtered, typeFilter) {
+        if (typeFilter != "1") emptyList()
+        else filtered.groupBy { event ->
+            Triple(
+                parseYearFromName(event.eventName),
+                parseMonthFromName(event.eventName),
+                parseLeagueMatchFromName(event.eventName)
+            )
+        }.map { (key, list) ->
+            Triple(
+                key,
+                list.sortedWith(compareBy { it.eventRound.takeIf { r -> r in 1..7 } ?: 99 }),
+                list.size
+            )
+        }.sortedWith(
+            compareByDescending<Triple<Triple<Int?, Int?, Int?>, List<WarEventEntity>, Int>> {
+                it.first.first ?: Int.MAX_VALUE
+            }.thenByDescending { it.first.second ?: Int.MAX_VALUE }
+                .thenBy { it.first.third ?: Int.MAX_VALUE }
+        )
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -232,22 +260,54 @@ fun EventListScreen(
                     }
                 }
             } else {
-                // 无卡片列表：发丝线分隔的编辑式条目
+                // 无卡片列表：发丝线分隔的编辑式条目；联赛视图按场次分组展示
                 LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
-                        EventRow(
-                            event = event,
-                            onClick = { onOpen(event.eventId) },
-                            onDelete = { deleteEventWithUndo(event) }
-                        )
-                        if (index < filtered.lastIndex) {
-                            Box(
-                                Modifier
-                                    .padding(start = 20.dp)
-                                    .fillMaxWidth()
-                                    .height(1.dp)
-                                    .background(MaterialTheme.cocColors.hairline)
+                    if (leagueGroups.isNotEmpty()) {
+                        leagueGroups.forEach { (key, group, count) ->
+                            item(key = "lg-header-${key.first}-${key.second}-${key.third}") {
+                                LeagueGroupHeader(
+                                    year = key.first, month = key.second, match = key.third, size = count,
+                                    onClick = {
+                                        val y = key.first; val m = key.second; val mt = key.third
+                                        if (y != null && m != null && mt != null) onOpenSeason(y, m, mt)
+                                    }
+                                )
+                            }
+                            group.forEachIndexed { index, event ->
+                                item(key = event.eventId) {
+                                    EventRow(
+                                        event = event,
+                                        onClick = { onOpen(event.eventId) },
+                                        onDelete = { deleteEventWithUndo(event) }
+                                    )
+                                    if (index < group.lastIndex) {
+                                        Box(
+                                            Modifier
+                                                .padding(start = 20.dp)
+                                                .fillMaxWidth()
+                                                .height(1.dp)
+                                                .background(MaterialTheme.cocColors.hairline)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
+                            EventRow(
+                                event = event,
+                                onClick = { onOpen(event.eventId) },
+                                onDelete = { deleteEventWithUndo(event) }
                             )
+                            if (index < filtered.lastIndex) {
+                                Box(
+                                    Modifier
+                                        .padding(start = 20.dp)
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(MaterialTheme.cocColors.hairline)
+                                )
+                            }
                         }
                     }
                     item { Spacer(Modifier.height(24.dp)) }
@@ -329,6 +389,43 @@ private fun FilterDropdown(
             onDismissRequest = onDismiss
         ) {
             content()
+        }
+    }
+}
+
+/**
+ * 联赛分组组头：显示 年月 · 月初/月中场（已导入轮数/7 轮）。
+ */
+@Composable
+private fun LeagueGroupHeader(year: Int?, month: Int?, match: Int?, size: Int, onClick: () -> Unit) {
+    val matchLabel = when (match) {
+        1 -> "月初场"
+        2 -> "月中场"
+        else -> "其他"
+    }
+    val ym = if (year != null && month != null) "${year}年${month}月 · " else ""
+    val clickable = year != null && month != null && match != null
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = clickable, onClick = onClick)
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "$ym$matchLabel（$size/7 轮）",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (clickable) {
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "查看赛季",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 }

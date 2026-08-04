@@ -45,7 +45,7 @@ data class StatsOverview(
     val leagueCount: Int,
     // 合并统计
     val totalStars: Int,
-    val fullStarRate: Float,        // 满星率：获得总星数达到理论最大值（参与人数×3）的场次占比
+    val fullStarRate: Float,        // 满星率：获得总星数达到理论最大值（人数×3，重复进攻同一对手不产新星）的场次占比
     val avgStarsPerEvent: Float,
     val avgDestruction: Float,
     val totalUsedAttacks: Int,
@@ -292,7 +292,10 @@ object StatsCalculator {
     }
 
     /**
-     * 满星率：单场战报获得的总星数达到该场理论最大星数（参与人数×3）即计为满星。
+     * 满星率：单场战报获得的总星数达到该场理论最大星数即计为满星。
+     * 理论最大星数 = 参与人数 × 3（游戏设定：重复进攻同一对手不再获得胜利之星，
+     * 每人最多从单个对手拿到 3 星；敌方人数与我方相同，故全队理论最大 = 我方人数 × 3，
+     * 部落战与联赛通用，与进攻槽位数无关）。
      * 无成员数据（最大星数为 0）的场次不参与统计。
      */
     private fun computeFullStarRate(

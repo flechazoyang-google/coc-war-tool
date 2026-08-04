@@ -44,7 +44,7 @@ private fun parseNameParts(name: String): Pair<Int, Int>? {
 
 /** 解析 SAABBCC 格式名称为可读文本。
  * 部落战：S=0, CC=场次 → "第X场"
- * 联赛：S=1, CC=轮次 → "第X场联赛第Y轮"（CC 1~7第一场，8~14第二场）
+ * 联赛：S=1, CC=C1C2 → "月初场 第X轮" / "月中场 第X轮"（C1=0 月初场，C1=1 月中场，C2=轮次）
  */
 fun parseEventDisplayName(name: String): String {
     val parts = parseNameParts(name) ?: return name
@@ -53,9 +53,40 @@ fun parseEventDisplayName(name: String): String {
     return if (s == '0') {
         "第${cc}场"
     } else {
-        val match = (cc - 1) / 7 + 1  // 1 or 2
-        val round = (cc - 1) % 7 + 1   // 1..7
-        "第${match}场联赛第${round}轮"
+        // CC = C1C2：C1 场次归属（0=月初场，1=月中场），C2 该场第几轮（1..7）
+        if (cc !in 1..7 && cc !in 11..17) return name
+        "${if (cc < 10) "月初场" else "月中场"} 第${cc % 10}轮"
+    }
+}
+
+/**
+ * 从联赛名称解析所属场次：C1=0（CC 01..07）→ 1（月初场），C1=1（CC 11..17）→ 2（月中场）。
+ * 非联赛/无法解析返回 null。
+ */
+fun parseLeagueMatchFromName(name: String): Int? {
+    parseNameParts(name) ?: return null
+    val s = name[0]
+    if (s != '1') return null  // 非联赛
+    val cc = name.substring(5, 7).toIntOrNull() ?: return null
+    return when {
+        cc in 1..7 -> 1
+        cc in 11..17 -> 2
+        else -> null
+    }
+}
+
+/**
+ * 联赛轮次展示文案（如 " · 月初场 第3轮" / " · 月中场 第1轮" / " · 第3轮"）。
+ * 轮次优先取实体 eventRound 字段（数据源权威），月初/月中从名称 C1 解析；
+ * 均无法确定时返回空串（如非联赛）。
+ */
+fun leagueRoundLabel(name: String, round: Int): String {
+    val match = parseLeagueMatchFromName(name)?.let { if (it == 1) "月初场" else "月中场" }
+    return when {
+        round in 1..7 && match != null -> " · $match 第${round}轮"
+        round in 1..7 -> " · 第${round}轮"
+        match != null -> " · $match"
+        else -> ""
     }
 }
 
@@ -72,7 +103,7 @@ fun parseYearFromName(name: String): Int? = parseNameParts(name)?.first
 fun parseMonthFromName(name: String): Int? = parseNameParts(name)?.second
 
 /**
- * 从名称解析轮次。联赛名称 SAABBCC 中 CC = (场次-1)*7 + 轮次。
+ * 从名称解析轮次。联赛名称 SAABBCC 中 CC = C1C2，C2 即轮次（1..7）。
  * 部落战返回 0（无轮次概念）。
  */
 fun parseEventRoundFromName(name: String): Int {
@@ -80,5 +111,6 @@ fun parseEventRoundFromName(name: String): Int {
     val s = name[0]
     if (s != '1') return 0  // 非联赛，无轮次
     val cc = name.substring(5, 7).toIntOrNull() ?: return 0
-    return (cc - 1) % 7 + 1  // 1..7
+    // CC = C1C2：C2 即轮次；仅合法值 01..07 / 11..17 可解析
+    return if (cc in 1..7 || cc in 11..17) cc % 10 else 0
 }

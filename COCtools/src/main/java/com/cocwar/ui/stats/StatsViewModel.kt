@@ -136,16 +136,21 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
 
             (availableMonths as MutableStateFlow).value = months
 
-            // 默认选中当前月份，若当前月份无数据则选最新月份
-            val now = Calendar.getInstance()
-            val currentYear = now.get(Calendar.YEAR)
-            val currentMonth = now.get(Calendar.MONTH) + 1
-            val default = months.find { it.year == currentYear && it.month == currentMonth }
-                ?: months.firstOrNull()
-
-            if (default != null) {
-                (selectedMonth as MutableStateFlow).value = default
-                loadMonth(default)
+            // 仅当尚未选中月份，或原选中月份已不在新列表（该月数据被删除）时才重置为默认月；
+            // 否则保留当前选中月份——否则 refresh() 先刷月份列表会把历史月份跳回最近月
+            val stillValid = selectedMonth.value?.let { cur ->
+                months.any { it.year == cur.year && it.month == cur.month }
+            } ?: false
+            if (!stillValid) {
+                val now = Calendar.getInstance()
+                val currentYear = now.get(Calendar.YEAR)
+                val currentMonth = now.get(Calendar.MONTH) + 1
+                val default = months.find { it.year == currentYear && it.month == currentMonth }
+                    ?: months.firstOrNull()
+                if (default != null) {
+                    (selectedMonth as MutableStateFlow).value = default
+                    loadMonth(default)
+                }
             }
         }
     }
