@@ -21,7 +21,7 @@ fun roleLabel(role: String): String = when (normRole(role)) {
     else -> role
 }
 
-fun formatPercent(value: Float): String = "%.1f%%".format(value)
+fun formatPercent(value: Float): String = "%.1f%%".format(java.util.Locale.US, value)
 
 fun formatPercent(value: Int): String = "$value%"
 

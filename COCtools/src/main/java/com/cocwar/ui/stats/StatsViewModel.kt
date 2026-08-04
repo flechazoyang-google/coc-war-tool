@@ -155,6 +155,13 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         loadMonth(option)
     }
 
+    /** 手动刷新当前月份数据（其他页面修改数据后同步到统计页）。同时刷新可选月份列表。 */
+    fun refresh() {
+        val current = selectedMonth.value ?: return
+        loadAvailableMonths()
+        loadMonth(current)
+    }
+
     fun setSortBy(sort: MemberSortBy) {
         (sortBy as MutableStateFlow).value = sort
         applySort()

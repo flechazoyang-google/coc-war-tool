@@ -117,7 +117,7 @@ class WarRepository(
         val totalDestruction = if (usedAttacks.isEmpty()) "0%"
         else {
             val avg = usedAttacks.map { it.destructionPercentage }.average()
-            "%.1f%%".format(avg)
+            "%.1f%%".format(java.util.Locale.US, avg)
         }
         dao.updateEvent(ev.copy(
             clanTotalStars = totalStars,
@@ -165,6 +165,8 @@ class WarRepository(
                 members.forEachIndexed { j, m ->
                     sb.append("        {\n")
                     sb.append("          \"player_name\": \"${escapeJson(m.playerName)}\",\n")
+                    sb.append("          \"rank\": ${m.rank},\n")
+                    sb.append("          \"role\": \"${escapeJson(m.role)}\",\n")
                     sb.append("          \"total_stars\": ${m.totalStars},\n")
                     sb.append("          \"attacks\": [\n")
                     m.attacks.forEachIndexed { k, a ->
@@ -271,8 +273,8 @@ class WarRepository(
         val monthStart = cal.timeInMillis; cal.add(Calendar.MONTH, 1)
         val prefix = if (eventType == "league") "1" else "0"
         val count = dao.countByTypeInMonth(eventType, monthStart, cal.timeInMillis)
-        // 统一自增：根据本月已有同类型战报数量自动编号，切换类型时由调用方重新生成全名
-        val seq = count + 1
+        // 统一自增：根据本月已有同类型战报数量自动编号（上限 99，避免 SAABBCC 7 位解析断裂）
+        val seq = (count + 1).coerceAtMost(99)
         return "%s%02d%02d%02d".format(prefix, year, month, seq)
     }
 
@@ -299,28 +301,37 @@ class WarRepository(
 
     // === 备份 JSON：校验与完整还原（导出文件/云端同步共用格式） ===
 
-    /** 校验备份 JSON 是否为合法的备份结构（顶层含 roster 或 events）；非法返回 false。 */
+    /** 校验备份 JSON 是否为合法的备份结构（必须含 events 数组）；非法返回 false。 */
     fun validateBackupJson(json: String): Boolean {
         val trimmed = json.trim()
         if (trimmed.isBlank()) return false
         return try {
             val root = Gson().fromJson(trimmed, BackupData::class.java)
-            root != null && (root.events != null || root.roster != null)
+            root != null && root.events != null && root.events.isNotEmpty()
         } catch (e: Exception) {
             false
         }
     }
 
     /**
-     * 解析备份 JSON 并完整还原（先全部解析成功，再清空本地事件/成员后写入，含花名册）。
-     * 任一事件损坏则抛异常且不触碰本地数据，避免「假成功」导致数据清空却未还原。
+     * 解析备份 JSON 并完整还原（先全部解析成功，再清空本地事件/成员后写入，含花名册替换）。
+     * 任一事件损坏或备份无事件则抛异常且不触碰本地数据，避免「假成功」导致数据清空却未还原。
      */
     suspend fun restoreFromBackupJson(json: String) {
-        val root = Gson().fromJson(json, BackupData::class.java) ?: return
+        val root = runCatching {
+            Gson().fromJson(json, BackupData::class.java)
+        }.getOrElse { e ->
+            throw IllegalStateException("备份 JSON 格式错误：${e.message}", e)
+        } ?: throw IllegalStateException("备份 JSON 解析结果为空")
+
+        // 必须包含事件才允许还原，避免仅含花名册的备份清空全部战报
+        if (root.events.isNullOrEmpty()) {
+            throw IllegalStateException("备份中未包含任何战报数据，已中止还原（本地数据未改动）")
+        }
 
         // 第一步：解析全部事件并保留原始名称，任一事件解析失败则整体放弃（不碰本地数据）
         val parsedEvents = mutableListOf<WarJsonParser.ParsedEvent>()
-        root.events?.forEach { eventDto ->
+        root.events.forEach { eventDto ->
             val parsed = WarJsonParser.parse(
                 eventDto.toWarJson(),
                 isSample = eventDto.is_sample == true,
@@ -342,26 +353,25 @@ class WarRepository(
         // 第二步：全部解析成功后才清空本地并写入
         clearAllEvents()
 
-        // 恢复花名册：兼容新版对象数组（含职位）与旧版字符串数组（默认成员）
-        val rosterEntries = root.roster
-            ?.mapNotNull { e ->
+        // 恢复花名册：仅当备份明确包含花名册数据时才清空并替换；否则保留本地花名册不变
+        val rosterJson = root.roster
+        if (rosterJson != null) {
+            val entries = rosterJson.mapNotNull { e ->
                 when {
                     e.isJsonPrimitive -> e.asString to "member"
                     e.isJsonObject -> {
                         val obj = e.asJsonObject
-                        val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString
-                            ?: return@mapNotNull null
+                        val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: return@mapNotNull null
                         val role = obj.get("role")?.takeIf { it.isJsonPrimitive }?.asString ?: "member"
                         name to role
                     }
                     else -> null
                 }
+            }.filter { it.first.isNotBlank() }
+            if (entries.isNotEmpty()) {
+                rosterDao.clearAll()
+                rosterDao.insertAll(entries.map { MemberRosterEntity(name = it.first, role = it.second) })
             }
-            ?.filter { it.first.isNotBlank() }
-            ?: emptyList()
-        if (rosterEntries.isNotEmpty()) {
-            addToRoster(rosterEntries.map { it.first })
-            rosterEntries.forEach { (name, role) -> updateRosterRole(name, role) }
         }
 
         parsedEvents.forEach { restored ->
@@ -387,13 +397,14 @@ private data class BackupEvent(
     val is_sample: Boolean? = null,
     val members: List<BackupMember>? = null
 ) {
-    /** 将备份格式转换为 WarJsonParser 可解析的精简导入 JSON 格式（旧备份中的 rank/role/status 键由 Gson 自然忽略） */
+    /** 将备份格式转换为 WarJsonParser 可解析的导入 JSON 格式（含 rank 以保持双程往返一致性）。 */
     fun toWarJson(): String {
         val sb = StringBuilder()
         sb.append("{\n  \"members\": [\n")
         members?.forEachIndexed { i, m ->
             sb.append("    {\n")
             sb.append("      \"player_name\": \"${escape(m.player_name ?: "")}\",\n")
+            if (m.rank != null) sb.append("      \"rank\": ${m.rank},\n")
             sb.append("      \"total_stars\": ${m.total_stars ?: 0},\n")
             sb.append("      \"attacks\": [\n")
             m.attacks?.forEachIndexed { j, a ->
@@ -427,6 +438,8 @@ private data class BackupEvent(
 
 private data class BackupMember(
     val player_name: String? = null,
+    val rank: Int? = null,
+    val role: String? = null,
     val total_stars: Int? = 0,
     val attacks: List<BackupAttack>? = null
 )

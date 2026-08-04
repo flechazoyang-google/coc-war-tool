@@ -178,7 +178,7 @@ private fun loadScreenshots(context: Context, list: MutableList<ScreenshotItem>)
             }
         }
 
-        // Fallback: 直接读文件目录
+        // Fallback: 直接读文件目录（使用负 ID 避免与 MediaStore 真实 _ID 冲突）
         if (list.isEmpty()) {
             val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "CocWarTool")
             if (dir.exists()) {
@@ -186,7 +186,7 @@ private fun loadScreenshots(context: Context, list: MutableList<ScreenshotItem>)
                     ?.sortedByDescending { it.lastModified() }
                     ?.forEachIndexed { index, file ->
                         list.add(ScreenshotItem(
-                            id = index.toLong(),
+                            id = -(index + 1).toLong(),  // 负 ID：仅文件删除，不操作 MediaStore
                             path = file.absolutePath,
                             dateAdded = file.lastModified()
                         ))
@@ -198,20 +198,18 @@ private fun loadScreenshots(context: Context, list: MutableList<ScreenshotItem>)
 
 private fun deleteScreenshot(context: Context, item: ScreenshotItem) {
     try {
-        // 删除 MediaStore 记录
-        if (item.id >= 0) {
-            val uri = ContentValues().let { cv ->
-                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                } else {
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                }
-                context.contentResolver.delete(
-                    collection,
-                    "${MediaStore.Images.Media._ID} = ?",
-                    arrayOf(item.id.toString())
-                )
+        // 仅真实 MediaStore ID（正数）才删除 MediaStore 记录；fallback 的负 ID 只删文件
+        if (item.id > 0) {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             }
+            context.contentResolver.delete(
+                collection,
+                "${MediaStore.Images.Media._ID} = ?",
+                arrayOf(item.id.toString())
+            )
         }
         // 同时删除文件
         runCatching { File(item.path).delete() }

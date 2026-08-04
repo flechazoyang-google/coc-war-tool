@@ -1,6 +1,7 @@
 package com.cocwar.data.samples
 
 import com.cocwar.data.model.AttackDto
+import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.MemberDto
 import com.cocwar.data.model.WarDto
 import com.cocwar.data.parser.WarJsonParser
@@ -85,8 +86,8 @@ object SampleDataProvider {
         }
 
         val dto = WarDto(members = members)
-        return WarJsonParser.fromDto(dto, isSample = true, createdAt, rosterRoles = roles).let { parsed ->
-            parsed.copy(event = parsed.event.copy(eventName = "示例·15人联赛（第3轮）", eventType = "league", eventRound = 3))
+        return WarJsonParser.fromDto(dto, isSample = true, createdAt, eventType = EVENT_TYPE_LEAGUE, eventRound = 3, rosterRoles = roles).let { parsed ->
+            parsed.copy(event = parsed.event.copy(eventName = "示例·15人联赛（第3轮）"))
         }
     }
 }

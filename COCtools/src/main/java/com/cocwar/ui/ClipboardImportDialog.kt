@@ -70,14 +70,28 @@ fun ClipboardImportDialog(
                         if (finalName != m.playerName) m.copy(playerName = finalName) else m
                     } else m
                 }
+                // 类型切换后按最终类型重新填充进攻槽位（部落战2槽/联赛1槽）
+                val finalSlotCount = if (eventType == EVENT_TYPE_LEAGUE) 1 else 2
+                val finalMembers = editedMembers.map { m ->
+                    val existing = m.attacks.filter { it.destructionPercentage > 0 }
+                    val padded = existing + (1..finalSlotCount)
+                        .filterNot { order -> existing.any { it.attackOrder == order } }
+                        .map { com.cocwar.data.model.Attack(attackOrder = it, destructionPercentage = 0) }
+                    m.copy(attacks = padded)
+                }
+                // 若最终 eventType 与解析时不同，重新生成 eventId（及成员外键），确保类型一致
+                val newEventId = if (eventType != parsed.event.eventType) {
+                    "${eventType}_${parsed.event.createdAt}_${System.nanoTime()}"
+                } else parsed.event.eventId
                 val adjusted = parsed.copy(
-                    // eventRound 从名称解析（联赛 SAABBCC 的 CC 段），避免丢失轮次
                     event = parsed.event.copy(
+                        eventId = newEventId,
                         eventName = name.trim(),
                         eventType = eventType,
                         eventRound = parseEventRoundFromName(name.trim())
                     ),
-                    members = editedMembers
+                    // 同步更新成员的 eventId 外键
+                    members = finalMembers.map { it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#")) }
                 )
                 scope.launch {
                     val roster = repo.getRoster()
@@ -117,7 +131,17 @@ fun ClipboardImportDialog(
                 )
                 WarTypeRoundSection(eventType = eventType, onTypeChange = {
                     eventType = it
-                    if (name.length >= 1) { val prefix = if (it == EVENT_TYPE_LEAGUE) '1' else '0'; name = prefix + name.substring(1) }
+                    // 仅当名称仍符合 SAABBCC 格式时才替换前缀；否则生成新名称，避免破坏用户自定义名称
+                    val s = name.getOrNull(0)
+                    val isStd = s != null && (s == '0' || s == '1') && name.length >= 7 &&
+                        name.substring(1, 7).all { c -> c.isDigit() } &&
+                        (name.substring(3, 5).toIntOrNull()?.let { it in 1..12 } == true)
+                    if (isStd) {
+                        val prefix = if (it == EVENT_TYPE_LEAGUE) '1' else '0'
+                        name = prefix + name.substring(1)
+                    } else {
+                        scope.launch { name = repo.generateEventName(it, parseEventRoundFromName(name)) }
+                    }
                 })
             }
         }

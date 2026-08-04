@@ -49,6 +49,7 @@ class ScreenCaptureService : AccessibilityService() {
     private var scope: CoroutineScope? = null
     @Volatile private var capturing = false
     private var captureJob: Job? = null
+    private var captureGeneration = 0  // 代际计数器，防止取消/新请求竞态
 
     private val cancelReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
@@ -88,8 +89,10 @@ class ScreenCaptureService : AccessibilityService() {
             return
         }
         capturing = true
+        captureGeneration++
+        val thisGen = captureGeneration
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        Log.i(TAG, "requestCapture 开始")
+        Log.i(TAG, "requestCapture 开始 (gen=$thisGen)")
         captureJob = scope!!.launch {
             try {
                 // 定期清理旧截图
@@ -106,8 +109,11 @@ class ScreenCaptureService : AccessibilityService() {
                 Log.e(TAG, "截图失败", e)
                 showToast("截图失败：${e.message}")
             } finally {
-                capturing = false
-                showOverlays()
+                // 仅当仍是当前代时才重置状态，避免取消后旧协程覆盖新请求的状态
+                if (captureGeneration == thisGen) {
+                    capturing = false
+                    showOverlays()
+                }
             }
         }
     }
@@ -115,6 +121,7 @@ class ScreenCaptureService : AccessibilityService() {
     fun cancelCapture() {
         captureJob?.cancel()
         capturing = false
+        captureGeneration++  // 使旧协程的 finally 无效，避免与新请求竞态
         showOverlays()
         showToast("截图已取消")
     }

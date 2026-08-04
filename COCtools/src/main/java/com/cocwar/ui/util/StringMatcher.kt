@@ -61,7 +61,7 @@ object StringMatcher {
                 best = c
             }
         }
-        return if (best != null && bestScore >= threshold && bestScore < 1f)
+        return if (best != null && bestScore >= threshold)
             best!! to bestScore else null
     }
 }

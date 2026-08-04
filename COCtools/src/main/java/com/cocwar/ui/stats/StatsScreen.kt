@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -159,6 +160,11 @@ fun StatsScreen(onBack: () -> Unit) {
             subtitle = selectedMonth?.label ?: "选择月份",
             actions = {
                 CocIconButton(
+                    icon = Icons.Filled.Refresh,
+                    contentDescription = "刷新数据",
+                    onClick = { viewModel.refresh() },
+                )
+                CocIconButton(
                     icon = Icons.Filled.FilterList,
                     contentDescription = "筛选",
                     onClick = { showFilterDialog = true },
@@ -167,18 +173,17 @@ fun StatsScreen(onBack: () -> Unit) {
             }
         )
 
-        when {
-            loading -> {
-                Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                    Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        // 仅首次加载（无数据）显示居中加载提示；刷新时保持内容可见
+        if (availableMonths.isEmpty() && loading) {
+            Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            availableMonths.isEmpty() -> {
-                Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                    EmptyState(title = "暂无战报数据", body = "导入战报后这里会生成月度复盘")
-                }
+        } else if (availableMonths.isEmpty() && !loading) {
+            Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                EmptyState(title = "暂无战报数据", body = "导入战报后这里会生成月度复盘")
             }
-            else -> when (currentView) {
+        } else {
+            when (currentView) {
                 StatsView.OVERVIEW -> OverviewTab(
                     overview, eventSummaries, currentTypeFilter, Modifier.weight(1f)
                 )

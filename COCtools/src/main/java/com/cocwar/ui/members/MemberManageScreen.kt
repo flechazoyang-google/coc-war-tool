@@ -65,9 +65,11 @@ fun MemberManageScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 删除成员：立即落库删除 → Snackbar 提供撤销（重新加回名单），防误触
+    // 删除成员：立即落库删除 → Snackbar 提供撤销（含角色恢复），防误触
     fun removeNameWithUndo(name: String) {
         scope.launch {
+            // 快照当前角色，撤销时恢复（否则角色降级为默认"member"）
+            val savedRole = roster.find { it.name == name }?.role ?: "member"
             viewModel.removeName(name)
             val result = snackbarHostState.showSnackbar(
                 message = "已删除成员「$name」",
@@ -76,6 +78,9 @@ fun MemberManageScreen(onBack: () -> Unit) {
             )
             if (result == SnackbarResult.ActionPerformed) {
                 viewModel.addNames(listOf(name))
+                if (savedRole != "member") {
+                    viewModel.updateRole(name, savedRole)
+                }
             }
         }
     }

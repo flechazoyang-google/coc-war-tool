@@ -250,14 +250,28 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                                 if (finalName != m.playerName) m.copy(playerName = finalName) else m
                             } else m
                         }
+                        // 类型切换后按最终类型重新填充进攻槽位（部落战2槽/联赛1槽）
+                        val finalSlotCount = if (eventType == EVENT_TYPE_LEAGUE) 1 else 2
+                        val finalMembers = editedMembers.map { m ->
+                            val existing = m.attacks.filter { it.destructionPercentage > 0 }
+                            val padded = existing + (1..finalSlotCount)
+                                .filterNot { order -> existing.any { it.attackOrder == order } }
+                                .map { com.cocwar.data.model.Attack(attackOrder = it, destructionPercentage = 0) }
+                            m.copy(attacks = padded)
+                        }
+                        // 若最终 eventType 与解析时不同，重新生成 eventId（及成员外键），确保类型一致
+                        val newEventId = if (eventType != parsed.event.eventType) {
+                            "${eventType}_${parsed.event.createdAt}_${System.nanoTime()}"
+                        } else parsed.event.eventId
                         val adjusted = parsed.copy(
-                            // eventRound 从名称解析（联赛 SAABBCC 的 CC 段），避免丢失轮次
                             event = parsed.event.copy(
+                                eventId = newEventId,
                                 eventName = name.trim(),
                                 eventType = eventType,
                                 eventRound = parseEventRoundFromName(name.trim())
                             ),
-                            members = editedMembers
+                            // 同步更新成员的 eventId 外键
+                            members = finalMembers.map { it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#")) }
                         )
                         // save 内部串行完成「新成员入名单 → 导入事件」，避免页面退出后名单丢失
                         viewModel.save(adjusted) { onSaved() }

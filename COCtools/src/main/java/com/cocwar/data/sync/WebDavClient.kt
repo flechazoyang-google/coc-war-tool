@@ -11,10 +11,13 @@ import java.util.Base64
  * 上传/下载的文件统一放在 baseUrl 下的 coc_backup/ 子目录中。
  */
 class WebDavClient(
-    private val baseUrl: String,
+    baseUrl: String,
     private val username: String,
     private val password: String
 ) {
+    /** 规范化后的 baseUrl（去除尾部斜杠，避免拼接出双斜杠 URL）。 */
+    private val normalizedUrl: String = baseUrl.trimEnd('/')
+
     /** 文件所在子目录名 */
     companion object {
         const val BACKUP_DIR = "coc_backup"
@@ -29,14 +32,14 @@ class WebDavClient(
         }
 
     /** 备份文件的完整路径 */
-    private val fileUrl: String get() = "$baseUrl/$BACKUP_DIR/$BACKUP_FILE"
+    private val fileUrl: String get() = "$normalizedUrl/$BACKUP_DIR/$BACKUP_FILE"
 
     /** 上传备份文件到 WebDAV 服务器。先确保子目录存在。 */
     fun upload(content: String): Result<Unit> {
         return runCatching {
             val data = content.toByteArray(Charsets.UTF_8)
             // 先创建子目录（已存在则忽略）
-            mkcol("$baseUrl/$BACKUP_DIR/")
+            mkcol("$normalizedUrl/$BACKUP_DIR/")
 
             val url = URL(fileUrl)
             val conn = (url.openConnection() as HttpURLConnection).apply {
@@ -91,7 +94,7 @@ class WebDavClient(
     /** 测试连接：用 GET 请求探测 baseUrl 是否可达且认证正确。 */
     fun testConnection(): Result<Boolean> {
         return runCatching {
-            val url = URL(baseUrl)
+            val url = URL(normalizedUrl)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Authorization", authHeader)

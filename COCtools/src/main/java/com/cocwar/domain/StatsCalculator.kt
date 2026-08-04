@@ -133,10 +133,13 @@ object StatsCalculator {
     ): Int {
         if (members.isEmpty()) return 0
         val typeByEvent = events.associate { it.eventId to it.eventType }
-        // 部落战 2 槽、联赛 1 槽；显式 map+sum 避免 sumOf 的 Int/Long 重载歧义
-        return members.map { m ->
-            if (typeByEvent[m.eventId] == "league") 1 else 2
-        }.sum()
+        val eventIdSet = events.map { it.eventId }.toSet()
+        // 部落战 2 槽、联赛 1 槽；仅统计属于已知事件的成员，未知事件按部落战 2 槽兜底
+        return members
+            .filter { it.eventId in eventIdSet }
+            .map { m ->
+                if (typeByEvent[m.eventId] == "league") 1 else 2
+            }.sum()
     }
 
     /** 该成员所属事件的创建时间，用于取「最近一次」的角色等；未知事件按 0 处理。 */
@@ -263,7 +266,8 @@ object StatsCalculator {
         val usedAttacks = allAttacks.filter { it.isUsed() }
         val totalUsedAttacks = usedAttacks.size
         val totalPossibleAttacks = possibleAttackSlots(events, members)
-        val overallAttackRate = if (totalPossibleAttacks > 0) totalUsedAttacks.toFloat() / totalPossibleAttacks else 0f
+        val overallAttackRate = if (totalPossibleAttacks > 0)
+            (totalUsedAttacks.toFloat() / totalPossibleAttacks).coerceIn(0f, 1f) else 0f
         val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
         val threeStarRate = if (totalUsedAttacks > 0) threeStarCount.toFloat() / totalUsedAttacks else 0f
         val avgDestruction = if (usedAttacks.isNotEmpty())

@@ -144,14 +144,18 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
                     } else {
                         IconButton(onClick = {
                             scope.launch {
-                                val app = context.applicationContext as CocWarApplication
-                                val json = app.repository.exportEventJson(eventId)
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/json"
-                                    putExtra(Intent.EXTRA_TEXT, json)
-                                    putExtra(Intent.EXTRA_SUBJECT, event?.eventName ?: "战报")
+                                runCatching {
+                                    val app = context.applicationContext as CocWarApplication
+                                    val json = app.repository.exportEventJson(eventId)
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/json"
+                                        putExtra(Intent.EXTRA_TEXT, json)
+                                        putExtra(Intent.EXTRA_SUBJECT, event?.eventName ?: "战报")
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "导出战报"))
+                                }.onFailure {
+                                    android.widget.Toast.makeText(context, "导出失败：${it.message}", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                context.startActivity(Intent.createChooser(intent, "导出战报"))
                             }
                         }) {
                             Icon(Icons.Filled.Share, contentDescription = "导出", modifier = Modifier.size(20.dp))

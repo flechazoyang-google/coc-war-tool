@@ -58,43 +58,47 @@ object UpdateChecker {
                 instanceFollowRedirects = true
             }
 
-            val code = connection.responseCode
-            if (code != HttpURLConnection.HTTP_OK) {
-                connection.disconnect()
-                return@withContext Result.failure(Exception("API 返回 $code"))
-            }
-
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
-
-            val json = JsonParser.parseString(body).asJsonObject
-
-            val tagName = json.get("tag_name")?.asString ?: ""
-            val version = tagName.removePrefix("v").removePrefix("V")
-            val desc = json.get("body")?.asString?.take(500) ?: ""
-            val assets = json.getAsJsonArray("assets") ?: return@withContext Result.success(null)
-
-            // 找 .apk 文件
-            var apkUrl = ""
-            for (asset in assets) {
-                val assetObj = asset.asJsonObject
-                val name = assetObj.get("name")?.asString ?: ""
-                if (name.endsWith(".apk")) {
-                    apkUrl = assetObj.get("browser_download_url")?.asString ?: ""
-                    break
+            try {
+                val code = connection.responseCode
+                if (code != HttpURLConnection.HTTP_OK) {
+                    return@withContext Result.failure(Exception("API 返回 $code"))
                 }
-            }
-            if (apkUrl.isEmpty()) {
-                return@withContext Result.failure(Exception("未找到 APK 下载地址"))
-            }
 
-            val currentVersion = BuildConfig.VERSION_NAME
-            Log.d(TAG, "当前: $currentVersion, 最新: $version")
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
 
-            if (compareVersion(version, currentVersion) > 0) {
-                Result.success(UpdateInfo(version, tagName, desc, apkUrl))
-            } else {
-                Result.success(null) // 已是最新
+                val json = JsonParser.parseString(body).asJsonObject
+
+                val tagName = json.get("tag_name")?.asString ?: ""
+                val version = tagName.removePrefix("v").removePrefix("V")
+                val desc = json.get("body")?.asString?.take(500) ?: ""
+                // getAsJsonArray 在 key 缺失/非数组时抛异常而非返回 null，用安全取值替代
+                val assets = json.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray
+                    ?: return@withContext Result.success(null)
+
+                // 找 .apk 文件
+                var apkUrl = ""
+                for (asset in assets) {
+                    val assetObj = asset.asJsonObject
+                    val name = assetObj.get("name")?.asString ?: ""
+                    if (name.endsWith(".apk")) {
+                        apkUrl = assetObj.get("browser_download_url")?.asString ?: ""
+                        break
+                    }
+                }
+                if (apkUrl.isEmpty()) {
+                    return@withContext Result.failure(Exception("未找到 APK 下载地址"))
+                }
+
+                val currentVersion = BuildConfig.VERSION_NAME
+                Log.d(TAG, "当前: $currentVersion, 最新: $version")
+
+                if (compareVersion(version, currentVersion) > 0) {
+                    Result.success(UpdateInfo(version, tagName, desc, apkUrl))
+                } else {
+                    Result.success(null) // 已是最新
+                }
+            } finally {
+                connection.disconnect()
             }
         } catch (e: Exception) {
             Log.e(TAG, "检查更新失败", e)

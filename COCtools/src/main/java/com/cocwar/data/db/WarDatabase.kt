@@ -155,19 +155,28 @@ interface RosterDao {
 
     @Query("UPDATE member_roster SET role = :role WHERE name = :name")
     suspend fun updateRole(name: String, role: String)
+
+    @Query("DELETE FROM member_roster")
+    suspend fun clearAll()
 }
 
-// v1→v2: 移除 war_events 中的敌方部落字段
+// v1→v2: 移除 war_events 中的敌方部落字段。
+// 重建 war_events 前先关闭外键约束，避免 DROP TABLE 触发器联级删除 members 表数据。
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS war_events_new (eventId TEXT PRIMARY KEY NOT NULL, eventName TEXT NOT NULL, eventType TEXT NOT NULL, eventRound INTEGER NOT NULL, clanTotalStars INTEGER NOT NULL, clanTotalDestruction TEXT NOT NULL, isSample INTEGER NOT NULL, createdAt INTEGER NOT NULL)")
-        db.execSQL("INSERT INTO war_events_new SELECT eventId, eventName, eventType, eventRound, clanTotalStars, clanTotalDestruction, isSample, createdAt FROM war_events")
-        db.execSQL("DROP TABLE war_events")
-        db.execSQL("ALTER TABLE war_events_new RENAME TO war_events")
+        db.execSQL("PRAGMA foreign_keys=OFF")
+        try {
+            db.execSQL("CREATE TABLE IF NOT EXISTS war_events_new (eventId TEXT PRIMARY KEY NOT NULL, eventName TEXT NOT NULL, eventType TEXT NOT NULL, eventRound INTEGER NOT NULL, clanTotalStars INTEGER NOT NULL, clanTotalDestruction TEXT NOT NULL, isSample INTEGER NOT NULL, createdAt INTEGER NOT NULL)")
+            db.execSQL("INSERT INTO war_events_new SELECT eventId, eventName, eventType, eventRound, clanTotalStars, clanTotalDestruction, isSample, createdAt FROM war_events")
+            db.execSQL("DROP TABLE war_events")
+            db.execSQL("ALTER TABLE war_events_new RENAME TO war_events")
+        } finally {
+            db.execSQL("PRAGMA foreign_keys=ON")
+        }
     }
 }
 
-// v2→v3: members 表新增 totalStars 列（幂等：已存在则跳过）
+// v2→v3: members 表新增 totalStars 列（幂等：已存在则跳过），并回填历史数据
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         val hasColumn = db.query("PRAGMA table_info(members)").use { cursor ->
@@ -179,6 +188,31 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         }
         if (!hasColumn) {
             db.execSQL("ALTER TABLE members ADD COLUMN totalStars INTEGER NOT NULL DEFAULT 0")
+            // 回填历史数据：从 attacks JSON 中按摧毁率推导星数（>=100→3, >=50→2, >0→1）
+            val gson = com.google.gson.Gson()
+            val type = object : com.google.gson.reflect.TypeToken<List<com.cocwar.data.model.Attack>>() {}.type
+            db.query("SELECT id, attacks FROM members").use { cursor ->
+                val idIdx = cursor.getColumnIndexOrThrow("id")
+                val attIdx = cursor.getColumnIndexOrThrow("attacks")
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(idIdx)
+                    val json = cursor.getString(attIdx)
+                    if (json == null || json.isBlank() || json == "null") continue
+                    val attacks = runCatching {
+                        gson.fromJson<List<com.cocwar.data.model.Attack>>(json, type) ?: emptyList()
+                    }.getOrDefault(emptyList())
+                    val stars = attacks.filter { it.destructionPercentage > 0 }.fold(0) { acc, a ->
+                        acc + when {
+                            a.destructionPercentage >= 100 -> 3
+                            a.destructionPercentage >= 50 -> 2
+                            else -> 1  // >0 已经由 filter 保证
+                        }
+                    }
+                    if (stars > 0) {
+                        db.execSQL("UPDATE members SET totalStars = $stars WHERE id = ?", arrayOf(id))
+                    }
+                }
+            }
         }
     }
 }

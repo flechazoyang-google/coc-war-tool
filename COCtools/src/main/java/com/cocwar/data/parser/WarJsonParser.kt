@@ -80,14 +80,15 @@ object WarJsonParser {
     ): ParsedEvent {
         val round = eventRound
 
-        // event_id 自动生成；eventName 由用户在导入时填写
-        val eventId = "${eventType}_${createdAt}"
+        // event_id 自动生成；追加 nanoTime 防同一毫秒导入多个事件时 ID 碰撞
+        val eventId = "${eventType}_${createdAt}_${System.nanoTime()}"
         // 每人进攻槽位：部落战 2 槽，联赛 1 槽（attackOrder 从 1 开始）。
         // 官方 CoC API 中未进攻成员没有 attacks 字段，这里补 unused 占位，
         // 使进攻率/未进攻统计口径正确；已有攻击记录保留原样。
         val slotCount = if (eventType == EVENT_TYPE_LEAGUE) 1 else 2
 
-        val members = (dto.members ?: emptyList()).mapIndexed { index, m ->
+        // filterNotNull 防止 JSON 数组中 null 元素导致整个导入失败
+        val members = (dto.members ?: emptyList()).filterNotNull().mapIndexed { index, m ->
             val rank = (m.rank ?: (index + 1)).coerceAtLeast(1)
             val playerName = m.playerName.clean() ?: "未知玩家#$rank"
             // 职位一律来自花名册（rosterRoles），JSON 中的 role 字段已不再使用
@@ -100,11 +101,16 @@ object WarJsonParser {
                     destructionPercentage = (a.destructionPercentage ?: 0).coerceIn(0, 100)
                 )
             }
-            val attacks = rawAttacks + (1..slotCount)
-                .filterNot { order -> rawAttacks.any { it.attackOrder == order } }
+            // 去重：按 attackOrder 分组，每个 order 只保留摧毁率最高的一条（防止重复记录导致 used 超 slot）
+            val dedupedAttacks = rawAttacks
+                .groupBy { it.attackOrder }
+                .map { (_, list) -> list.maxByOrNull { it.destructionPercentage }!! }
+            val attacks = dedupedAttacks + (1..slotCount)
+                .filterNot { order -> dedupedAttacks.any { it.attackOrder == order } }
                 .map { Attack(attackOrder = it, destructionPercentage = 0) }
+            // 用 index 确保主键唯一，避免 JSON 中重复 rank 导致成员被 REPLACE 静默覆盖
             MemberEntity(
-                id = "$eventId#$rank",
+                id = "$eventId#${index}",
                 eventId = eventId,
                 rank = rank,
                 playerName = playerName,
@@ -130,7 +136,7 @@ object WarJsonParser {
             eventType = eventType,
             eventRound = round,
             clanTotalStars = clanStars,
-            clanTotalDestruction = "%.1f%%".format(clanDestructionAvg),
+            clanTotalDestruction = "%.1f%%".format(java.util.Locale.US, clanDestructionAvg),
             isSample = isSample,
             createdAt = createdAt
         )
