@@ -35,7 +35,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +56,7 @@ import com.cocwar.di.warViewModel
 import com.cocwar.ui.ClipboardImportDialog
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
+import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.looksLikeWarJson
 import com.cocwar.ui.theme.cocColors
@@ -252,8 +252,8 @@ fun EventListScreen(
     
             Spacer(Modifier.height(6.dp))
 
-            // 下拉刷新：列表由 Room Flow 自动保持最新，下拉触发手动重读并提供进度反馈
-            PullToRefreshBox(
+            // 下拉刷新：列表由 Room Flow 自动保持最新，下拉触发手动重读并提供状态反馈
+            RefreshableBox(
                 isRefreshing = refreshing,
                 onRefresh = { viewModel.refresh() },
                 modifier = Modifier

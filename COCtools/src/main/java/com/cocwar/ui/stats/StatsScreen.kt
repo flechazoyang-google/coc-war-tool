@@ -1,7 +1,9 @@
 package com.cocwar.ui.stats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
@@ -24,9 +28,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,8 +41,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -58,22 +66,17 @@ import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
 import com.cocwar.ui.components.FilterPill
+import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.components.SoftTag
+import com.cocwar.ui.components.StatTile
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.formatPercent
 import com.cocwar.ui.util.roleLabel
 
 // === 阈值配色（取自语义令牌） ===
-@Composable
-private fun attackRateColor(rate: Float): Color = when {
-    rate >= 0.8f -> MaterialTheme.cocColors.accent
-    rate >= 0.5f -> MaterialTheme.cocColors.star
-    else -> MaterialTheme.cocColors.danger
-}
-
 @Composable
 private fun threeStarRateColor(rate: Float): Color = when {
     rate >= 0.5f -> MaterialTheme.cocColors.accent
@@ -202,10 +205,11 @@ fun StatsScreen(onBack: () -> Unit) {
             }
         )
 
-        // 下拉刷新：数据已由 ViewModel 响应式跟随数据库，下拉仅提供手动重载与进度反馈
-        PullToRefreshBox(
+        // 下拉刷新：数据已由 ViewModel 响应式跟随数据库，下拉仅提供手动重载与状态反馈
+        RefreshableBox(
             isRefreshing = refreshing,
             onRefresh = { viewModel.refresh() },
+            doneText = "统计已更新",
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -458,11 +462,50 @@ private fun OverviewTab(
         modifier = modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // === 月度总览平面卡片 ===
-        item { HeroCard(overview) }
+        // === 月度总览渐变卡片 ===
+        item { HeroCard(overview, typeFilter.label) }
+
+        // === 本月关键指标 2×2 网格 ===
+        item { SectionTitle("关键指标") }
+        item {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StatTile(
+                        label = "有效进攻",
+                        value = "${overview.totalUsedAttacks}",
+                        modifier = Modifier.weight(1f),
+                        valueColor = MaterialTheme.cocColors.accent
+                    )
+                    StatTile(
+                        label = "三星次数",
+                        value = "${overview.threeStarCount}",
+                        modifier = Modifier.weight(1f),
+                        valueColor = MaterialTheme.cocColors.star
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StatTile(
+                        label = "场均摧毁",
+                        value = formatPercent(overview.avgDestruction),
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatTile(
+                        label = "场均星数",
+                        value = "%.1f".format(overview.avgStarsPerEvent),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
 
         // === 每场星数趋势（折线图） ===
-        item { SectionTitle("每场星数") }
+        item {
+            SectionTitleWithValue(
+                title = "每场星数",
+                value = if (chartValues.isEmpty()) "" else "平均 %.1f★".format(chartValues.average())
+            )
+        }
         item {
             CocCard(Modifier.fillMaxWidth()) {
                 if (chartValues.isEmpty()) {
@@ -560,76 +603,181 @@ private fun TopMembersTab(
     }
 }
 
-// ===== 月度总览：平面三栏 + 类型对比条 =====
+// ===== 月度总览：渐变大卡（类型胶囊 + 场次大数字 + 进攻率环 + 底部指标行） =====
 
 @Composable
-private fun HeroCard(overview: StatsOverview) {
-    CocCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(vertical = 18.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                HeroStat("战报", "${overview.totalEvents}", Modifier.weight(1f))
-                HeroDivider()
-                HeroStat(
-                    "满星率", formatPercent(overview.fullStarRate * 100), Modifier.weight(1f),
-                    valueColor = MaterialTheme.cocColors.star
-                )
-                HeroDivider()
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.weight(1f)
-                ) {
+private fun HeroCard(overview: StatsOverview, typeLabel: String) {
+    val isDark = isSystemInDarkTheme()
+    val accent = MaterialTheme.cocColors.accent
+    val accentSoft = MaterialTheme.cocColors.accentSoft
+    val ink = MaterialTheme.colorScheme.onSurface
+    val inkSoft = MaterialTheme.colorScheme.onSurfaceVariant
+    // 柔和渐变：强调色淡染 → 透明，叠加在卡片面上（比实色渐变克制，不突兀）
+    val brush = Brush.linearGradient(
+        colors = listOf(
+            accent.copy(alpha = if (isDark) 0.20f else 0.14f),
+            Color.Transparent
+        ),
+        start = Offset.Zero,
+        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp
+    ) {
+        Box(Modifier.background(brush)) {
+            // 装饰：右上角半透明同心圆环（部落徽章意象）
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 10.dp)
+                    .size(96.dp)
+                    .border(12.dp, accent.copy(alpha = 0.10f), CircleShape)
+            )
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 类型胶囊
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = accentSoft
+                    ) {
+                        Text(
+                            typeLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = accent,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "月度总览",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = inkSoft
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 场次大数字 + 满星率
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text(
+                                "${overview.totalEvents}",
+                                style = MaterialTheme.typography.displayMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = ink
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "场战报",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = inkSoft,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "满星率",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = inkSoft
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                formatPercent(overview.fullStarRate * 100),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = accent
+                            )
+                        }
+                    }
+                    // 进攻率环
                     RingStat(
                         rate = overview.overallAttackRate,
-                        color = attackRateColor(overview.overallAttackRate),
-                        size = 52.dp,
-                        strokeWidth = 4.5.dp
+                        color = accent,
+                        size = 62.dp,
+                        strokeWidth = 5.dp,
+                        labelColor = ink,
+                        trackColor = accentSoft
                     )
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        "进攻率",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.cocColors.hairline)
+                )
+                Spacer(Modifier.height(12.dp))
+                // 底部指标行：三星率 / 场均摧毁 / 场均星数
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    HeroMiniStat("三星率", formatPercent(overview.threeStarRate * 100), ink)
+                    HeroMiniStat("场均摧毁", formatPercent(overview.avgDestruction), ink)
+                    HeroMiniStat("场均星数", "%.1f".format(overview.avgStarsPerEvent), ink)
                 }
             }
         }
     }
 }
 
+/** 渐变卡底部小指标：值 + 标签，垂直居中 */
 @Composable
-private fun HeroStat(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
+private fun HeroMiniStat(label: String, value: String, fg: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             value,
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = valueColor
+            color = fg
         )
         Spacer(Modifier.height(2.dp))
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = fg.copy(alpha = 0.7f)
         )
     }
 }
 
+/** 带右侧数值的章节标题：标题 + 延展线 + 强调值（如「平均 X.X★」） */
 @Composable
-private fun HeroDivider() {
-    Box(
-        Modifier
-            .width(1.dp)
-            .height(40.dp)
-            .background(MaterialTheme.cocColors.hairline)
-    )
+private fun SectionTitleWithValue(title: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 22.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(12.dp))
+        Box(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(MaterialTheme.cocColors.hairline)
+        )
+        if (value.isNotBlank()) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                value,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.cocColors.accent
+            )
+        }
+    }
 }
 
 // ===== 环形进度（圆头描边，平面轨道） =====
@@ -641,14 +789,15 @@ private fun RingStat(
     size: Dp = 52.dp,
     strokeWidth: Dp = 4.5.dp,
     modifier: Modifier = Modifier,
-    labelColor: Color = MaterialTheme.colorScheme.onSurface
+    labelColor: Color = MaterialTheme.colorScheme.onSurface,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant
 ) {
     Box(contentAlignment = Alignment.Center, modifier = modifier) {
         CircularProgressIndicator(
             progress = { rate.coerceIn(0f, 1f) },
             modifier = Modifier.size(size),
             color = color,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            trackColor = trackColor,
             strokeWidth = strokeWidth,
             strokeCap = StrokeCap.Round
         )
@@ -680,15 +829,9 @@ private fun TopScoreRow(index: Int, score: TopMemberScore) {
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            "%02d".format(index),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (index == 1) MaterialTheme.cocColors.star
-            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.width(34.dp),
-            textAlign = TextAlign.Start
-        )
+        Box(Modifier.width(34.dp), contentAlignment = Alignment.CenterStart) {
+            RankBadge(rank = index, size = 28.dp)
+        }
         // 昵称：职位色区分，点击查看得分来源明细
         Text(
             score.playerName,
@@ -865,6 +1008,45 @@ private fun MembersTab(
     }
 }
 
+/** 领奖台排名徽章：前三名金/银/铜圆片（随明暗模式调色），其余名次为弱化序号 */
+@Composable
+private fun RankBadge(rank: Int, modifier: Modifier = Modifier, size: Dp = 28.dp) {
+    val isDark = isSystemInDarkTheme()
+    val podium = when (rank) {
+        1 -> Color(0xFFC9A227)   // 金
+        2 -> Color(0xFF9AA3AD)   // 银
+        3 -> Color(0xFFB87333)   // 铜
+        else -> null
+    }
+    if (podium == null) {
+        Text(
+            "%02d".format(rank),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = modifier
+        )
+        return
+    }
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(
+                if (isDark) podium.copy(alpha = 0.26f)
+                else podium.copy(alpha = 0.14f)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            "$rank",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = if (isDark) podium else lerp(podium, Color.Black, 0.3f)
+        )
+    }
+}
+
 @Composable
 private fun MemberStatRow(
     stat: MemberMonthlyStat,
@@ -878,13 +1060,9 @@ private fun MemberStatRow(
             .padding(start = 20.dp, end = 20.dp, top = 13.dp, bottom = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            "%02d".format(rank),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            modifier = Modifier.width(36.dp)
-        )
+        Box(Modifier.width(36.dp), contentAlignment = Alignment.CenterStart) {
+            RankBadge(rank = rank, size = 28.dp)
+        }
         Text(
             stat.playerName,
             style = MaterialTheme.typography.bodyMedium,
