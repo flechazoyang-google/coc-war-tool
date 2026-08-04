@@ -55,6 +55,39 @@ class SyncConfig(context: Context) {
     val isConfigured: Boolean
         get() = serverUrl.isNotBlank() && username.isNotBlank()
 
+    // === 同步指纹与归档记录（B3，非敏感，普通 prefs） ===
+
+    /** 上次同步完成时的本地指纹（null = 尚未同步过）。 */
+    var lastLocalFingerprint: String?
+        get() = prefs.getString(KEY_LAST_LOCAL_FP, null)
+        set(value) {
+            if (value == null) prefs.edit().remove(KEY_LAST_LOCAL_FP).apply()
+            else prefs.edit().putString(KEY_LAST_LOCAL_FP, value).apply()
+        }
+
+    /** 上次同步完成时看到的远端指纹（null = 尚未同步过）。 */
+    var lastRemoteFingerprint: String?
+        get() = prefs.getString(KEY_LAST_REMOTE_FP, null)
+        set(value) {
+            if (value == null) prefs.edit().remove(KEY_LAST_REMOTE_FP).apply()
+            else prefs.edit().putString(KEY_LAST_REMOTE_FP, value).apply()
+        }
+
+    /** 已归档文件名（按时间顺序）。 */
+    fun archivedNames(): List<String> =
+        (prefs.getString(KEY_ARCHIVES, "") ?: "").split(",").filter { it.isNotBlank() }
+
+    /**
+     * 记录一个归档名并裁剪到上限（RULES §6：最多保留 [MAX_ARCHIVES] 份）。
+     * @return 被裁剪掉的归档名（调用方负责从云端删除）
+     */
+    fun recordArchive(name: String): List<String> {
+        val all = archivedNames() + name
+        val kept = all.takeLast(MAX_ARCHIVES)
+        prefs.edit().putString(KEY_ARCHIVES, kept.joinToString(",")).apply()
+        return all.drop(kept.size)
+    }
+
     private fun migrateLegacyPassword() {
         // 加密存储已有值则不迁移
         if (securePrefs.contains(KEY_PASS)) return
@@ -69,5 +102,11 @@ class SyncConfig(context: Context) {
         private const val KEY_URL = "webdav_url"
         private const val KEY_USER = "webdav_user"
         private const val KEY_PASS = "webdav_pass"
+        private const val KEY_LAST_LOCAL_FP = "last_local_fingerprint"
+        private const val KEY_LAST_REMOTE_FP = "last_remote_fingerprint"
+        private const val KEY_ARCHIVES = "archived_names"
+
+        /** 云端归档保留上限（RULES §6）。 */
+        const val MAX_ARCHIVES = 10
     }
 }

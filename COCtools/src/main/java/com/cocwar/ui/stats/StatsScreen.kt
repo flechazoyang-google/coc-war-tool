@@ -18,12 +18,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,13 +83,16 @@ private fun threeStarRateColor(rate: Float): Color = when {
 
 // ==================== 主屏幕 ====================
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(onBack: () -> Unit) {
     val viewModel: StatsViewModel = warViewModel { StatsViewModel(it) }
+    val context = LocalContext.current
     val overview by viewModel.overview.collectAsStateWithLifecycle()
     val memberStats by viewModel.memberStats.collectAsStateWithLifecycle()
     val recentMissed by viewModel.recentMissed.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val availableMonths by viewModel.availableMonths.collectAsStateWithLifecycle()
     val selectedMonth by viewModel.selectedMonth.collectAsStateWithLifecycle()
     val sortBy by viewModel.sortBy.collectAsStateWithLifecycle()
@@ -165,6 +172,28 @@ fun StatsScreen(onBack: () -> Unit) {
                     onClick = { viewModel.refresh() },
                 )
                 CocIconButton(
+                    icon = Icons.Filled.Share,
+                    contentDescription = "分享月度报告",
+                    onClick = {
+                        if (memberStats.isEmpty() && overview == null) return@CocIconButton
+                        // 月度成绩单（B2，RULES §4.16）：口径复用 StatsCalculator 已有结果
+                        val title = "${selectedMonth?.label ?: ""}${currentTypeFilter.label}月度报告"
+                        val csv = com.cocwar.data.csv.CsvExporter.exportMonthlyReportCsv(
+                            title = title,
+                            stats = memberStats,
+                            overview = overview
+                        )
+                        val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/csv"
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, title)
+                            putExtra(android.content.Intent.EXTRA_TEXT, csv)
+                        }
+                        context.startActivity(
+                            android.content.Intent.createChooser(sendIntent, "分享月度报告")
+                        )
+                    }
+                )
+                CocIconButton(
                     icon = Icons.Filled.FilterList,
                     contentDescription = "筛选",
                     onClick = { showFilterDialog = true },
@@ -173,25 +202,34 @@ fun StatsScreen(onBack: () -> Unit) {
             }
         )
 
-        // 仅首次加载（无数据）显示居中加载提示；刷新时保持内容可见
-        if (availableMonths.isEmpty() && loading) {
-            Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else if (availableMonths.isEmpty() && !loading) {
-            Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                EmptyState(title = "暂无战报数据", body = "导入战报后这里会生成月度复盘")
-            }
-        } else {
-            when (currentView) {
-                StatsView.OVERVIEW -> OverviewTab(
-                    overview, eventSummaries, currentTypeFilter, Modifier.weight(1f)
-                )
-                StatsView.RANKING -> MembersTab(memberStats, Modifier.weight(1f)) { stat ->
-                    detailPlayer = stat
+        // 下拉刷新：数据已由 ViewModel 响应式跟随数据库，下拉仅提供手动重载与进度反馈
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            // 仅首次加载（无数据）显示居中加载提示；刷新时保持内容可见
+            if (availableMonths.isEmpty() && loading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                StatsView.WARNING -> MissedTab(recentMissed, Modifier.weight(1f))
-                StatsView.TOP -> TopMembersTab(topMembers, Modifier.weight(1f))
+            } else if (availableMonths.isEmpty() && !loading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyState(title = "暂无战报数据", body = "导入战报后这里会生成月度复盘")
+                }
+            } else {
+                when (currentView) {
+                    StatsView.OVERVIEW -> OverviewTab(
+                        overview, eventSummaries, currentTypeFilter, Modifier.fillMaxSize()
+                    )
+                    StatsView.RANKING -> MembersTab(memberStats, Modifier.fillMaxSize()) { stat ->
+                        detailPlayer = stat
+                    }
+                    StatsView.WARNING -> MissedTab(recentMissed, Modifier.fillMaxSize())
+                    StatsView.TOP -> TopMembersTab(topMembers, Modifier.fillMaxSize())
+                }
             }
         }
     }

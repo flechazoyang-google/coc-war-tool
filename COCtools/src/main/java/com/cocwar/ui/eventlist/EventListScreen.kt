@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +67,7 @@ import kotlinx.coroutines.launch
 import com.cocwar.ui.util.parseYearFromName
 import com.cocwar.ui.util.parseLeagueMatchFromName
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventListScreen(
     onOpen: (String) -> Unit,
@@ -73,6 +76,7 @@ fun EventListScreen(
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -247,70 +251,79 @@ fun EventListScreen(
             }
     
             Spacer(Modifier.height(6.dp))
-    
-            if (filtered.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (events.isEmpty()) {
-                        EmptyState(
-                            title = "还没有战报",
-                            body = "点击右上角 + 导入 JSON\n复制战报 JSON 后打开 App 会自动识别"
-                        )
-                    } else {
-                        EmptyState(title = "没有匹配的战报", body = "试试调整筛选条件")
+
+            // 下拉刷新：列表由 Room Flow 自动保持最新，下拉触发手动重读并提供进度反馈
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = { viewModel.refresh() },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                if (filtered.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        if (events.isEmpty()) {
+                            EmptyState(
+                                title = "还没有战报",
+                                body = "点击右上角 + 导入 JSON\n复制战报 JSON 后打开 App 会自动识别"
+                            )
+                        } else {
+                            EmptyState(title = "没有匹配的战报", body = "试试调整筛选条件")
+                        }
                     }
-                }
-            } else {
-                // 无卡片列表：发丝线分隔的编辑式条目；联赛视图按场次分组展示
-                LazyColumn(Modifier.fillMaxSize()) {
-                    if (leagueGroups.isNotEmpty()) {
-                        leagueGroups.forEach { (key, group, count) ->
-                            item(key = "lg-header-${key.first}-${key.second}-${key.third}") {
-                                LeagueGroupHeader(
-                                    year = key.first, month = key.second, match = key.third, size = count,
-                                    onClick = {
-                                        val y = key.first; val m = key.second; val mt = key.third
-                                        if (y != null && m != null && mt != null) onOpenSeason(y, m, mt)
-                                    }
-                                )
-                            }
-                            group.forEachIndexed { index, event ->
-                                item(key = event.eventId) {
-                                    EventRow(
-                                        event = event,
-                                        onClick = { onOpen(event.eventId) },
-                                        onDelete = { deleteEventWithUndo(event) }
+                } else {
+                    // 无卡片列表：发丝线分隔的编辑式条目；联赛视图按场次分组展示
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        if (leagueGroups.isNotEmpty()) {
+                            leagueGroups.forEach { (key, group, count) ->
+                                item(key = "lg-header-${key.first}-${key.second}-${key.third}") {
+                                    LeagueGroupHeader(
+                                        year = key.first, month = key.second, match = key.third, size = count,
+                                        onClick = {
+                                            val y = key.first; val m = key.second; val mt = key.third
+                                            if (y != null && m != null && mt != null) onOpenSeason(y, m, mt)
+                                        }
                                     )
-                                    if (index < group.lastIndex) {
-                                        Box(
-                                            Modifier
-                                                .padding(start = 20.dp)
-                                                .fillMaxWidth()
-                                                .height(1.dp)
-                                                .background(MaterialTheme.cocColors.hairline)
+                                }
+                                group.forEachIndexed { index, event ->
+                                    item(key = event.eventId) {
+                                        EventRow(
+                                            event = event,
+                                            onClick = { onOpen(event.eventId) },
+                                            onDelete = { deleteEventWithUndo(event) }
                                         )
+                                        if (index < group.lastIndex) {
+                                            Box(
+                                                Modifier
+                                                    .padding(start = 20.dp)
+                                                    .fillMaxWidth()
+                                                    .height(1.dp)
+                                                    .background(MaterialTheme.cocColors.hairline)
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
-                            EventRow(
-                                event = event,
-                                onClick = { onOpen(event.eventId) },
-                                onDelete = { deleteEventWithUndo(event) }
-                            )
-                            if (index < filtered.lastIndex) {
-                                Box(
-                                    Modifier
-                                        .padding(start = 20.dp)
-                                        .fillMaxWidth()
-                                        .height(1.dp)
-                                        .background(MaterialTheme.cocColors.hairline)
+                        } else {
+                            itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
+                                EventRow(
+                                    event = event,
+                                    onClick = { onOpen(event.eventId) },
+                                    onDelete = { deleteEventWithUndo(event) }
                                 )
+                                if (index < filtered.lastIndex) {
+                                    Box(
+                                        Modifier
+                                            .padding(start = 20.dp)
+                                            .fillMaxWidth()
+                                            .height(1.dp)
+                                            .background(MaterialTheme.cocColors.hairline)
+                                    )
+                                }
                             }
                         }
+                        item { Spacer(Modifier.height(24.dp)) }
                     }
-                    item { Spacer(Modifier.height(24.dp)) }
                 }
             }
         }

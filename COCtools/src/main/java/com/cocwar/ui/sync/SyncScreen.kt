@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -152,6 +153,33 @@ fun SyncScreen(onBack: () -> Unit) {
 
             // 同步操作
             SectionTitle("同步操作")
+            // B3：双向同步主入口（指纹判定 + 冲突提示，RULES §6）
+            Button(
+                onClick = { viewModel.syncNow() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                enabled = !state.isWorking && state.isConfigured,
+                shape = CocShape.field,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                if (state.isWorking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                } else {
+                    Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(7.dp))
+                }
+                Text("立即同步（双向）", fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(10.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -201,6 +229,28 @@ fun SyncScreen(onBack: () -> Unit) {
                     },
                     dismissButton = {
                         TextButton(onClick = { showRestoreConfirm = false }) { Text("取消") }
+                    }
+                )
+            }
+
+            // B3：同步冲突对话框（RULES §6：被覆盖方自动归档，不丢数据）
+            state.conflict?.let { _ ->
+                AlertDialog(
+                    onDismissRequest = { viewModel.dismissConflict() },
+                    title = { Text("检测到同步冲突") },
+                    text = { Text("本地与云端都有修改。请选择处理方式——被覆盖方会自动归档，不会丢数据。") },
+                    confirmButton = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { viewModel.resolveConflictKeepLocal() }) {
+                                Text("保留本地")
+                            }
+                            TextButton(onClick = { viewModel.resolveConflictKeepRemote() }) {
+                                Text("采用云端")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.dismissConflict() }) { Text("取消") }
                     }
                 )
             }

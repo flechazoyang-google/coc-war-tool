@@ -14,6 +14,21 @@ class ImportViewModel(private val repo: WarRepository) : ViewModel() {
         return WarJsonParser.parse(json, rosterRoles = roleMap)
     }
 
+    /** 解析 CSV 战报（B2，RULES §4.15）：按类型填充槽位，复用 JSON 解析完整链路。 */
+    suspend fun parseCsv(
+        text: String,
+        eventType: String,
+        slotCount: Int
+    ): WarJsonParser.ParseResult {
+        val roleMap = repo.rosterRoleMap()
+        return com.cocwar.data.csv.CsvImporter.parse(
+            text = text,
+            slotCount = slotCount,
+            eventType = eventType,
+            rosterRoles = roleMap
+        )
+    }
+
     suspend fun generateName(eventType: String, eventRound: Int): String =
         repo.generateEventName(eventType, eventRound)
 

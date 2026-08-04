@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -105,6 +106,8 @@ fun ToolsScreen(
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     // 待写入文件的导出 JSON（SAF 选择保存位置后写入）
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
+    // 待写入文件的导出 CSV（B2，SAF 选择保存位置后写入）
+    var pendingExportCsv by remember { mutableStateOf<String?>(null) }
     // 数据迁移修复：预览计划 / 执行结果 / 执行中标记
     var migrationPlan by remember { mutableStateOf<MigrationPlan?>(null) }
     var migrationResult by remember { mutableStateOf<MigrationResult?>(null) }
@@ -154,6 +157,29 @@ fun ToolsScreen(
                     }
                 }.onSuccess {
                     Toast.makeText(context, "备份已导出", Toast.LENGTH_SHORT).show()
+                }.onFailure { e ->
+                    Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // 导出 CSV（B2）：SAF 选择保存位置后写入 CSV 文件
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        val csv = pendingExportCsv
+        pendingExportCsv = null
+        if (uri != null && csv != null) {
+            scope.launch {
+                runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            out.write(csv.toByteArray(Charsets.UTF_8))
+                        } ?: throw IllegalStateException("无法打开输出流")
+                    }
+                }.onSuccess {
+                    Toast.makeText(context, "CSV 已导出", Toast.LENGTH_SHORT).show()
                 }.onFailure { e ->
                     Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_SHORT).show()
                 }
@@ -251,6 +277,25 @@ fun ToolsScreen(
                                 "yyyyMMdd_HHmmss", java.util.Locale.US
                             ).format(java.util.Date())
                             exportLauncher.launch("coc_war_backup_$ts.json")
+                        }
+                    }
+                )
+                ToolsDivider()
+                ToolsRow(
+                    icon = Icons.Filled.GridOn,
+                    title = "导出 CSV 表格",
+                    subtitle = "全部战报导出为 CSV（Excel/WPS 可直接打开）",
+                    onClick = {
+                        scope.launch {
+                            val app = context.applicationContext as CocWarApplication
+                            val csv = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                app.repository.exportAllEventsCsv()
+                            }
+                            pendingExportCsv = csv
+                            val ts = java.text.SimpleDateFormat(
+                                "yyyyMMdd_HHmmss", java.util.Locale.US
+                            ).format(java.util.Date())
+                            csvExportLauncher.launch("coc_war_events_$ts.csv")
                         }
                     }
                 )

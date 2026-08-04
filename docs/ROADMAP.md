@@ -32,8 +32,9 @@
 
 1. **D1**（测试基建，成本低、立即护住统计口径）——**✅ 已落地**（见下）
 2. **C1**（联赛赛季视图，与本次 C1C2 编码/分组改动衔接最顺）——**✅ 已落地**（见下）
-3. **B1 → B2**（数据层容错与表格化，按需）
-4. 其余（B3/C2/C3/C4/D2/D3）按用户需求与精力投入
+3. **B1 → B2**（数据层容错与表格化）——**✅ 已落地**（见下）
+4. **B3**（WebDAV 真同步）——**✅ 已落地**（见下）
+5. 其余（C2/C3/C4/D2/D3）按用户需求与精力投入
 
 ## 与本次改动的关系
 
@@ -45,5 +46,18 @@
     11 用例，覆盖满星率/三星率/进攻率/积分制/月度统计/未进攻排行；`testDebugUnitTest` 可运行）；
   - **C1**：联赛赛季视图（`domain/LeagueSeason.kt` 纯函数聚合 +
     `ui/season/LeagueSeasonScreen`，事件列表联赛分组组头点击进入，展示 7 轮总览与出战轮换）。
+  - **B1**：导入容错与 diff 预览——`WarJsonParser` 进攻顺序规范化（缺 `attack_order`/≤0
+    按出现顺序重编号，RULES §4.11）+ 导入页成员 diff 汇总（总数/已在名单/新成员，
+    RULES §4.12，`buildDiffSummary`）；
+  - **B2**：CSV 表格化——`data/csv/CsvCodec`（RFC 4180 转义 + BOM）、`CsvImporter`
+    （单事件 CSV → 复用 JSON 解析链路）、`CsvExporter`（全量宽表 + 月度报告），
+    导入页 JSON/CSV 双面板、工具页「导出 CSV 表格」、统计页「分享月度报告」；
+    单测：`WarJsonParserTest`（6 用例）+ `CsvTest`（14 用例），共 31 用例全绿。
+  - **B3**：WebDAV 真同步——`SyncDecider` 决策纯函数（指纹 = 导出 JSON SHA-256，
+    无上次指纹/仅一端变/两端变 → 推送/拉取/冲突），`WebDavClient` 增强
+    （HEAD 存在探测/DELETE/归档路径），冲突时用户三选一且被覆盖方自动归档
+    （云端 `archives/` 保留 10 份、本地 `files/backups/`），手动上传/下载
+    保留为强制覆盖工具并同步更新指纹；单测：`SyncDeciderTest`（10 用例）。
 - C1 后续可扩展：出战轮换计划（排表）、每轮进攻分配建议（利用 `attackedRounds`/`absentRounds` 数据）。
+- B 层（B1/B2/B3）已全部落地；C/D 层剩余 C2/C3/C4/D2/D3 按需推进。
 - 任何新口径/规则必须先写入 `docs/RULES.md` 再实现。

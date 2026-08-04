@@ -95,14 +95,28 @@ object WarJsonParser {
             val role = rosterRoles[playerName] ?: "member"
             // 精简结构：attack 只有 attack_order 与 destruction_percentage，
             // status 语义由摧毁率推导（>0 即已使用）；旧数据源的 status 字段在 DTO 层被忽略
-            val rawAttacks = (m.attacks ?: emptyList()).map { a ->
+            // filterNotNull 防止 attacks 数组中 null 元素导致整个导入失败
+            val rawAttacks = (m.attacks ?: emptyList()).filterNotNull().map { a ->
                 Attack(
                     attackOrder = (a.attackOrder ?: 0).coerceAtLeast(0),
                     destructionPercentage = (a.destructionPercentage ?: 0).coerceIn(0, 100)
                 )
             }
+            // 进攻顺序规范化（RULES §4.11）：attack_order 缺失或 ≤0 的记录按原始
+            // 出现顺序重新编号（从 1 开始，跳过已被合法 order 占用的编号），
+            // 防止不规范 JSON 中多条记录折叠为 order=0 后被去重合并丢失数据
+            val occupiedOrders = rawAttacks.map { it.attackOrder }.filter { it > 0 }.toMutableSet()
+            var nextOrder = 1
+            val normalizedAttacks = rawAttacks.map { a ->
+                if (a.attackOrder > 0) a
+                else {
+                    while (nextOrder in occupiedOrders) nextOrder++
+                    occupiedOrders.add(nextOrder)
+                    a.copy(attackOrder = nextOrder)
+                }
+            }
             // 去重：按 attackOrder 分组，每个 order 只保留摧毁率最高的一条（防止重复记录导致 used 超 slot）
-            val dedupedAttacks = rawAttacks
+            val dedupedAttacks = normalizedAttacks
                 .groupBy { it.attackOrder }
                 .map { (_, list) -> list.maxByOrNull { it.destructionPercentage }!! }
             val attacks = dedupedAttacks + (1..slotCount)

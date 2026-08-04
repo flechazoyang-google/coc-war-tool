@@ -439,3 +439,33 @@ fun buildMatchStates(parsed: WarJsonParser.ParsedEvent, roster: List<String>): L
             matchOption = defaultOption
         )
     }
+
+/** 导入 diff 摘要：总数 / 已在名单 / 名单外新成员（RULES §4.12）。 */
+data class MemberDiffSummary(
+    val total: Int,
+    val inRoster: Int,
+    val newNames: Int
+)
+
+/**
+ * 构建导入 diff 摘要：按「最终保存名」判定——与名单匹配的名字计入已在名单，
+ * 其余为名单外新成员（保存时自动加入花名册）。
+ */
+fun buildDiffSummary(
+    matchStates: List<MemberMatchState>,
+    roster: List<String>
+): MemberDiffSummary {
+    val finalNames = matchStates.map { state ->
+        when (state.matchOption) {
+            MatchOption.USE_SUGGESTION -> state.suggestion ?: state.editedName
+            MatchOption.PICK_FROM_ROSTER -> state.selectedRosterName ?: state.editedName
+            MatchOption.AS_NEW_MEMBER -> state.editedName
+        }
+    }
+    val inRoster = finalNames.count { it in roster }
+    return MemberDiffSummary(
+        total = finalNames.size,
+        inRoster = inRoster,
+        newNames = finalNames.size - inRoster
+    )
+}

@@ -15,6 +15,7 @@ import com.cocwar.domain.TopMemberScore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -77,6 +78,11 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     val topMembers: StateFlow<List<TopMemberScore>> = MutableStateFlow(emptyList())
     val loading: StateFlow<Boolean> = MutableStateFlow(false)
 
+    // 下拉刷新进度（与 loading 分离：loading 语义为「首次加载」，
+    // refreshing 仅在用户手动刷新时置位，保证下拉指示器可见直到加载完成）
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing
+
     // --- 排序 ---
     val sortBy: StateFlow<MemberSortBy> = MutableStateFlow(MemberSortBy.ATTACKED_COUNT)
 
@@ -103,7 +109,16 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     private var allEventsDesc: List<WarEventEntity> = emptyList()
 
     init {
-        loadAvailableMonths()
+        // 响应式刷新：战报表或花名册任一变化（导入/删除/迁移/改职位/云端还原）都会自动
+        // 重新构建月份列表并重载当前选中月份数据，统计页始终与数据库保持一致。
+        // Room Flow 订阅后立即发射当前值，因此首次加载也由此驱动，无需额外初始化。
+        viewModelScope.launch {
+            combine(repo.events, repo.observeRoster()) { events, roster -> events to roster }
+                .collect {
+                    loadAvailableMonths()
+                    selectedMonth.value?.let { m -> loadMonth(m) }
+                }
+        }
     }
 
     /** 扫描所有战报，构建可选月份列表，默认选中当前月份。 */
@@ -163,8 +178,14 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     /** 手动刷新当前月份数据（其他页面修改数据后同步到统计页）。同时刷新可选月份列表。 */
     fun refresh() {
         val current = selectedMonth.value ?: return
-        loadAvailableMonths()
-        loadMonth(current)
+        viewModelScope.launch {
+            _refreshing.value = true
+            loadAvailableMonths()
+            loadMonth(current)
+            // 等待加载协程完成后再收起下拉指示器（loadMonth 内部异步，需 join）
+            monthLoadJob?.join()
+            _refreshing.value = false
+        }
     }
 
     fun setSortBy(sort: MemberSortBy) {

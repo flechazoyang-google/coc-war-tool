@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,6 +52,7 @@ import com.cocwar.di.warViewModel
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
+import com.cocwar.ui.components.SegmentedTabs
 import com.cocwar.ui.theme.cocColors
 import kotlinx.coroutines.launch
 import com.cocwar.ui.util.parseEventRoundFromName
@@ -63,6 +65,7 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var jsonText by remember { mutableStateOf("") }
+    var csvText by remember { mutableStateOf("") }
     var parsedEvent by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var eventType by remember { mutableStateOf(EVENT_TYPE_WAR) }
@@ -70,6 +73,8 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
     var nameError by remember { mutableStateOf(false) }
     var matchStates by remember { mutableStateOf<List<MemberMatchState>>(emptyList()) }
     var roster by remember { mutableStateOf<List<String>>(emptyList()) }
+    // 数据来源：0=JSON，1=CSV（B2）
+    var sourceMode by remember { mutableStateOf(0) }
 
     LaunchedEffect(parsedEvent) {
         parsedEvent?.let { parsed ->
@@ -95,10 +100,32 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
         }
     }
 
+    /** CSV 解析（B2，RULES §4.15）：按当前选择的类型填充槽位。 */
+    fun doParseCsv(text: String) {
+        scope.launch {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val slotCount = if (eventType == EVENT_TYPE_LEAGUE) 1 else 2
+                viewModel.parseCsv(text, eventType, slotCount)
+            }
+            when (result) {
+                is WarJsonParser.ParseResult.Success -> { parsedEvent = result.data; errorMsg = null }
+                is WarJsonParser.ParseResult.Error -> { parsedEvent = null; errorMsg = result.message }
+            }
+        }
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             runCatching { context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() } ?: "" }
                 .onSuccess { jsonText = it; doParse(it) }
+                .onFailure { errorMsg = "读取文件失败：${it.message}" }
+        }
+    }
+
+    val csvPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            runCatching { context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() } ?: "" }
+                .onSuccess { csvText = it; doParseCsv(it) }
                 .onFailure { errorMsg = "读取文件失败：${it.message}" }
         }
     }
@@ -128,50 +155,122 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                 .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            SectionTitle("数据来源")
-            OutlinedTextField(
-                value = jsonText,
-                onValueChange = { jsonText = it },
-                label = { Text("粘贴 JSON 数据") },
-                placeholder = { Text("将部落战 JSON 粘贴到这里…") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(150.dp),
-                shape = CocShape.field,
-                singleLine = false,
-                isError = errorMsg != null,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedBorderColor = MaterialTheme.cocColors.hairline,
-                    cursorColor = MaterialTheme.cocColors.accent
-                )
+            SegmentedTabs(
+                options = listOf("JSON", "CSV"),
+                selectedIndex = sourceMode,
+                onSelect = {
+                    // 切换来源时清空另一面板遗留的解析结果与错误，防止误存
+                    if (sourceMode != it) {
+                        sourceMode = it
+                        parsedEvent = null
+                        errorMsg = null
+                        matchStates = emptyList()
+                        nameError = false
+                    }
+                },
+                modifier = Modifier.padding(top = 4.dp)
             )
+            Spacer(Modifier.height(14.dp))
 
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = { picker.launch("application/json") },
-                    modifier = Modifier.weight(1f),
+            if (sourceMode == 0) {
+                SectionTitle("数据来源")
+                OutlinedTextField(
+                    value = jsonText,
+                    onValueChange = { jsonText = it },
+                    label = { Text("粘贴 JSON 数据") },
+                    placeholder = { Text("将部落战 JSON 粘贴到这里…") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp),
                     shape = CocShape.field,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, MaterialTheme.cocColors.hairline
+                    singleLine = false,
+                    isError = errorMsg != null,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedBorderColor = MaterialTheme.cocColors.hairline,
+                        cursorColor = MaterialTheme.cocColors.accent
                     )
-                ) {
-                    Icon(Icons.Filled.FileOpen, null, Modifier.size(17.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("选择文件")
+                )
+
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { picker.launch("application/json") },
+                        modifier = Modifier.weight(1f),
+                        shape = CocShape.field,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, MaterialTheme.cocColors.hairline
+                        )
+                    ) {
+                        Icon(Icons.Filled.FileOpen, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("选择文件")
+                    }
+                    Button(
+                        onClick = { doParse(jsonText) },
+                        modifier = Modifier.weight(1f),
+                        shape = CocShape.field,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("解析并预览", fontWeight = FontWeight.SemiBold)
+                    }
                 }
-                Button(
-                    onClick = { doParse(jsonText) },
-                    modifier = Modifier.weight(1f),
+            } else {
+                SectionTitle("CSV 数据")
+                OutlinedTextField(
+                    value = csvText,
+                    onValueChange = { csvText = it },
+                    label = { Text("粘贴 CSV 数据") },
+                    placeholder = { Text("成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率\n张三,1,6,100%,100%") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp),
                     shape = CocShape.field,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    singleLine = false,
+                    isError = errorMsg != null,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedBorderColor = MaterialTheme.cocColors.hairline,
+                        cursorColor = MaterialTheme.cocColors.accent
                     )
-                ) {
-                    Text("解析并预览", fontWeight = FontWeight.SemiBold)
+                )
+
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { csvPicker.launch("text/csv") },
+                        modifier = Modifier.weight(1f),
+                        shape = CocShape.field,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, MaterialTheme.cocColors.hairline
+                        )
+                    ) {
+                        Icon(Icons.Filled.FileOpen, null, Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("选择文件")
+                    }
+                    Button(
+                        onClick = { doParseCsv(csvText) },
+                        modifier = Modifier.weight(1f),
+                        shape = CocShape.field,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("解析并预览", fontWeight = FontWeight.SemiBold)
+                    }
                 }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "格式：成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率（联赛只有 1 列进攻）。\n" +
+                        "摧毁率可带 %，缺失列按 0；首行若为表头会自动跳过。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             errorMsg?.let {
@@ -213,6 +312,23 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                 WarPreviewCard(parsed = parsed)
 
                 SectionTitle("成员匹配")
+                // 导入 diff 预览（RULES §4.12）：总数 / 已在名单 / 名单外新成员
+                val diff = remember(matchStates, roster) { buildDiffSummary(matchStates, roster) }
+                CocCard(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "共 ${diff.total} 名成员 · 已在名单 ${diff.inRoster} · 新成员 ${diff.newNames}（保存时自动加入花名册）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 MemberMatchPreview(
                     matchStates = matchStates,
                     roster = roster,

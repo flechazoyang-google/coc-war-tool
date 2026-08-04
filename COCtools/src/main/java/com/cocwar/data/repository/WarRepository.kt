@@ -194,6 +194,43 @@ class WarRepository(
         return buildJson(ev, memberList)
     }
 
+    /** 导出全量 CSV 宽表（B2，RULES §4.14）：事件×成员，UTF-8 + BOM。 */
+    suspend fun exportAllEventsCsv(): String {
+        val allEvents = dao.getAllEvents()
+        val allEventIds = allEvents.map { it.eventId }
+        val allMembers = if (allEventIds.isEmpty()) emptyList()
+        else dao.getMembersByEventIds(allEventIds)
+        return com.cocwar.data.csv.CsvExporter.exportEventsCsv(
+            allEvents,
+            allMembers.groupBy { it.eventId }
+        )
+    }
+
+    // === 同步（B3，RULES §6） ===
+
+    /** 数据指纹：导出 JSON 的 SHA-256，用于同步变更判定（两端算法一致）。 */
+    suspend fun dataFingerprint(): String {
+        val json = exportAllDataJson()
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(json.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    /** 本地是否有数据（事件或花名册任一非空）。 */
+    suspend fun hasAnyData(): Boolean =
+        dao.countEvents() > 0 || rosterDao.getAll().isNotEmpty()
+
+    /** 本地归档（冲突时采用云端前保存本地版本），返回归档文件路径。 */
+    suspend fun saveLocalSyncBackup(json: String): String {
+        val dir = java.io.File(appContext.filesDir, "backups").apply { mkdirs() }
+        val name = "sync_backup_" +
+            java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US)
+                .format(java.util.Date()) + ".json"
+        val file = java.io.File(dir, name)
+        file.writeText(json, Charsets.UTF_8)
+        return file.absolutePath
+    }
+
     private fun buildJson(event: WarEventEntity, members: List<MemberEntity>): String {
         val sb = StringBuilder()
         sb.append("{\n  \"members\": [\n")

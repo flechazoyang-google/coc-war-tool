@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +34,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,10 +57,12 @@ import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.roleLabel
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemberManageScreen(onBack: () -> Unit) {
     val viewModel: MemberManageViewModel = warViewModel { MemberManageViewModel(it) }
     val roster by viewModel.roster.collectAsStateWithLifecycle()
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
@@ -159,93 +163,102 @@ fun MemberManageScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(14.dp))
             }
     
-            if (roster.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    EmptyState(
-                        title = "名单为空",
-                        body = "点击右上角 + 批量导入成员\n导入战报时也会自动收录新成员"
-                    )
-                }
-            } else {
-                // 无卡片名册：序号 + 名字 + 职位（点击设置） + 删除，发丝线分隔
-                LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(roster, key = { _, entry -> entry.name }) { index, entry ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "%02d".format(index + 1),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.width(30.dp)
-                            )
-                            Text(
-                                entry.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
-                            )
-                            // 职位徽标：非默认职位用「色点 + 文字」，默认成员弱化为纯文字；点击弹出职位选择
-                            if (entry.role.equals("member", ignoreCase = true)) {
+            // 下拉刷新：名单由 Room Flow 自动保持最新，下拉触发手动重读并提供进度反馈
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = { viewModel.refresh() },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                if (roster.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        EmptyState(
+                            title = "名单为空",
+                            body = "点击右上角 + 批量导入成员\n导入战报时也会自动收录新成员"
+                        )
+                    }
+                } else {
+                    // 无卡片名册：序号 + 名字 + 职位（点击设置） + 删除，发丝线分隔
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        itemsIndexed(roster, key = { _, entry -> entry.name }) { index, entry ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    roleLabel(entry.role),
+                                    "%02d".format(index + 1),
                                     style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Normal,
+                                    fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier
-                                        .clickable { editingRoleName = entry.name }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    modifier = Modifier.width(30.dp)
                                 )
-                            } else {
-                                Row(
-                                    modifier = Modifier
-                                        .clickable { editingRoleName = entry.name }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        Modifier
-                                            .size(6.dp)
-                                            .background(roleColor(entry.role), CircleShape)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
+                                Text(
+                                    entry.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                // 职位徽标：非默认职位用「色点 + 文字」，默认成员弱化为纯文字；点击弹出职位选择
+                                if (entry.role.equals("member", ignoreCase = true)) {
                                     Text(
                                         roleLabel(entry.role),
                                         style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = roleColor(entry.role)
+                                        fontWeight = FontWeight.Normal,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier
+                                            .clickable { editingRoleName = entry.name }
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    )
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .clickable { editingRoleName = entry.name }
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            Modifier
+                                                .size(6.dp)
+                                                .background(roleColor(entry.role), CircleShape)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            roleLabel(entry.role),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = roleColor(entry.role)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = { removeNameWithUndo(entry.name) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "删除",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
-                            Spacer(Modifier.width(4.dp))
-                            IconButton(
-                                onClick = { removeNameWithUndo(entry.name) },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    contentDescription = "删除",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                                    modifier = Modifier.size(16.dp)
+                            if (index < roster.lastIndex) {
+                                Box(
+                                    Modifier
+                                        .padding(start = 50.dp)
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(MaterialTheme.cocColors.hairline)
                                 )
                             }
                         }
-                        if (index < roster.lastIndex) {
-                            Box(
-                                Modifier
-                                    .padding(start = 50.dp)
-                                    .fillMaxWidth()
-                                    .height(1.dp)
-                                    .background(MaterialTheme.cocColors.hairline)
-                            )
-                        }
+                        item { Spacer(Modifier.height(24.dp)) }
                     }
-                    item { Spacer(Modifier.height(24.dp)) }
                 }
             }
         }

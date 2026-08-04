@@ -8,7 +8,8 @@ import java.util.Base64
 
 /**
  * 轻量级 WebDAV 客户端，基于 HttpURLConnection。
- * 上传/下载的文件统一放在 baseUrl 下的 coc_backup/ 子目录中。
+ * 主备份文件统一放在 baseUrl 下的 coc_backup/ 子目录中；
+ * 冲突归档放在 coc_backup/archives/ 子目录。
  */
 class WebDavClient(
     baseUrl: String,
@@ -22,6 +23,7 @@ class WebDavClient(
     companion object {
         const val BACKUP_DIR = "coc_backup"
         const val BACKUP_FILE = "coc_war_backup.json"
+        const val ARCHIVES_DIR = "coc_backup/archives"
     }
 
     /** Basic Auth 头 */
@@ -31,17 +33,21 @@ class WebDavClient(
             return "Basic " + Base64.getEncoder().encodeToString(creds.toByteArray(Charsets.UTF_8))
         }
 
-    /** 备份文件的完整路径 */
+    /** 主备份文件的完整路径 */
     private val fileUrl: String get() = "$normalizedUrl/$BACKUP_DIR/$BACKUP_FILE"
 
+    /** 归档文件完整路径（带时间戳文件名）。 */
+    fun archiveUrl(name: String): String = "$normalizedUrl/$ARCHIVES_DIR/$name"
+
     /** 上传备份文件到 WebDAV 服务器。先确保子目录存在。 */
-    fun upload(content: String): Result<Unit> {
+    fun upload(content: String, path: String = fileUrl): Result<Unit> {
         return runCatching {
             val data = content.toByteArray(Charsets.UTF_8)
-            // 先创建子目录（已存在则忽略）
+            // 先创建子目录（已存在则忽略）；归档目录独立创建
             mkcol("$normalizedUrl/$BACKUP_DIR/")
+            mkcol("$normalizedUrl/$ARCHIVES_DIR/")
 
-            val url = URL(fileUrl)
+            val url = URL(path)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "PUT"
                 setRequestProperty("Authorization", authHeader)
@@ -58,7 +64,7 @@ class WebDavClient(
                     val errBody = runCatching {
                         conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText().orEmpty()
                     }.getOrDefault("")
-                    "上传失败 — 目标: $fileUrl — 服务器返回 $code${
+                    "上传失败 — 目标: $path — 服务器返回 $code${
                         if (errBody.isNotBlank()) " — $errBody" else ""
                     }"
                 } else null
@@ -70,9 +76,9 @@ class WebDavClient(
     }
 
     /** 从 WebDAV 下载备份文件。 */
-    fun download(): Result<String> {
+    fun download(path: String = fileUrl): Result<String> {
         return runCatching {
-            val url = URL(fileUrl)
+            val url = URL(path)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Authorization", authHeader)
@@ -82,9 +88,59 @@ class WebDavClient(
             try {
                 val code = conn.responseCode
                 if (code !in 200..299) {
-                    throw Exception("下载失败 — 目标: $fileUrl — 服务器返回 $code（文件可能不存在）")
+                    throw Exception("下载失败 — 目标: $path — 服务器返回 $code（文件可能不存在）")
                 }
                 BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+            } finally {
+                conn.disconnect()
+            }
+        }
+    }
+
+    /** 主备份文件探测结果（三态，RULES §6：无法确认时中止同步）。 */
+    enum class RemoteState { EXISTS, MISSING, UNKNOWN }
+
+    /**
+     * 探测主备份文件状态。仅服务器明确返回 2xx（存在）/404（不存在）时给出确定结论；
+     * 认证失败、网络错误、超时或服务器不支持 HEAD 一律返回 [RemoteState.UNKNOWN]，
+     * 由调用方保守中止，避免把「不知道」当成「不存在」而覆盖有数据的远端。
+     */
+    fun probe(): RemoteState {
+        return runCatching {
+            val url = URL(fileUrl)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "HEAD"
+                setRequestProperty("Authorization", authHeader)
+                connectTimeout = 15_000
+                readTimeout = 15_000
+            }
+            try {
+                when (conn.responseCode) {
+                    in 200..299 -> RemoteState.EXISTS
+                    404 -> RemoteState.MISSING
+                    else -> RemoteState.UNKNOWN
+                }
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrDefault(RemoteState.UNKNOWN)
+    }
+
+    /** 删除文件（404 视为已删除，不报错）。 */
+    fun delete(path: String): Result<Unit> {
+        return runCatching {
+            val url = URL(path)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "DELETE"
+                setRequestProperty("Authorization", authHeader)
+                connectTimeout = 15_000
+                readTimeout = 15_000
+            }
+            try {
+                val code = conn.responseCode
+                if (code !in 200..299 && code != 404) {
+                    throw Exception("删除失败 — 目标: $path — 服务器返回 $code")
+                }
             } finally {
                 conn.disconnect()
             }
