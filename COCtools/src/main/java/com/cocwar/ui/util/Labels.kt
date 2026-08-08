@@ -1,5 +1,6 @@
 package com.cocwar.ui.util
 
+import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
 
@@ -74,6 +75,37 @@ fun parseLeagueMatchFromName(name: String): Int? {
         else -> null
     }
 }
+
+/**
+ * 从部落战名称解析场次序号（CC = 当月第 N 场，1..99）。
+ * S=0 且整体为合法 SAABBCC 时返回 CC；非部落战/无法解析/CC 越界（如 00）返回 null。
+ */
+fun parseWarSeqFromName(name: String): Int? {
+    parseNameParts(name) ?: return null
+    if (name[0] != '0') return null  // 非部落战
+    val cc = name.substring(5, 7).toIntOrNull() ?: return null
+    return cc.takeIf { it in 1..99 }
+}
+
+/**
+ * 部落战视图排序比较器：年份倒序 → 月份倒序 → 场次序号（CC）升序（第 1 场在前）。
+ * 名称无法解析年份/月份/序号的排最后（descending 下用 MIN_VALUE 哨兵垫底、CC 用 MAX_VALUE 垫底）。
+ */
+fun compareWarEventsBySeq(): Comparator<WarEventEntity> =
+    compareByDescending<WarEventEntity> { parseYearFromName(it.eventName) ?: Int.MIN_VALUE }
+        .thenByDescending { parseMonthFromName(it.eventName) ?: Int.MIN_VALUE }
+        .thenBy { parseWarSeqFromName(it.eventName) ?: Int.MAX_VALUE }
+
+/**
+ * 联赛组内轮次排序比较器（第 1 轮在前）：名称 C2 轮次解析优先（与列表页展示口径一致），
+ * 失败回退实体 eventRound（1..7），再失败（0/无效）排组内末尾。
+ */
+fun compareLeagueRound(): Comparator<WarEventEntity> =
+    compareBy<WarEventEntity> { ev ->
+        parseEventRoundFromName(ev.eventName).takeIf { it in 1..7 }
+            ?: ev.eventRound.takeIf { it in 1..7 }
+            ?: 99
+    }
 
 /**
  * 联赛轮次展示文案（如 " · 月初场 第3轮" / " · 月中场 第1轮" / " · 第3轮"）。

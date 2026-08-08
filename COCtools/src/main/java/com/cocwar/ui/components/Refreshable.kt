@@ -81,6 +81,15 @@ fun RefreshableBox(
         }
     }
 
+    // M3 PullToRefreshBox 在刷新结束（isRefreshing → false）后不会自动收起指示器，
+    // 若刷新状态边沿丢失（如刷新协程瞬间完成被 StateFlow 合并），distanceFraction
+    // 会一直停留在展开位置导致胶囊永不消失。这里在非刷新、非完成反馈阶段显式收起。
+    LaunchedEffect(state, isRefreshing, showDone) {
+        if (!isRefreshing && !showDone && state.distanceFraction > 0f) {
+            state.animateToHidden()
+        }
+    }
+
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Info
@@ -53,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -82,7 +84,10 @@ import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.ThemeStyle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun ToolsScreen(
@@ -92,6 +97,12 @@ fun ToolsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 缓存占用（更新下载残留的 APK 等），进入页面时计算一次，清理后归零
+    var cacheSizeBytes by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) {
+        cacheSizeBytes = withContext(Dispatchers.IO) { computeDirSize(context.cacheDir) }
+    }
 
     // 截图设置
     val prefs = remember { context.getSharedPreferences("cocwar_capture", Context.MODE_PRIVATE) }
@@ -480,25 +491,46 @@ fun ToolsScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
-            ToolsRow(
-                icon = Icons.Filled.SystemUpdateAlt,
-                title = "检查更新",
-                subtitle = "当前版本 ${BuildConfig.VERSION_NAME}",
-                onClick = {
-                    scope.launch {
-                        val result = UpdateChecker.check(context)
-                        result.fold(
-                            onSuccess = { info ->
-                                if (info != null) updateInfo = info
-                                else Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
-                            },
-                            onFailure = { e ->
-                                Toast.makeText(context, "检查失败：${e.message}", Toast.LENGTH_LONG).show()
-                            }
-                        )
+            // CocCard 内容是 BoxScope，多个子项必须用 Column 包裹，否则会重叠
+            Column {
+                ToolsRow(
+                    icon = Icons.Filled.SystemUpdateAlt,
+                    title = "检查更新",
+                    subtitle = "当前版本 ${BuildConfig.VERSION_NAME}",
+                    onClick = {
+                        scope.launch {
+                            val result = UpdateChecker.check(context)
+                            result.fold(
+                                onSuccess = { info ->
+                                    if (info != null) updateInfo = info
+                                    else Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
+                                },
+                                onFailure = { e ->
+                                    Toast.makeText(context, "检查失败：${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        }
                     }
-                }
-            )
+                )
+                ToolsRow(
+                    icon = Icons.Filled.DeleteSweep,
+                    title = "清理缓存",
+                    subtitle = if (cacheSizeBytes > 0) {
+                        "当前占用 ${formatFileSize(cacheSizeBytes)}（更新残留 APK 等），点击清理"
+                    } else {
+                        "缓存正常"
+                    },
+                    onClick = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+                            }
+                            cacheSizeBytes = 0
+                            Toast.makeText(context, "缓存已清理", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
         }
 
         Spacer(Modifier.height(28.dp))
@@ -790,6 +822,18 @@ private fun ThemeChip(
 }
 
 /** 分组列表行：图标 + 标题/副标题 + 尾端箭头，整行可点 */
+/** 递归计算目录总大小（字节）。 */
+private fun computeDirSize(dir: File): Long =
+    dir.listFiles()?.sumOf { if (it.isDirectory) computeDirSize(it) else it.length() } ?: 0L
+
+/** 人类可读的文件大小，如 "312.5 MB"。 */
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1L shl 30 -> "%.1f GB".format(bytes / 1073741824.0)
+    bytes >= 1L shl 20 -> "%.1f MB".format(bytes / 1048576.0)
+    bytes >= 1L shl 10 -> "%.1f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
+}
+
 @Composable
 private fun ToolsRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,

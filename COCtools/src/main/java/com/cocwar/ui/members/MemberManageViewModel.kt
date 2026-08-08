@@ -6,6 +6,7 @@ import com.cocwar.data.db.MemberRosterEntity
 import com.cocwar.data.repository.WarRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
@@ -27,8 +28,12 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
     fun refresh() {
         viewModelScope.launch {
             _refreshing.value = true
+            // 同步查询瞬间完成，若立即置 false，UI 在同一帧内收到 true→false，
+            // Compose 重组只能看到最终值，刷新状态边沿丢失，指示器无法正常收起。
+            // 延迟一小段时间让「正在刷新…」真实可见，边沿检测与完成反馈才能生效。
             runCatching { repo.getRosterWithRoles() }
                 .onSuccess { _roster.value = it }
+            delay(600)
             _refreshing.value = false
         }
     }

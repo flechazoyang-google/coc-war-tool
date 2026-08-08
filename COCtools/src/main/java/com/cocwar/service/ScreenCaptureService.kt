@@ -330,11 +330,11 @@ class ScreenCaptureService : AccessibilityService() {
 
     // ==================== 广播 ====================
 
-    private fun hideOverlays() = sendBroadcast(Intent(ACTION_HIDE_OVERLAY))
-    private fun showOverlays() = sendBroadcast(Intent(ACTION_SHOW_OVERLAY))
+    private fun hideOverlays() = sendBroadcast(Intent(ACTION_HIDE_OVERLAY).setPackage(packageName))
+    private fun showOverlays() = sendBroadcast(Intent(ACTION_SHOW_OVERLAY).setPackage(packageName))
 
     private fun broadcastResult(pageCount: Int) {
-        sendBroadcast(Intent(ACTION_CAPTURE_DONE).apply { putExtra("pages", pageCount) })
+        sendBroadcast(Intent(ACTION_CAPTURE_DONE).setPackage(packageName).apply { putExtra("pages", pageCount) })
     }
 
     private fun showToast(msg: String) {

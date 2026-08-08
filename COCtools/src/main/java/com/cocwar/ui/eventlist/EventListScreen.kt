@@ -60,12 +60,14 @@ import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.looksLikeWarJson
 import com.cocwar.ui.theme.cocColors
+import com.cocwar.ui.util.compareLeagueRound
+import com.cocwar.ui.util.compareWarEventsBySeq
 import com.cocwar.ui.util.parseEventDisplayName
 import com.cocwar.ui.util.parseEventTypeFromName
-import com.cocwar.ui.util.parseMonthFromName
-import kotlinx.coroutines.launch
-import com.cocwar.ui.util.parseYearFromName
 import com.cocwar.ui.util.parseLeagueMatchFromName
+import com.cocwar.ui.util.parseMonthFromName
+import com.cocwar.ui.util.parseYearFromName
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,15 +156,26 @@ fun EventListScreen(
         }.map { (key, list) ->
             Triple(
                 key,
-                list.sortedWith(compareBy { it.eventRound.takeIf { r -> r in 1..7 } ?: 99 }),
+                // 组内轮次排序：名称 C2 解析优先（与列表页展示 parseEventDisplayName 口径一致），
+                // 失败回退实体 eventRound，再失败（0/无效）排组内末尾
+                list.sortedWith(compareLeagueRound()),
                 list.size
             )
         }.sortedWith(
+            // 年月倒序（null 归最后：descending 下用 MIN_VALUE 哨兵反转后垫底），
+            // 场次归属升序（月初场 1 在月中场 2 前），无法解析场次归最后
             compareByDescending<Triple<Triple<Int?, Int?, Int?>, List<WarEventEntity>, Int>> {
-                it.first.first ?: Int.MAX_VALUE
-            }.thenByDescending { it.first.second ?: Int.MAX_VALUE }
+                it.first.first ?: Int.MIN_VALUE
+            }.thenByDescending { it.first.second ?: Int.MIN_VALUE }
                 .thenBy { it.first.third ?: Int.MAX_VALUE }
         )
+    }
+
+    // 部落战视图排序：最新月份在前，同月内按场次序号（CC）升序（第 1 场在前）；
+    // 名称无法解析年月/序号的排最后。
+    val warSorted = remember(filtered, typeFilter) {
+        if (typeFilter == "1") emptyList()
+        else filtered.sortedWith(compareWarEventsBySeq())
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -305,13 +318,13 @@ fun EventListScreen(
                                 }
                             }
                         } else {
-                            itemsIndexed(filtered, key = { _, e -> e.eventId }) { index, event ->
+                            itemsIndexed(warSorted, key = { _, e -> e.eventId }) { index, event ->
                                 EventRow(
                                     event = event,
                                     onClick = { onOpen(event.eventId) },
                                     onDelete = { deleteEventWithUndo(event) }
                                 )
-                                if (index < filtered.lastIndex) {
+                                if (index < warSorted.lastIndex) {
                                     Box(
                                         Modifier
                                             .padding(start = 20.dp)

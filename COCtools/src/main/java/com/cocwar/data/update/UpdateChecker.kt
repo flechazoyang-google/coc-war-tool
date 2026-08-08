@@ -115,6 +115,13 @@ object UpdateChecker {
             val channel = NotificationChannel(CHANNEL_ID, "更新下载", NotificationManager.IMPORTANCE_LOW)
             nm.createNotificationChannel(channel)
 
+            // 清理历史更新下载残留的 APK（安装完成后不会自动删除，会累积占满缓存）
+            runCatching {
+                context.cacheDir.listFiles()
+                    ?.filter { it.name.startsWith("update_") && it.name.endsWith(".apk") }
+                    ?.forEach { it.delete() }
+            }
+
             val downloadFile = File(context.cacheDir, "update_${info.version}.apk")
             if (downloadFile.exists()) downloadFile.delete()
 

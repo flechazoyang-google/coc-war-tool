@@ -12,18 +12,14 @@ import com.cocwar.domain.RecentMissedRank
 import com.cocwar.domain.StatsCalculator
 import com.cocwar.domain.StatsOverview
 import com.cocwar.domain.TopMemberScore
+import com.cocwar.ui.util.parseLeagueMatchFromName
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import java.util.Calendar
-
-/** 成员排序方式 */
-enum class MemberSortBy(val label: String) {
-    ATTACKED_COUNT("有效参战次数"),
-    THREE_STAR_RATE("三星率")
-}
 
 /** 类型筛选 —— 部落战和联赛完全独立，无「全部」选项 */
 enum class TypeFilter(val label: String) {
@@ -31,10 +27,10 @@ enum class TypeFilter(val label: String) {
     LEAGUE("联赛")
 }
 
-/** 统计视图（二级筛选，随类型变化：部落战四项、联赛两项） */
+/** 统计视图（二级筛选，随类型变化：部落战四项、联赛三项） */
 enum class StatsView(val label: String) {
     OVERVIEW("总览"),
-    RANKING("排名"),
+    RANKING("成员数据"),
     WARNING("预警"),
     TOP("本月最佳");
 
@@ -42,9 +38,15 @@ enum class StatsView(val label: String) {
         /** 指定类型可用的视图集合 */
         fun forType(type: TypeFilter): List<StatsView> = when (type) {
             TypeFilter.WAR -> entries
-            TypeFilter.LEAGUE -> listOf(OVERVIEW, WARNING)
+            TypeFilter.LEAGUE -> listOf(OVERVIEW, RANKING, WARNING)
         }
     }
+}
+
+/** 联赛场次归属（月初场/月中场），联赛成员数据按「月份 + 场次归属」分组 */
+enum class LeagueMatch(val label: String) {
+    EARLY("月初场"),
+    MID("月中场")
 }
 
 /** 可选月份 */
@@ -83,8 +85,8 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
-    // --- 排序 ---
-    val sortBy: StateFlow<MemberSortBy> = MutableStateFlow(MemberSortBy.ATTACKED_COUNT)
+    // --- 联赛场次归属（仅联赛成员数据视图生效） ---
+    val leagueMatch: StateFlow<LeagueMatch> = MutableStateFlow(LeagueMatch.EARLY)
 
     // --- 类型筛选 ---
     val typeFilter: StateFlow<TypeFilter> = MutableStateFlow(TypeFilter.WAR)
@@ -99,8 +101,8 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
     private var currentRoster: List<String> = emptyList()
     private var currentRosterRoles: Map<String, String> = emptyMap()
 
-    // 当前类型筛选后的事件列表（详情弹窗用）
-    private var filteredEvents: List<WarEventEntity> = emptyList()
+    // 成员数据视图事件列表（联赛按场次归属过滤；成员详情弹窗用）
+    private var currentMemberViewEvents: List<WarEventEntity> = emptyList()
 
     // 月份加载任务（切换月份时取消旧任务，防止乱序覆盖）
     private var monthLoadJob: Job? = null
@@ -180,6 +182,9 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         val current = selectedMonth.value ?: return
         viewModelScope.launch {
             _refreshing.value = true
+            // 确保 UI 能收到 true→false 两次发射（join 可能因 job 已完成而不挂起，
+            // 导致刷新状态被 StateFlow 合并，下拉指示器无法正常收起）
+            yield()
             loadAvailableMonths()
             loadMonth(current)
             // 等待加载协程完成后再收起下拉指示器（loadMonth 内部异步，需 join）
@@ -188,14 +193,16 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         }
     }
 
-    fun setSortBy(sort: MemberSortBy) {
-        (sortBy as MutableStateFlow).value = sort
-        applySort()
+    fun setLeagueMatch(match: LeagueMatch) {
+        (leagueMatch as MutableStateFlow).value = match
+        // 用户手动选择不触发回落：对话框选项已按目标月份（allEventsDesc）校验过存在性，
+        // 此时 currentEvents 可能仍是旧月份数据，回落判断会误伤（回落仅在 loadMonth/类型切换时执行）
+        recomputeForFilter(allowFallback = false)
     }
 
     fun setTypeFilter(filter: TypeFilter) {
         (typeFilter as MutableStateFlow).value = filter
-        recomputeForFilter()
+        recomputeForFilter(allowFallback = true)
     }
 
     fun setRecentMissedWindow(n: Int) {
@@ -223,28 +230,40 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
             }
             currentRoster = repo.getRoster()
 
-            // 应用当前类型筛选
-            recomputeForFilter()
+            // 应用当前类型筛选（loadMonth 完成后 currentEvents 与所选月份一致，允许场次回落）
+            recomputeForFilter(allowFallback = true)
 
             (loading as MutableStateFlow).value = false
         }
     }
 
-    private fun applySort() {
-        val raw = (memberStats as MutableStateFlow).value
-        val sorted = when (sortBy.value) {
-            MemberSortBy.ATTACKED_COUNT -> raw.sortedWith(
-                compareByDescending<MemberMonthlyStat> { it.attacked }
-                    .thenByDescending { it.threeStarRate }
-                    .thenByDescending { it.avgDestruction }
-            )
-            MemberSortBy.THREE_STAR_RATE -> raw.sortedWith(
-                compareByDescending<MemberMonthlyStat> { it.threeStarRate }
-                    .thenByDescending { it.attacked }
-                    .thenByDescending { it.avgDestruction }
-            )
+    /**
+     * 成员数据视图专用事件集合：部落战 = 类型过滤后整月；
+     * 联赛 = 类型过滤后按场次归属（月初场/月中场）再过滤。
+     * 归属解析：C1=0 → 月初场，C1=1 → 月中场，无法解析（非标准名）→ 月初场。
+     */
+    private fun memberViewEvents(events: List<WarEventEntity>): List<WarEventEntity> {
+        if (typeFilter.value != TypeFilter.LEAGUE) return events
+        val mid = leagueMatch.value == LeagueMatch.MID
+        return events.filter { ev ->
+            val m = parseLeagueMatchFromName(ev.eventName)
+            if (mid) m == 2 else m != 2
         }
-        (memberStats as MutableStateFlow).value = sorted
+    }
+
+    /**
+     * 指定月份实际存在的联赛场次归属（供联赛成员数据页的场次选择）。
+     * 月初场恒存在（无法解析归属的事件也计入月初场）；月中场仅当月存在 C1=1 事件时返回。
+     */
+    fun leagueMatchOptions(monthLabel: String): List<LeagueMatch> {
+        val option = availableMonths.value.find { it.label == monthLabel } ?: return emptyList()
+        val hasMid = allEventsDesc.any { ev ->
+            ev.eventType == "league" &&
+                ev.createdAt in option.startMs until option.endMs &&
+                parseLeagueMatchFromName(ev.eventName) == 2
+        }
+        return if (hasMid) listOf(LeagueMatch.EARLY, LeagueMatch.MID)
+        else listOf(LeagueMatch.EARLY)
     }
 
     private fun filterEventsByType(events: List<WarEventEntity>): List<WarEventEntity> {
@@ -254,13 +273,25 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         }
     }
 
-    private fun recomputeForFilter() {
+    private fun recomputeForFilter(allowFallback: Boolean = false) {
         val events = filterEventsByType(currentEvents)
-        filteredEvents = events
         val eventIds = events.map { it.eventId }.toSet()
         val members = currentMembers.filter { it.eventId in eventIds }
 
-        // 总览按当前类型筛选，展示对应类型的数据
+        // 场次回落：联赛选中的月中场在本月不存在（无 C1=1 事件）时回落到月初场。
+        // 仅在 loadMonth 完成 / 类型切换时执行（此时 currentEvents 与所选月份一致）；
+        // events 为空（数据尚未加载完成，如进程重建后恢复场次选择）时不回落，
+        // 避免空列表把刚恢复的「月中场」误判吞掉——loadMonth 完成后会再次执行本判断。
+        if (allowFallback &&
+            typeFilter.value == TypeFilter.LEAGUE &&
+            leagueMatch.value == LeagueMatch.MID &&
+            events.isNotEmpty() &&
+            events.none { parseLeagueMatchFromName(it.eventName) == 2 }
+        ) {
+            (leagueMatch as MutableStateFlow).value = LeagueMatch.EARLY
+        }
+
+        // 总览按当前类型筛选，展示对应类型的数据（整月，不受场次归属影响）
         (overview as MutableStateFlow).value =
             StatsCalculator.computeOverview(events, members)
 
@@ -268,14 +299,23 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         (topMembers as MutableStateFlow).value =
             StatsCalculator.computeTopMembers(currentEvents, currentMembers, currentRoster, currentRosterRoles)
 
-        val rawMembers = StatsCalculator.computeMonthly(events, members)
-        (memberStats as MutableStateFlow).value = rawMembers
-        applySort()
-
+        // 战报情况表格：整月数据，不受场次归属影响
         (eventSummaries as MutableStateFlow).value =
             StatsCalculator.computeEventSummaries(events, members)
 
         recomputeRecentMissed(events, members)
+
+        // 成员数据视图：联赛按场次归属过滤；固定按参战次数降序（次按三星率、场均摧毁）
+        val memberEvents = memberViewEvents(events)
+        currentMemberViewEvents = memberEvents
+        val memberEventIds = memberEvents.map { it.eventId }.toSet()
+        val memberMembers = currentMembers.filter { it.eventId in memberEventIds }
+        val rawMembers = StatsCalculator.computeMonthly(memberEvents, memberMembers)
+        (memberStats as MutableStateFlow).value = rawMembers.sortedWith(
+            compareByDescending<MemberMonthlyStat> { it.attacked }
+                .thenByDescending { it.threeStarRate }
+                .thenByDescending { it.avgDestruction }
+        )
     }
 
     private fun recomputeRecentMissed(
@@ -296,8 +336,8 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
      * 供排名页点击成员后弹出表格展示。
      */
     fun memberEventDetails(playerName: String): List<MemberEventDetail> {
-        val eventTime = filteredEvents.associate { it.eventId to it.createdAt }
-        val nameToEvent = filteredEvents.associate { it.eventId to it }
+        val eventTime = currentMemberViewEvents.associate { it.eventId to it.createdAt }
+        val nameToEvent = currentMemberViewEvents.associate { it.eventId to it }
         return currentMembers
             .filter { it.playerName == playerName && it.eventId in eventTime.keys }
             .sortedBy { eventTime[it.eventId] ?: 0L }

@@ -58,7 +58,16 @@ data class StatsOverview(
     val league: TypeStats?
 )
 
-/** 单场战报摘要，用于战报列表展示 */
+/**
+ * 单场战报摘要，用于统计页总览的战报情况表格。
+ *
+ * 口径约定（与用户手册一致）：
+ * - 总星数：该场战报获得的总星数（clanTotalStars）
+ * - 三星次数：摧毁率 100% 的进攻次数
+ * - 使用进攻次数：摧毁率不为 0 的进攻次数
+ * - 三星率：三星次数 / 使用进攻次数
+ * - 参与率：使用进攻次数 / 可用总进攻次数（联赛 = 参与人数×1，部落战 = 参与人数×2）
+ */
 data class EventStatSummary(
     val eventId: String,
     val eventName: String,
@@ -71,6 +80,9 @@ data class EventStatSummary(
     val avgDestruction: Float,
     val threeStarCount: Int,
     val threeStarRate: Float,
+    val totalUsedAttacks: Int = 0,      // 使用进攻次数（摧毁率不为 0）
+    val possibleAttacks: Int = 0,       // 可用总进攻次数（联赛 = 人数×1，部落战 = 人数×2）
+    val participationRate: Float = 0f,  // 参与率 = 使用进攻次数 / 可用总进攻次数
     val isSample: Boolean
 )
 
@@ -361,10 +373,15 @@ object StatsCalculator {
             val members = membersByEvent[event.eventId] ?: emptyList()
             val usedAttacks = members.flatMap { it.attacks }.filter { it.isUsed() }
             val attackerCount = members.count { m -> m.attacks.any { it.isUsed() } }
+            val totalUsedAttacks = usedAttacks.size
             val threeStarCount = usedAttacks.count { it.destructionPercentage == 100 }
             val avgDestruction = if (usedAttacks.isNotEmpty())
                 usedAttacks.map { it.destructionPercentage }.average().toFloat() else 0f
-            val threeStarRate = if (usedAttacks.isNotEmpty()) threeStarCount.toFloat() / usedAttacks.size else 0f
+            val threeStarRate = if (totalUsedAttacks > 0) threeStarCount.toFloat() / totalUsedAttacks else 0f
+            // 可用总进攻次数：联赛每人 1 槽，部落战每人 2 槽（与 possibleAttackSlots 口径一致）
+            val possibleAttacks = members.size * if (event.eventType == "league") 1 else 2
+            val participationRate = if (possibleAttacks > 0)
+                (totalUsedAttacks.toFloat() / possibleAttacks).coerceIn(0f, 1f) else 0f
 
             EventStatSummary(
                 eventId = event.eventId,
@@ -378,6 +395,9 @@ object StatsCalculator {
                 avgDestruction = avgDestruction,
                 threeStarCount = threeStarCount,
                 threeStarRate = threeStarRate,
+                totalUsedAttacks = totalUsedAttacks,
+                possibleAttacks = possibleAttacks,
+                participationRate = participationRate,
                 isSample = event.isSample
             )
         }

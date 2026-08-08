@@ -191,7 +191,10 @@ private fun CocWarNavHost(
                 ImportScreen(onBack = { nav.popBackStack() }, onSaved = { nav.popBackStack() })
             }
             composable("stats") {
-                StatsScreen(onBack = { nav.popBackStack() })
+                StatsScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenEvent = { eventId -> nav.navigate("detail/$eventId") }
+                )
             }
             composable("member_manage") {
                 MemberManageScreen(onBack = { nav.popBackStack() })
