@@ -29,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,11 +42,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cocwar.data.update.UpdateChecker
+import com.cocwar.data.update.UpdateInfo
+import com.cocwar.data.update.UpdatePrefs
+import com.cocwar.ui.components.UpdateDialog
 import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
 import com.cocwar.ui.importflow.ImportScreen
 import com.cocwar.ui.members.MemberManageScreen
 import com.cocwar.ui.season.LeagueSeasonScreen
+import com.cocwar.ui.settings.SettingsScreen
+import com.cocwar.ui.settings.UpdateSettingsScreen
 import com.cocwar.ui.stats.StatsScreen
 import com.cocwar.ui.sync.SyncScreen
 import com.cocwar.ui.theme.CocWarTheme
@@ -68,6 +75,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = this
             var themeStyle by remember { mutableStateOf(ThemePrefs.load(context)) }
+            // 启动时按设置自动检查更新（静默：失败不打扰，有更新弹非强制提示）
+            var startupUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+            LaunchedEffect(Unit) {
+                val includePrerelease = UpdatePrefs.isPrereleaseEnabled(context)
+                UpdateChecker.check(context, includePrerelease).getOrNull()?.let { info ->
+                    if (info != null) startupUpdateInfo = info
+                }
+            }
             CocWarTheme(style = themeStyle) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     CocWarNavHost(
@@ -78,6 +93,9 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+            }
+            startupUpdateInfo?.let { info ->
+                UpdateDialog(info = info, onDismiss = { startupUpdateInfo = null })
             }
         }
     }
@@ -205,9 +223,19 @@ private fun CocWarNavHost(
             composable("tools") {
                 ToolsScreen(
                     onSync = { nav.navigate("sync") },
+                    onOpenSettings = { nav.navigate("settings") },
                     themeStyle = themeStyle,
                     onThemeChange = onThemeChange,
                 )
+            }
+            composable("settings") {
+                SettingsScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenUpdate = { nav.navigate("update_settings") }
+                )
+            }
+            composable("update_settings") {
+                UpdateSettingsScreen(onBack = { nav.popBackStack() })
             }
         }
     }

@@ -34,13 +34,13 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -54,7 +54,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,35 +73,26 @@ import com.cocwar.CocWarApplication
 import com.cocwar.data.migrate.DataMigrator
 import com.cocwar.data.migrate.MigrationPlan
 import com.cocwar.data.migrate.MigrationResult
-import com.cocwar.data.update.UpdateChecker
-import com.cocwar.data.update.UpdateInfo
 import com.cocwar.service.FloatingBallService
 import com.cocwar.service.ScreenCaptureService
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.components.SectionTitle
+import com.cocwar.ui.components.ToolsRow
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.ThemeStyle
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 
 @Composable
 fun ToolsScreen(
     onSync: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     themeStyle: ThemeStyle = ThemeStyle.LEDGER,
     onThemeChange: (ThemeStyle) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    // 缓存占用（更新下载残留的 APK 等），进入页面时计算一次，清理后归零
-    var cacheSizeBytes by remember { mutableStateOf(0L) }
-    LaunchedEffect(Unit) {
-        cacheSizeBytes = withContext(Dispatchers.IO) { computeDirSize(context.cacheDir) }
-    }
 
     // 截图设置
     val prefs = remember { context.getSharedPreferences("cocwar_capture", Context.MODE_PRIVATE) }
@@ -114,7 +104,6 @@ fun ToolsScreen(
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showScreenshotGallery by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     // 待写入文件的导出 JSON（SAF 选择保存位置后写入）
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
     // 待写入文件的导出 CSV（B2，SAF 选择保存位置后写入）
@@ -494,41 +483,10 @@ fun ToolsScreen(
             // CocCard 内容是 BoxScope，多个子项必须用 Column 包裹，否则会重叠
             Column {
                 ToolsRow(
-                    icon = Icons.Filled.SystemUpdateAlt,
-                    title = "检查更新",
-                    subtitle = "当前版本 ${BuildConfig.VERSION_NAME}",
-                    onClick = {
-                        scope.launch {
-                            val result = UpdateChecker.check(context)
-                            result.fold(
-                                onSuccess = { info ->
-                                    if (info != null) updateInfo = info
-                                    else Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
-                                },
-                                onFailure = { e ->
-                                    Toast.makeText(context, "检查失败：${e.message}", Toast.LENGTH_LONG).show()
-                                }
-                            )
-                        }
-                    }
-                )
-                ToolsRow(
-                    icon = Icons.Filled.DeleteSweep,
-                    title = "清理缓存",
-                    subtitle = if (cacheSizeBytes > 0) {
-                        "当前占用 ${formatFileSize(cacheSizeBytes)}（更新残留 APK 等），点击清理"
-                    } else {
-                        "缓存正常"
-                    },
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-                            }
-                            cacheSizeBytes = 0
-                            Toast.makeText(context, "缓存已清理", Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                    icon = Icons.Filled.Settings,
+                    title = "设置",
+                    subtitle = "当前版本 ${BuildConfig.VERSION_NAME} · 更新 · 清理缓存",
+                    onClick = onOpenSettings
                 )
             }
         }
@@ -712,49 +670,6 @@ fun ToolsScreen(
         )
     }
 
-    // ── 更新对话框 ──
-    updateInfo?.let { info ->
-        var downloading by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { updateInfo = null },
-            title = { Text("发现新版本") },
-            text = {
-                Column {
-                    Text("当前版本：${BuildConfig.VERSION_NAME}")
-                    Text("最新版本：${info.version}", fontWeight = FontWeight.Bold)
-                    if (info.body.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("更新内容：", style = MaterialTheme.typography.labelMedium)
-                        Text(info.body, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (downloading) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("正在下载，请查看通知栏进度…")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    downloading = true
-                    scope.launch {
-                        val result = UpdateChecker.downloadAndInstall(context, info)
-                        result.fold(
-                            onSuccess = { updateInfo = null },
-                            onFailure = { e ->
-                                downloading = false
-                                Toast.makeText(context, "下载失败：${e.message}", Toast.LENGTH_LONG).show()
-                            }
-                        )
-                    }
-                }, enabled = !downloading) {
-                    Text(if (downloading) "下载中…" else "立即更新")
-                }
-            },
-            dismissButton = { TextButton(onClick = { updateInfo = null }) { Text("以后再说") } }
-        )
-    }
-
     // ── 截图查看弹窗 ──
     if (showScreenshotGallery) {
         ScreenshotGalleryDialog(onDismiss = { showScreenshotGallery = false })
@@ -817,50 +732,6 @@ private fun ThemeChip(
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             color = if (selected) MaterialTheme.cocColors.accent
             else MaterialTheme.colorScheme.onSurface
-        )
-    }
-}
-
-/** 分组列表行：图标 + 标题/副标题 + 尾端箭头，整行可点 */
-/** 递归计算目录总大小（字节）。 */
-private fun computeDirSize(dir: File): Long =
-    dir.listFiles()?.sumOf { if (it.isDirectory) computeDirSize(it) else it.length() } ?: 0L
-
-/** 人类可读的文件大小，如 "312.5 MB"。 */
-private fun formatFileSize(bytes: Long): String = when {
-    bytes >= 1L shl 30 -> "%.1f GB".format(bytes / 1073741824.0)
-    bytes >= 1L shl 20 -> "%.1f MB".format(bytes / 1048576.0)
-    bytes >= 1L shl 10 -> "%.1f KB".format(bytes / 1024.0)
-    else -> "$bytes B"
-}
-
-@Composable
-private fun ToolsRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(13.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(1.dp))
-            Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(18.dp)
         )
     }
 }

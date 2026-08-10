@@ -12,6 +12,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
 import com.cocwar.BuildConfig
 import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,14 +27,16 @@ import java.net.URL
  */
 private const val GITEE_OWNER = "yang-genhao"
 private const val GITEE_REPO = "coc-war-tool"
-private const val GITEE_API = "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases/latest"
+// 拉取 release 列表（含 prerelease 字段，供「加入测试计划」筛选），而非 /latest（该端点天然排除预览版）
+private const val GITEE_API = "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases?per_page=100"
 
 data class UpdateInfo(
     val version: String,       // 如 "1.2"
     val tagName: String,       // 如 "v1.2"
     val body: String,          // 更新说明
     val apkUrl: String,        // APK 下载地址
-    val fileSize: Long = 0     // 文件大小（字节）
+    val fileSize: Long = 0,    // 文件大小（字节）
+    val isPrerelease: Boolean = false   // 是否为预览版（prerelease）
 )
 
 object UpdateChecker {
@@ -44,10 +48,11 @@ object UpdateChecker {
     private val gson = Gson()
 
     /**
-     * 检查 Gitee 最新 release 是否有更新。
+     * 检查 Gitee releases 是否有更新。
+     * @param includePrerelease 是否纳入预览版（加入测试计划）：true 时预览版也参与「最新」判定。
      * @return UpdateInfo 如果有新版本，null 表示已是最新或检查失败。
      */
-    suspend fun check(context: Context): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
+    suspend fun check(context: Context, includePrerelease: Boolean = false): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         try {
             val connection = URL(GITEE_API).openConnection() as HttpURLConnection
             connection.apply {
@@ -65,35 +70,18 @@ object UpdateChecker {
                 }
 
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
+                val releases = JsonParser.parseString(body).asJsonArray
 
-                val json = JsonParser.parseString(body).asJsonObject
-
-                val tagName = json.get("tag_name")?.asString ?: ""
-                val version = tagName.removePrefix("v").removePrefix("V")
-                val desc = json.get("body")?.asString?.take(500) ?: ""
-                // getAsJsonArray 在 key 缺失/非数组时抛异常而非返回 null，用安全取值替代
-                val assets = json.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray
-                    ?: return@withContext Result.success(null)
-
-                // 找 .apk 文件
-                var apkUrl = ""
-                for (asset in assets) {
-                    val assetObj = asset.asJsonObject
-                    val name = assetObj.get("name")?.asString ?: ""
-                    if (name.endsWith(".apk")) {
-                        apkUrl = assetObj.get("browser_download_url")?.asString ?: ""
-                        break
-                    }
-                }
-                if (apkUrl.isEmpty()) {
-                    return@withContext Result.failure(Exception("未找到 APK 下载地址"))
-                }
+                val target = selectTargetRelease(releases, includePrerelease)
+                    ?: return@withContext Result.success(null)  // 无可选 release（如全是预览版且未加入计划）
+                val info = releaseToUpdateInfo(target)
+                    ?: return@withContext Result.failure(Exception("未找到 APK 下载地址"))
 
                 val currentVersion = BuildConfig.VERSION_NAME
-                Log.d(TAG, "当前: $currentVersion, 最新: $version")
+                Log.d(TAG, "当前: $currentVersion, 最新: ${info.version}${if (info.isPrerelease) " (预览版)" else ""}")
 
-                if (compareVersion(version, currentVersion) > 0) {
-                    Result.success(UpdateInfo(version, tagName, desc, apkUrl))
+                if (compareVersion(info.version, currentVersion) > 0) {
+                    Result.success(info)
                 } else {
                     Result.success(null) // 已是最新
                 }
@@ -104,6 +92,55 @@ object UpdateChecker {
             Log.e(TAG, "检查更新失败", e)
             Result.failure(e)
         }
+    }
+
+    /**
+     * 从 gitee releases 列表选出目标 release（纯函数，可单测）：
+     * - includePrerelease=true：取版本号最新（含预览版）；
+     * - includePrerelease=false：过滤掉 prerelease=true 后取最新正式版；
+     * 无任何候选（列表为空 / 全是预览版且未加入计划）返回 null。
+     * 版本号按 [compareVersion] 语义比较（正式版 > 预览版）。
+     */
+    fun selectTargetRelease(releases: JsonArray, includePrerelease: Boolean): JsonObject? {
+        val candidates = releases.asSequence()
+            .filter { it.isJsonObject }
+            .map { it.asJsonObject }
+            .filter { obj ->
+                val pre = obj.get("prerelease")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
+                includePrerelease || !pre
+            }
+            .filter { obj ->
+                obj.get("tag_name")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true
+            }
+            .toList()
+        return candidates.maxWithOrNull { a, b ->
+            compareVersion(a.get("tag_name").asString, b.get("tag_name").asString)
+        }
+    }
+
+    /**
+     * 将单个 gitee release JSON 转换为 [UpdateInfo]（纯函数，可单测）。
+     * 找不到 .apk 附件返回 null。
+     */
+    fun releaseToUpdateInfo(obj: JsonObject): UpdateInfo? {
+        val tagName = obj.get("tag_name")?.takeIf { it.isJsonPrimitive }?.asString ?: return null
+        val version = tagName.removePrefix("v").removePrefix("V")
+        val desc = obj.get("body")?.takeIf { it.isJsonPrimitive }?.asString?.take(500) ?: ""
+        val isPrerelease = obj.get("prerelease")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
+
+        val assets = obj.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
+        var apkUrl = ""
+        for (asset in assets) {
+            if (!asset.isJsonObject) continue
+            val assetObj = asset.asJsonObject
+            val name = assetObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+            if (name.endsWith(".apk")) {
+                apkUrl = assetObj.get("browser_download_url")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+                break
+            }
+        }
+        if (apkUrl.isEmpty()) return null
+        return UpdateInfo(version, tagName, desc, apkUrl, isPrerelease = isPrerelease)
     }
 
     /**
