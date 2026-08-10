@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cocwar.ui.theme.cocColors
@@ -98,7 +99,9 @@ fun ScreenHeader(
             }
             Text(
                 title,
-                style = MaterialTheme.typography.headlineLarge,
+                // 压缩标题区域：headlineLarge(32sp) → headlineMedium(28sp)，全站页眉统一缩小约 12%，
+                // 减少首屏留白，让内容更早露出
+                style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
             if (subtitle != null) {
@@ -464,12 +467,13 @@ fun CocIconButton(
 
 // ─── 空状态 ────────────────────────────────────────────────
 
-/** 编辑级空状态：大留白 + 眉题 + 说明 */
+/** 编辑级空状态：大留白 + 眉题 + 说明；可带图标（替代默认细线） */
 @Composable
 fun EmptyState(
     title: String,
     modifier: Modifier = Modifier,
-    body: String? = null
+    body: String? = null,
+    icon: ImageVector? = null
 ) {
     Column(
         modifier = modifier
@@ -477,12 +481,21 @@ fun EmptyState(
             .padding(horizontal = 40.dp, vertical = 56.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            Modifier
-                .width(28.dp)
-                .height(1.dp)
-                .background(MaterialTheme.cocColors.hairline)
-        )
+        if (icon != null) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier.size(34.dp)
+            )
+        } else {
+            Box(
+                Modifier
+                    .width(28.dp)
+                    .height(1.dp)
+                    .background(MaterialTheme.cocColors.hairline)
+            )
+        }
         Spacer(Modifier.height(18.dp))
         Text(
             title,
@@ -524,10 +537,22 @@ fun ToolsRow(
         Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             Spacer(Modifier.height(1.dp))
-            Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 长描述最多两行，超出省略：避免窄屏/大字号下异常换行把行高撑得过高
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,

@@ -74,6 +74,7 @@ import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.components.SoftTag
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
+import com.cocwar.ui.util.FilterPrefs
 import com.cocwar.ui.util.formatPercent
 import com.cocwar.ui.util.roleLabel
 
@@ -103,19 +104,32 @@ fun StatsScreen(
     val availableMonths by viewModel.availableMonths.collectAsStateWithLifecycle()
     val selectedMonth by viewModel.selectedMonth.collectAsStateWithLifecycle()
     val recentMissedWindow by viewModel.recentMissedWindow.collectAsStateWithLifecycle()
+    // 预警时间段（近N次）随进程销毁丢失，重开后从 prefs 恢复；变化时同步落盘。
+    // 恢复值在组合期同步读取（remember），避免与下方保存 effect 交错时 prefs 被初始值覆盖。
+    val savedRecentN = remember { FilterPrefs.statsRecentN(context) }
+    LaunchedEffect(Unit) { viewModel.setRecentMissedWindow(savedRecentN) }
+    LaunchedEffect(recentMissedWindow) { FilterPrefs.saveStatsRecentN(context, recentMissedWindow) }
     val topMembers by viewModel.topMembers.collectAsStateWithLifecycle()
     val eventSummaries by viewModel.eventSummaries.collectAsStateWithLifecycle()
     val leagueMatch by viewModel.leagueMatch.collectAsStateWithLifecycle()
 
-    var currentView by rememberSaveable { mutableStateOf(StatsView.OVERVIEW) }
+    var currentView by rememberSaveable {
+        mutableStateOf(StatsView.entries.getOrElse(FilterPrefs.statsView(context)) { StatsView.OVERVIEW })
+    }
+    LaunchedEffect(currentView) { FilterPrefs.saveStatsView(context, currentView.ordinal) }
 
     // 排名页成员详情弹窗：点击成员行后展示本月逐场数据
     var detailPlayer by remember { mutableStateOf<MemberMonthlyStat?>(null) }
 
-    // 筛选持久化 —— rememberSaveable
-    var typeFilterIndex by rememberSaveable { mutableIntStateOf(0) }  // 0=部落战(默认), 1=联赛
-    var savedMonthLabel by rememberSaveable { mutableStateOf("") }   // 持久化月份标签
-    var savedLeagueMatchLabel by rememberSaveable { mutableStateOf("") } // 持久化联赛场次归属标签
+    // 筛选状态 —— rememberSaveable + SharedPreferences 双保险：
+    // rememberSaveable 覆盖旋转/页面切换等进程内重建；删除后台后 SavedState 被系统
+    // 清除，由 FilterPrefs 兜底恢复上次的筛选选择。
+    var typeFilterIndex by rememberSaveable { mutableIntStateOf(FilterPrefs.statsType(context)) }  // 0=部落战(默认), 1=联赛
+    LaunchedEffect(typeFilterIndex) { FilterPrefs.saveStatsType(context, typeFilterIndex) }
+    var savedMonthLabel by rememberSaveable { mutableStateOf(FilterPrefs.statsMonth(context)) }   // 持久化月份标签
+    LaunchedEffect(savedMonthLabel) { FilterPrefs.saveStatsMonth(context, savedMonthLabel) }
+    var savedLeagueMatchLabel by rememberSaveable { mutableStateOf(FilterPrefs.statsLeagueMatch(context)) } // 持久化联赛场次归属标签
+    LaunchedEffect(savedLeagueMatchLabel) { FilterPrefs.saveStatsLeagueMatch(context, savedLeagueMatchLabel) }
     var showFilterDialog by remember { mutableStateOf(false) }
 
     // 筛选对话框的编辑状态（级联选择用）
@@ -521,10 +535,17 @@ private fun OverviewTab(
                             modifier = Modifier.padding(vertical = 16.dp)
                         )
                     } else {
+                        // 数值列按列内最大值做相对分级（每列独立阈值），先算好传给每一行
+                        val maxTotalStars = sortedSummaries.maxOfOrNull { it.totalStars } ?: 0
+                        val maxThreeStar = sortedSummaries.maxOfOrNull { it.threeStarCount } ?: 0
+                        val maxUsedAttacks = sortedSummaries.maxOfOrNull { it.totalUsedAttacks } ?: 0
                         sortedSummaries.forEachIndexed { index, summary ->
                             EventSummaryRow(
                                 summary = summary,
                                 index = index,
+                                maxTotalStars = maxTotalStars,
+                                maxThreeStar = maxThreeStar,
+                                maxUsedAttacks = maxUsedAttacks,
                                 onClick = { onEventClick(summary.eventId) }
                             )
                             if (index < sortedSummaries.lastIndex) {
@@ -558,22 +579,22 @@ private fun EventSummaryHeader() {
     ) {
         Text("战报", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center, modifier = Modifier.weight(0.8f))
+            textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(0.8f))
         Text("总星数", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center, modifier = Modifier.weight(0.7f))
+            textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(0.7f))
         Text("三星次数", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center, modifier = Modifier.weight(0.9f))
+            textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(0.9f))
         Text("使用进攻次数", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center, modifier = Modifier.weight(1.3f))
+            textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(1.3f))
         Text("三星率", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center, modifier = Modifier.weight(0.8f))
+            textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(0.8f))
         Text("参与率", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center, modifier = Modifier.weight(0.8f))
+            textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.weight(0.8f))
     }
 }
 
@@ -585,11 +606,26 @@ private fun participationRateColor(rate: Float): Color = when {
     else -> MaterialTheme.cocColors.danger
 }
 
+/**
+ * 数值列相对分级：按列内最大值归一（rate = 本行值 / 列最大值），
+ * 阈值每列独立设定——≥80% 强调色、≥50% 警示色、否则危险色。
+ * 与三星率/参与率两列的三段色阶（绿/橙/红）语义保持一致。
+ */
+@Composable
+private fun columnRelativeColor(rate: Float): Color = when {
+    rate >= 0.8f -> MaterialTheme.cocColors.accent
+    rate >= 0.5f -> MaterialTheme.cocColors.star
+    else -> MaterialTheme.cocColors.danger
+}
+
 /** 单行：序号 + 总星数 + 三星次数 + 使用进攻次数 + 三星率 + 参与率，点击跳转战报详情 */
 @Composable
 private fun EventSummaryRow(
     summary: EventStatSummary,
     index: Int,
+    maxTotalStars: Int,
+    maxThreeStar: Int,
+    maxUsedAttacks: Int,
     onClick: () -> Unit
 ) {
     Row(
@@ -602,14 +638,24 @@ private fun EventSummaryRow(
         Text("%02d".format(index + 1), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center, modifier = Modifier.weight(0.8f))
+        // 数值列按列内相对值分级配色（每列独立阈值），列最大值 0（全零）时回落默认墨色
+        val starColor = if (maxTotalStars > 0) {
+            columnRelativeColor(summary.totalStars.toFloat() / maxTotalStars)
+        } else MaterialTheme.colorScheme.onSurface
         Text("${summary.totalStars}", style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold, color = starColor,
             textAlign = TextAlign.Center, modifier = Modifier.weight(0.7f))
+        val threeStarColor = if (maxThreeStar > 0) {
+            columnRelativeColor(summary.threeStarCount.toFloat() / maxThreeStar)
+        } else MaterialTheme.colorScheme.onSurface
         Text("${summary.threeStarCount}", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = threeStarColor,
             textAlign = TextAlign.Center, modifier = Modifier.weight(0.9f))
+        val usedAttacksColor = if (maxUsedAttacks > 0) {
+            columnRelativeColor(summary.totalUsedAttacks.toFloat() / maxUsedAttacks)
+        } else MaterialTheme.colorScheme.onSurface
         Text("${summary.totalUsedAttacks}", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = usedAttacksColor,
             textAlign = TextAlign.Center, modifier = Modifier.weight(1.3f))
         Text(formatPercent(summary.threeStarRate * 100),
             style = MaterialTheme.typography.bodyMedium,
@@ -737,14 +783,16 @@ private fun HeroCard(overview: StatsOverview, typeLabel: String) {
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(
                                 "${overview.totalEvents}",
-                                style = MaterialTheme.typography.displayMedium,
+                                // 数字与单位比例平衡：数字 displayMedium(57sp) → headlineMedium(28sp)，
+                                // 单位 labelMedium(12sp) → titleSmall(14sp)，缩小两者字号差距
+                                style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = ink
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 "场战报",
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.titleSmall,
                                 color = inkSoft,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
@@ -765,14 +813,15 @@ private fun HeroCard(overview: StatsOverview, typeLabel: String) {
                             )
                         }
                     }
-                    // 进攻率环
+                    // 进攻率环（中心标注指标含义）
                     RingStat(
                         rate = overview.overallAttackRate,
                         color = accent,
                         size = 62.dp,
                         strokeWidth = 5.dp,
                         labelColor = ink,
-                        trackColor = accentSoft
+                        trackColor = accentSoft,
+                        label = "进攻率"
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -826,7 +875,8 @@ private fun RingStat(
     strokeWidth: Dp = 4.5.dp,
     modifier: Modifier = Modifier,
     labelColor: Color = MaterialTheme.colorScheme.onSurface,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    label: String? = null
 ) {
     Box(contentAlignment = Alignment.Center, modifier = modifier) {
         CircularProgressIndicator(
@@ -837,12 +887,22 @@ private fun RingStat(
             strokeWidth = strokeWidth,
             strokeCap = StrokeCap.Round
         )
-        Text(
-            formatPercent(rate * 100),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = labelColor
-        )
+        // 环中心：百分比 + 下方小字说明该指标含义（如「进攻率」），避免数字无注解
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                formatPercent(rate * 100),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = labelColor
+            )
+            if (label != null) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = labelColor.copy(alpha = 0.65f)
+                )
+            }
+        }
     }
 }
 

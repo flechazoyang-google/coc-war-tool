@@ -1,8 +1,10 @@
 package com.cocwar.ui.eventlist
 
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,13 +23,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -35,7 +38,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
@@ -62,6 +68,7 @@ import com.cocwar.ui.looksLikeWarJson
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.util.compareLeagueRound
 import com.cocwar.ui.util.compareWarEventsBySeq
+import com.cocwar.ui.util.FilterPrefs
 import com.cocwar.ui.util.parseEventDisplayName
 import com.cocwar.ui.util.parseEventTypeFromName
 import com.cocwar.ui.util.parseLeagueMatchFromName
@@ -102,17 +109,25 @@ fun EventListScreen(
         }
     }
 
+    // 长按菜单选择「删除」后待确认的战报（确认框弹出前先记录）
+    var pendingDeleteEvent by remember { mutableStateOf<WarEventEntity?>(null) }
+
     // 剪切板读取状态（由右上角按钮触发，不再自动检测）
     var clipboardParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
     val clipboardManager = LocalClipboardManager.current
 
-    // 筛选状态 —— rememberSaveable 保证切换页面或退出应用后筛选条件不丢失
+    // 筛选状态 —— rememberSaveable + SharedPreferences 双保险：
+    // rememberSaveable 覆盖旋转屏幕/页面切换等进程内重建；用户从最近任务划掉应用
+    // （删除后台）后系统会清除 SavedState，此时由 FilterPrefs 兜底恢复上次的选择。
     // 部落战和联赛完全独立，类型筛选无「全部」选项，默认部落战
-    var typeFilter by rememberSaveable { mutableStateOf("0") }
+    var typeFilter by rememberSaveable { mutableStateOf(FilterPrefs.eventType(context)) }
     // 跨版本恢复保护：旧版 typeFilter 可为 null（全部），恢复后收敛到默认「部落战」
     if (typeFilter != "0" && typeFilter != "1") typeFilter = "0"
-    var yearFilter by rememberSaveable { mutableStateOf<Int?>(null) }
-    var monthFilter by rememberSaveable { mutableStateOf<Int?>(null) }
+    LaunchedEffect(typeFilter) { FilterPrefs.saveEventType(context, typeFilter) }
+    var yearFilter by rememberSaveable { mutableStateOf(FilterPrefs.eventYear(context)) }
+    LaunchedEffect(yearFilter) { FilterPrefs.saveEventYear(context, yearFilter) }
+    var monthFilter by rememberSaveable { mutableStateOf(FilterPrefs.eventMonth(context)) }
+    LaunchedEffect(monthFilter) { FilterPrefs.saveEventMonth(context, monthFilter) }
 
     // 下拉展开状态（仅 UI 临时状态，无需持久化）
     var typeExpanded by remember { mutableStateOf(false) }
@@ -281,7 +296,11 @@ fun EventListScreen(
                                 body = "点击右上角 + 导入 JSON\n复制战报 JSON 后打开 App 会自动识别"
                             )
                         } else {
-                            EmptyState(title = "没有匹配的战报", body = "试试调整筛选条件")
+                            EmptyState(
+                                icon = Icons.Filled.SearchOff,
+                                title = "没有匹配的战报",
+                                body = "试试调整筛选条件\n或点击右上角 + 添加战报"
+                            )
                         }
                     }
                 } else {
@@ -303,7 +322,7 @@ fun EventListScreen(
                                         EventRow(
                                             event = event,
                                             onClick = { onOpen(event.eventId) },
-                                            onDelete = { deleteEventWithUndo(event) }
+                                            onDeleteRequest = { pendingDeleteEvent = event }
                                         )
                                         if (index < group.lastIndex) {
                                             Box(
@@ -322,7 +341,7 @@ fun EventListScreen(
                                 EventRow(
                                     event = event,
                                     onClick = { onOpen(event.eventId) },
-                                    onDelete = { deleteEventWithUndo(event) }
+                                    onDeleteRequest = { pendingDeleteEvent = event }
                                 )
                                 if (index < warSorted.lastIndex) {
                                     Box(
@@ -343,6 +362,24 @@ fun EventListScreen(
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+
+    // 删除战报确认框：长按条目 → 菜单「删除战报」→ 确认 → 执行删除（仍可 Snackbar 撤销）
+    pendingDeleteEvent?.let { ev ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteEvent = null },
+            title = { Text("删除战报") },
+            text = { Text("确定删除「${parseEventDisplayName(ev.eventName)}」？删除后可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteEvent = null
+                    deleteEventWithUndo(ev)
+                }) { Text("删除", color = MaterialTheme.cocColors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteEvent = null }) { Text("取消") }
+            }
         )
     }
 
@@ -458,12 +495,14 @@ private fun LeagueGroupHeader(year: Int?, month: Int?, match: Int?, size: Int, o
 
 /**
  * 战报条目：编辑式排版 —— 左侧名称与元信息，右侧星数大数字。
+ * 点击打开详情；长按弹出操作菜单（删除）；删除前由页面层弹确认框。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EventRow(
     event: WarEventEntity,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDeleteRequest: (WarEventEntity) -> Unit
 ) {
     // 名称无法解析时回退到 entity.eventType，避免非标准名称被错归类
     val isWar = when (parseEventTypeFromName(event.eventName)) {
@@ -473,62 +512,88 @@ private fun EventRow(
     }
     val typeColor = if (isWar) MaterialTheme.cocColors.accent else MaterialTheme.cocColors.star
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = 20.dp, end = 8.dp, top = 15.dp, bottom = 15.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    // 长按操作菜单的展开状态（仅 UI 临时状态）
+    var menuOpen by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
+                .padding(start = 20.dp, end = 8.dp, top = 15.dp, bottom = 15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        parseEventDisplayName(event.eventName),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (event.isSample) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "示例",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    parseEventDisplayName(event.eventName),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    // 元信息行附带月份，区分同名战报（名称解析不出年月时不追加）
+                    buildString {
+                        append(if (isWar) "部落战" else "联赛")
+                        val y = parseYearFromName(event.eventName)
+                        val m = parseMonthFromName(event.eventName)
+                        if (y != null && m != null) append(" · ${y}年${m}月")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = typeColor
+                )
+            }
+
+            // 星数大数字（表格化）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = null,
+                    tint = MaterialTheme.cocColors.star,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    "${event.clanTotalStars}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                if (event.isSample) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "示例",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (isWar) "部落战" else "联赛",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
-                color = typeColor
-            )
         }
 
-        // 星数大数字（表格化）
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.Star,
-                contentDescription = null,
-                tint = MaterialTheme.cocColors.star,
-                modifier = Modifier.size(15.dp)
-            )
-            Spacer(Modifier.width(3.dp))
-            Text(
-                "${event.clanTotalStars}",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-
-        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
-            Icon(
-                Icons.Filled.DeleteOutline,
-                contentDescription = "删除",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                modifier = Modifier.size(18.dp)
+        // 长按操作菜单：删除入口（确认框由页面层负责）
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("删除战报", color = MaterialTheme.cocColors.danger) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.DeleteOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.cocColors.danger,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                onClick = {
+                    menuOpen = false
+                    onDeleteRequest(event)
+                }
             )
         }
     }

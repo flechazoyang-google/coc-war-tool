@@ -1,7 +1,10 @@
 package com.cocwar.ui.members
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,12 +22,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -43,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.di.warViewModel
@@ -50,6 +57,7 @@ import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.EmptyState
+import com.cocwar.ui.components.FilterPill
 import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.theme.cocColors
@@ -66,8 +74,26 @@ fun MemberManageScreen(onBack: () -> Unit) {
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
+    // 搜索与排序：名字模糊搜索 + 序号/角色排序
+    var searchQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(MemberSort.SEQ) }
+    // 长按菜单选择「删除」后待确认的成员名
+    var pendingDeleteName by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 搜索过滤 + 排序后的展示列表（序号排序 = 花名册默认顺序，按名字字母序；角色排序按职位等级）
+    val displayList = remember(roster, searchQuery, sortMode) {
+        val query = searchQuery.trim()
+        val filtered = if (query.isEmpty()) roster else roster.filter { it.name.contains(query, ignoreCase = true) }
+        when (sortMode) {
+            MemberSort.SEQ -> filtered.sortedBy { it.name }
+            MemberSort.ROLE -> filtered
+                .withIndex()
+                .sortedWith(compareBy({ roleRank(it.value.role) }, { it.index }))
+                .map { it.value }
+        }
+    }
 
     // 删除成员：立即落库删除 → Snackbar 提供撤销（含角色恢复），防误触
     fun removeNameWithUndo(name: String) {
@@ -162,6 +188,43 @@ fun MemberManageScreen(onBack: () -> Unit) {
                 }
                 Spacer(Modifier.height(14.dp))
             }
+
+            // 搜索框 + 排序：名字模糊搜索，序号/角色排序
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("搜索成员名字") },
+                leadingIcon = {
+                    Icon(Icons.Filled.Search, null, Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                singleLine = true,
+                shape = CocShape.field,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedBorderColor = MaterialTheme.cocColors.hairline,
+                    cursorColor = MaterialTheme.cocColors.accent
+                )
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MemberSort.entries.forEach { mode ->
+                    FilterPill(
+                        label = mode.label,
+                        selected = sortMode == mode,
+                        onClick = { sortMode = mode }
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
     
             // 下拉刷新：名单由 Room Flow 自动保持最新，下拉触发手动重读并提供状态反馈
             RefreshableBox(
@@ -178,76 +241,26 @@ fun MemberManageScreen(onBack: () -> Unit) {
                             body = "点击右上角 + 批量导入成员\n导入战报时也会自动收录新成员"
                         )
                     }
+                } else if (displayList.isEmpty()) {
+                    // 搜索无匹配：带图标的空状态引导
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        EmptyState(
+                            icon = Icons.Filled.Search,
+                            title = "没有匹配的成员",
+                            body = "换个名字试试"
+                        )
+                    }
                 } else {
-                    // 无卡片名册：序号 + 名字 + 职位（点击设置） + 删除，发丝线分隔
+                    // 无卡片名册：序号 + 名字 + 职位（点击设置），长按弹出删除菜单，发丝线分隔
                     LazyColumn(Modifier.fillMaxSize()) {
-                        itemsIndexed(roster, key = { _, entry -> entry.name }) { index, entry ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "%02d".format(index + 1),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier.width(30.dp)
-                                )
-                                Text(
-                                    entry.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                // 职位徽标：非默认职位用「色点 + 文字」，默认成员弱化为纯文字；点击弹出职位选择
-                                if (entry.role.equals("member", ignoreCase = true)) {
-                                    Text(
-                                        roleLabel(entry.role),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Normal,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier
-                                            .clickable { editingRoleName = entry.name }
-                                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                                    )
-                                } else {
-                                    Row(
-                                        modifier = Modifier
-                                            .clickable { editingRoleName = entry.name }
-                                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            Modifier
-                                                .size(6.dp)
-                                                .background(roleColor(entry.role), CircleShape)
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            roleLabel(entry.role),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = roleColor(entry.role)
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.width(4.dp))
-                                IconButton(
-                                    onClick = { removeNameWithUndo(entry.name) },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "删除",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                            if (index < roster.lastIndex) {
+                        itemsIndexed(displayList, key = { _, entry -> entry.name }) { index, entry ->
+                            MemberRow(
+                                entry = entry,
+                                index = index,
+                                onRoleClick = { editingRoleName = entry.name },
+                                onDeleteRequest = { pendingDeleteName = entry.name }
+                            )
+                            if (index < displayList.lastIndex) {
                                 Box(
                                     Modifier
                                         .padding(start = 50.dp)
@@ -268,6 +281,24 @@ fun MemberManageScreen(onBack: () -> Unit) {
         )
     }
 
+    // 删除成员确认框：长按条目 → 菜单「删除」→ 确认 → 执行删除（仍可 Snackbar 撤销）
+    pendingDeleteName?.let { name ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteName = null },
+            title = { Text("删除成员") },
+            text = { Text("确定将「$name」移出花名册？删除后可撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDeleteName = null
+                    removeNameWithUndo(name)
+                }) { Text("删除", color = MaterialTheme.cocColors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteName = null }) { Text("取消") }
+            }
+        )
+    }
+
     // 职位选择弹窗（首领/副首领/长老/成员，默认成员）
     editingRoleName?.let { name ->
         val currentRole = roster.find { it.name == name }?.role ?: "member"
@@ -279,6 +310,115 @@ fun MemberManageScreen(onBack: () -> Unit) {
             },
             onDismiss = { editingRoleName = null }
         )
+    }
+}
+
+/** 成员排序方式：序号（花名册默认顺序，按名字字母序）/ 角色（职位等级） */
+private enum class MemberSort(val label: String) {
+    SEQ("按序号"),
+    ROLE("按角色")
+}
+
+/** 职位等级：首领 > 副首领 > 长老 > 成员 */
+private fun roleRank(role: String): Int = when (role.lowercase().replace("-", "").replace("_", "")) {
+    "leader" -> 0
+    "coleader", "viceleader" -> 1
+    "elder" -> 2
+    else -> 3
+}
+
+/**
+ * 成员行：序号 + 名字 + 职位（点击设置职位）。
+ * 长按弹出删除菜单；删除前由页面层弹确认框（防误触）。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MemberRow(
+    entry: com.cocwar.data.db.MemberRosterEntity,
+    index: Int,
+    onRoleClick: () -> Unit,
+    onDeleteRequest: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = {}, onLongClick = { menuOpen = true })
+                .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "%02d".format(index + 1),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.width(30.dp)
+            )
+            Text(
+                entry.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            // 职位徽标：非默认职位用「色点 + 文字」，默认成员弱化为纯文字；点击弹出职位选择
+            if (entry.role.equals("member", ignoreCase = true)) {
+                Text(
+                    roleLabel(entry.role),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .clickable(onClick = onRoleClick)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            } else {
+                Row(
+                    modifier = Modifier
+                        .clickable(onClick = onRoleClick)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .background(roleColor(entry.role), CircleShape)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        roleLabel(entry.role),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = roleColor(entry.role)
+                    )
+                }
+            }
+        }
+
+        // 长按操作菜单：删除入口（确认框由页面层负责）
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("删除成员", color = MaterialTheme.cocColors.danger) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.DeleteOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.cocColors.danger,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                onClick = {
+                    menuOpen = false
+                    onDeleteRequest()
+                }
+            )
+        }
     }
 }
 

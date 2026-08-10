@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileOpen
@@ -104,6 +105,7 @@ fun ToolsScreen(
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showScreenshotGallery by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
+    var showCleanScreenshotsConfirm by remember { mutableStateOf(false) }
     // 待写入文件的导出 JSON（SAF 选择保存位置后写入）
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
     // 待写入文件的导出 CSV（B2，SAF 选择保存位置后写入）
@@ -454,12 +456,7 @@ fun ToolsScreen(
                         border = BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
                     ) { Text("查看截图") }
                     OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                ScreenCaptureService.cleanAllScreenshotsAsync(context)
-                                Toast.makeText(context, "截图已全部清理", Toast.LENGTH_SHORT).show()
-                            }
-                        },
+                        onClick = { showCleanScreenshotsConfirm = true },
                         modifier = Modifier.weight(1f),
                         shape = CocShape.field,
                         border = BorderStroke(1.dp, MaterialTheme.cocColors.danger.copy(alpha = 0.4f))
@@ -534,6 +531,27 @@ fun ToolsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showJsonFormatDialog = false }) { Text("关闭") }
+            }
+        )
+    }
+
+    // ── 清理全部截图：确认 ──
+    if (showCleanScreenshotsConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCleanScreenshotsConfirm = false },
+            title = { Text("清理全部截图") },
+            text = { Text("将删除所有已保存的截图，且不可恢复。\n\n确定继续？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCleanScreenshotsConfirm = false
+                    scope.launch {
+                        ScreenCaptureService.cleanAllScreenshotsAsync(context)
+                        Toast.makeText(context, "截图已全部清理", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("清理", color = MaterialTheme.cocColors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCleanScreenshotsConfirm = false }) { Text("取消") }
             }
         )
     }
@@ -692,7 +710,7 @@ private fun ToolsDivider(horizontal: androidx.compose.ui.unit.Dp = 16.dp) {
     )
 }
 
-/** 主题选择 chip：双色徽章 + 名称，横向紧凑排列；选中项徽章描边 + 名称高亮 */
+/** 主题选择 chip：双色徽章 + 名称，横向紧凑排列；选中项徽章描边 + 右上角勾选标记 + 名称高亮 */
 @Composable
 private fun ThemeChip(
     modifier: Modifier = Modifier,
@@ -724,6 +742,18 @@ private fun ThemeChip(
                     .background(style.palette(true).accent)
                     .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
             )
+            // 选中态：右上角勾选标记（白底衬 + 主色对勾），比单纯描边更醒目
+            if (selected) {
+                Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = "已选中",
+                    tint = MaterialTheme.cocColors.accent,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(15.dp)
+                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(
