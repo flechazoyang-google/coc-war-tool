@@ -1169,7 +1169,7 @@ private fun MemberStatRow(
             modifier = Modifier.weight(1f)
         )
         Text(
-            "${stat.attacked}/${stat.totalEvents}",
+            "${stat.attacked}/${stat.participated}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.width(40.dp)
@@ -1204,7 +1204,7 @@ private fun MemberDetailDialog(
                 Text("${stat.playerName} · ${stat.totalStars}★", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "本月 ${roleLabel(stat.role)} · 参战 ${stat.attacked}/${stat.totalEvents} · 三星率 ${formatPercent(stat.threeStarRate * 100)}",
+                    "本月 ${roleLabel(stat.role)} · 参战 ${stat.attacked}/${stat.participated} · 三星率 ${formatPercent(stat.threeStarRate * 100)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
