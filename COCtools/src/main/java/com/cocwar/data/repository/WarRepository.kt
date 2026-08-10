@@ -320,13 +320,16 @@ class WarRepository(
         cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         val monthStart = cal.timeInMillis; cal.add(Calendar.MONTH, 1)
         val prefix = if (eventType == "league") "1" else "0"
-        val count = dao.countByTypeInMonth(eventType, monthStart, cal.timeInMillis)
+
+        // 按名称 S 位统计本月同类型事件（RULES §3：名称 S 位是类型权威），不依赖实体
+        // eventType 字段——避免名称与字段不一致（历史/异常数据）把两类场次混在一起计数；
+        // 非标准名（如示例数据）不参与计数。
+        val monthNames = dao.getEventNamesInMonth(monthStart, cal.timeInMillis)
 
         val cc = if (eventType == "league") {
             // 联赛：CC = C1C2 —— C1 场次归属（0=月初场，1=月中场），C2 该场第几轮（1..7）
-            val existingNames = dao.getEventNamesByTypeInMonth(eventType, monthStart, cal.timeInMillis)
-            val usedCC = existingNames.mapNotNull { name ->
-                if (name.length < 7 || (name[0] != '0' && name[0] != '1')) null
+            val usedCC = monthNames.mapNotNull { name ->
+                if (!name.isValidSeqName('1')) null   // 仅统计合法联赛名（S='1'，口径与部落战一致）
                 else name.substring(5, 7).toIntOrNull()?.takeIf { it in 1..7 || it in 11..17 }
             }
             val seg0 = usedCC.filter { it in 1..7 }.toSet()                     // 月初场已占轮次（C2=1..7）
@@ -343,9 +346,19 @@ class WarRepository(
             else 99  // 兜底：两场联赛共 14 轮已录满（理论不可达），生成显式无效 CC，解析端视为无法解析
         } else {
             // 部落战：CC = 当月第 N 场（上限 99，避免 SAABBCC 7 位解析断裂）
-            (count + 1).coerceAtMost(99)
+            val warCount = monthNames.count { it.isValidSeqName('0') }
+            (warCount + 1).coerceAtMost(99)
         }
         return "%s%02d%02d%02d".format(prefix, year, month, cc)
+    }
+
+    /** 是否为合法 SAABBCC 名称：S 位 = 指定类型、第 1~6 位全为数字、月份合法
+     *  （与 parseTypeAndRound 严格校验口径一致），用作当月同类型场次计数依据。 */
+    private fun String.isValidSeqName(s: Char): Boolean {
+        if (length < 7 || this[0] != s) return false
+        if (!substring(1, 7).all { it.isDigit() }) return false
+        val month = substring(3, 5).toIntOrNull() ?: return false
+        return month in 1..12
     }
 
     companion object { private const val KEY_SAMPLES = "samples_inserted" }

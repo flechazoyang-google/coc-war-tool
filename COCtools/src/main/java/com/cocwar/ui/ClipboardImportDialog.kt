@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
-import com.cocwar.data.model.EVENT_TYPE_WAR
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.repository.WarRepository
 import com.cocwar.ui.importflow.MatchOption
@@ -131,17 +130,10 @@ fun ClipboardImportDialog(
                 )
                 WarTypeRoundSection(eventType = eventType, onTypeChange = {
                     eventType = it
-                    // 仅当名称仍符合 SAABBCC 格式时才替换前缀；否则生成新名称，避免破坏用户自定义名称
-                    val s = name.getOrNull(0)
-                    val isStd = s != null && (s == '0' || s == '1') && name.length >= 7 &&
-                        name.substring(1, 7).all { c -> c.isDigit() } &&
-                        (name.substring(3, 5).toIntOrNull()?.let { it in 1..12 } == true)
-                    if (isStd) {
-                        val prefix = if (it == EVENT_TYPE_LEAGUE) '1' else '0'
-                        name = prefix + name.substring(1)
-                    } else {
-                        scope.launch { name = repo.generateEventName(it, parseEventRoundFromName(name)) }
-                    }
+                    // RULES §4.9：类型切换必须重生成事件名——部落战 CC=当月场次序号、
+                    // 联赛 CC=C1C2（场次+轮次）语义不同，只改前缀会把旧类型序号沿用过来，
+                    // 导致跳号/重名/非法 CC（如 1260899）。生成时以旧名称解析出的轮次作提示。
+                    scope.launch { name = repo.generateEventName(it, parseEventRoundFromName(name)) }
                 })
             }
         }

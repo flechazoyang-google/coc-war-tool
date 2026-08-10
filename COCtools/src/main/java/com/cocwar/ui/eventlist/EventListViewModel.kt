@@ -57,9 +57,13 @@ class EventListViewModel(private val repo: WarRepository) : ViewModel() {
         repo.importEvent(WarJsonParser.ParsedEvent(snapshot.event, snapshot.members))
     }
 
-    /** 解析剪切板战报 JSON：注入花名册职位映射，使预览阶段名字颜色即按花名册职位展示。 */
+    /** 解析剪切板战报 JSON：先按 JSON 内容自动识别类型（RULES §4.9），再注入花名册职位映射。 */
     suspend fun parseWarJson(text: String): WarJsonParser.ParseResult {
         val roleMap = repo.rosterRoleMap()
-        return WarJsonParser.parse(text, rosterRoles = roleMap)
+        return WarJsonParser.parse(
+            text,
+            eventType = WarJsonParser.inferEventType(text),
+            rosterRoles = roleMap
+        )
     }
 }

@@ -7,6 +7,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -85,7 +87,7 @@ private fun threeStarRateColor(rate: Float): Color = when {
 
 // ==================== 主屏幕 ====================
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StatsScreen(
     onBack: () -> Unit,
@@ -291,7 +293,10 @@ fun StatsScreen(
                     Text("视图", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         StatsView.forType(TypeFilter.entries[editTypeIndex]).forEach { view ->
                             FilterPill(
                                 label = view.label,
@@ -343,7 +348,10 @@ fun StatsScreen(
                         Text("时间段", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             val timeOptions = listOf(0 to "当月全部", 3 to "近3次", 7 to "近7次")
                             timeOptions.forEach { (n, label) ->
                                 FilterPill(
@@ -616,7 +624,7 @@ private fun EventSummaryRow(
     }
 }
 
-// ===== 本月最佳：独立视图，展示全部成员得分（按得分降序） =====
+// ===== 积分排行：独立视图，展示全部成员得分（按得分降序） =====
 
 @Composable
 private fun TopMembersTab(
@@ -625,7 +633,7 @@ private fun TopMembersTab(
 ) {
     if (topMembers.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            EmptyState(title = "本月暂无部落战数据", body = "本月最佳积分制仅统计部落战")
+            EmptyState(title = "本月暂无部落战数据", body = "积分排行仅统计部落战")
         }
         return
     }
@@ -634,7 +642,7 @@ private fun TopMembersTab(
         modifier = modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        item { SectionTitle("本月最佳 · 积分制") }
+        item { SectionTitle("积分排行 · 积分制") }
         item {
             Row(
                 Modifier
@@ -838,7 +846,7 @@ private fun RingStat(
     }
 }
 
-// ===== 本月最佳：精简行（排名 + 昵称 + 军衔 + 得分） =====
+// ===== 积分排行：精简行（排名 + 昵称 + 军衔 + 得分） =====
 
 /** 前三名军衔：1 上将 / 2 中将 / 3 少将 */
 private fun rankTitle(index: Int): String? = when (index) {

@@ -93,7 +93,7 @@ data class RecentMissedRank(
     val missedCount: Int           // 参与但未进攻次数
 )
 
-/** 本月最佳积分制评分条目（仅统计部落战） */
+/** 积分排行评分条目（仅统计部落战） */
 data class TopMemberScore(
     val playerName: String,
     val role: String,
@@ -434,7 +434,7 @@ object StatsCalculator {
     }
 
     /**
-     * 本月最佳积分制评选（仅统计部落战）。
+     * 积分排行积分制评选（仅统计部落战）。
      *
      * 积分规则：
      * - 每获得一颗星 +1

@@ -303,7 +303,7 @@ class FloatingBallService : Service() {
 
     private fun launchGame() {
         try {
-            // 尝试多个版本的部落冲突包名（国际版 / 昆仑版 / 腾讯版）
+            // 先精确匹配已知版本包名（国际版 / 昆仑版 / 腾讯版）
             val pkgs = listOf(
                 "com.supercell.clashofclans",
                 "com.supercell.clashofclans.kunlun",
@@ -318,7 +318,25 @@ class FloatingBallService : Service() {
                     return
                 }
             }
-            Log.w(TAG, "未找到部落冲突，尝试的包名: $pkgs")
+
+            // 兜底：扫描已安装的可启动应用，按包名特征匹配未收录的渠道版本
+            // （依赖 Manifest <queries> 的 LAUNCHER intent 声明，Android 11+ 才能看到）
+            val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val matched = packageManager.queryIntentActivities(launcher, 0)
+                .mapNotNull { it.activityInfo?.packageName }
+                .distinct()
+                .filter { it.contains("supercell", ignoreCase = true) || it.contains("clash", ignoreCase = true) }
+            for (pkg in matched) {
+                val intent = packageManager.getLaunchIntentForPackage(pkg)
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    Log.i(TAG, "已启动部落冲突 ($pkg)")
+                    return
+                }
+            }
+
+            Log.w(TAG, "未找到部落冲突，尝试的包名: $pkgs，扫描匹配: $matched")
             Toast.makeText(this, "未找到部落冲突，请确认已安装", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Log.e(TAG, "启动游戏失败", e)

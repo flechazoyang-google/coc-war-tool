@@ -10,6 +10,19 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- Android 11+ 包可见性：声明要查询的部落冲突包名与可启动应用扫描，
+         否则 getLaunchIntentForPackage 返回 null，悬浮球无法自动打开游戏 -->
+    <queries>
+        <package android:name="com.supercell.clashofclans" />
+        <package android:name="com.supercell.clashofclans.kunlun" />
+        <package android:name="com.tencent.tmgp.supercell.clashofclans" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+
     <application
         android:name=".CocWarApplication"
         android:allowBackup="true"

@@ -119,11 +119,8 @@ interface WarDao {
     @Query("SELECT COUNT(*) FROM war_events")
     suspend fun countEvents(): Int
 
-    @Query("SELECT COUNT(*) FROM war_events WHERE eventType = :type AND createdAt >= :monthStart AND createdAt < :nextMonthStart")
-    suspend fun countByTypeInMonth(type: String, monthStart: Long, nextMonthStart: Long): Int
-
-    @Query("SELECT eventName FROM war_events WHERE eventType = :type AND createdAt >= :monthStart AND createdAt < :nextMonthStart")
-    suspend fun getEventNamesByTypeInMonth(type: String, monthStart: Long, nextMonthStart: Long): List<String>
+    @Query("SELECT eventName FROM war_events WHERE createdAt >= :monthStart AND createdAt < :nextMonthStart")
+    suspend fun getEventNamesInMonth(monthStart: Long, nextMonthStart: Long): List<String>
 
     @Query("SELECT * FROM war_events WHERE createdAt >= :start AND createdAt < :end ORDER BY createdAt DESC")
     suspend fun getEventsInRange(start: Long, end: Long): List<WarEventEntity>

@@ -5,6 +5,7 @@ import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.model.*
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonObject
 import com.google.gson.JsonSyntaxException
 
 /**
@@ -66,6 +67,47 @@ object WarJsonParser {
         } catch (e: Exception) {
             ParseResult.Error("数据校验失败：${e.message}")
         }
+    }
+
+    /**
+     * 从 JSON 内容推断战报类型（RULES §4.9 自动识别），供导入预览预选类型，预览页仍可手动切换。
+     * 判定顺序：
+     *  1. 顶层显式字段：`season`（非空，CWL 赛季标识）→ 联赛；`type`/`war_type` ∈
+     *     {cwl, league, 联赛} → 联赛，∈ {war, clan_war, 部落战} → 部落战。
+     *  2. 槽位启发式（游戏机制，RULES §1：联赛每人每轮 1 槽、部落战 2 槽）：
+     *     任一成员 attacks ≥ 2 条 → 部落战；所有成员 ≤ 1 条 → 联赛。
+     *  3. 无法判定（无成员数据/解析失败）→ 部落战（保守默认）。
+     * 注意：战报未结束时部落战也可能全员 ≤1 条而被判联赛，属已知局限，以手动切换为准。
+     */
+    fun inferEventType(json: String): String {
+        val root = try {
+            gson.fromJson(json.trim(), JsonObject::class.java)
+        } catch (e: Exception) {
+            return EVENT_TYPE_WAR
+        } ?: return EVENT_TYPE_WAR
+
+        // 1. 顶层显式字段
+        root.get("season")?.takeIf { it.isJsonPrimitive }?.asString
+            ?.takeIf { it.isNotBlank() }?.let { return EVENT_TYPE_LEAGUE }
+        listOf("type", "war_type").forEach { key ->
+            root.get(key)?.takeIf { it.isJsonPrimitive }?.asString?.let { t ->
+                when (t.trim().lowercase()) {
+                    "cwl", "league", "联赛" -> return EVENT_TYPE_LEAGUE
+                    "war", "clan_war", "部落战" -> return EVENT_TYPE_WAR
+                }
+            }
+        }
+
+        // 2. 槽位启发式：成员 attack 条数（字段类型异常/缺失时按部落战保守处理）
+        val members = root.get("members")?.takeIf { it.isJsonArray }?.asJsonArray ?: return EVENT_TYPE_WAR
+        var sawMember = false
+        for (el in members) {
+            if (!el.isJsonObject) continue
+            sawMember = true
+            val attacks = el.asJsonObject.get("attacks")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
+            if (attacks.size() >= 2) return EVENT_TYPE_WAR
+        }
+        return if (sawMember) EVENT_TYPE_LEAGUE else EVENT_TYPE_WAR
     }
 
     /** Build entities from an already-parsed DTO (used by samples too).

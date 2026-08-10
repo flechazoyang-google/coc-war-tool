@@ -8,10 +8,14 @@ import kotlinx.coroutines.launch
 
 class ImportViewModel(private val repo: WarRepository) : ViewModel() {
 
-    /** 解析战报：解析时注入花名册职位映射，使预览阶段名字颜色即按花名册职位展示。 */
+    /** 解析战报：先按 JSON 内容自动识别类型（RULES §4.9），再解析并注入花名册职位映射。 */
     suspend fun parse(json: String): WarJsonParser.ParseResult {
         val roleMap = repo.rosterRoleMap()
-        return WarJsonParser.parse(json, rosterRoles = roleMap)
+        return WarJsonParser.parse(
+            json,
+            eventType = WarJsonParser.inferEventType(json),
+            rosterRoles = roleMap
+        )
     }
 
     /** 解析 CSV 战报（B2，RULES §4.15）：按类型填充槽位，复用 JSON 解析完整链路。 */

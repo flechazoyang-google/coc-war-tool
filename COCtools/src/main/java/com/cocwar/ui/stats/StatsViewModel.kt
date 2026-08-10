@@ -32,7 +32,7 @@ enum class StatsView(val label: String) {
     OVERVIEW("总览"),
     RANKING("成员数据"),
     WARNING("预警"),
-    TOP("本月最佳");
+    TOP("积分排行");
 
     companion object {
         /** 指定类型可用的视图集合 */
@@ -295,7 +295,7 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
         (overview as MutableStateFlow).value =
             StatsCalculator.computeOverview(events, members)
 
-        // 本月最佳独立视图：固定使用全量数据（积分制仅统计部落战），不受类型筛选影响
+        // 积分排行独立视图：固定使用全量数据（积分制仅统计部落战），不受类型筛选影响
         (topMembers as MutableStateFlow).value =
             StatsCalculator.computeTopMembers(currentEvents, currentMembers, currentRoster, currentRosterRoles)
 
