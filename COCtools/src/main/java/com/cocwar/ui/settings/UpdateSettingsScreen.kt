@@ -46,7 +46,6 @@ import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.components.UpdateDialog
-import com.cocwar.ui.theme.cocColors
 import kotlinx.coroutines.launch
 
 /**
@@ -54,8 +53,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdateSettingsScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
+fun UpdateSettingsScreen(onBack: () -> Unit) {    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var includePrerelease by remember {
@@ -69,7 +67,7 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("设置-更新", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("更新", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")

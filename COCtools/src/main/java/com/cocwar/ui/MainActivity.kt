@@ -14,12 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Leaderboard
-import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Leaderboard
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -50,7 +50,13 @@ import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
 import com.cocwar.ui.importflow.ImportScreen
 import com.cocwar.ui.members.MemberManageScreen
+import com.cocwar.ui.members.MemberSearchScreen
 import com.cocwar.ui.season.LeagueSeasonScreen
+import com.cocwar.ui.settings.AboutScreen
+import com.cocwar.ui.settings.AppearanceScreen
+import com.cocwar.ui.settings.CaptureScreen
+import com.cocwar.ui.settings.DataScreen
+import com.cocwar.ui.settings.GeneralScreen
 import com.cocwar.ui.settings.SettingsScreen
 import com.cocwar.ui.settings.UpdateSettingsScreen
 import com.cocwar.ui.stats.StatsScreen
@@ -59,7 +65,6 @@ import com.cocwar.ui.theme.CocWarTheme
 import com.cocwar.ui.theme.ThemePrefs
 import com.cocwar.ui.theme.ThemeStyle
 import com.cocwar.ui.theme.cocColors
-import com.cocwar.ui.tools.ToolsScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,10 +117,10 @@ private val BottomNavItems = listOf(
     BottomNavItem("event_list", "战报", Icons.AutoMirrored.Filled.LibraryBooks, Icons.AutoMirrored.Outlined.LibraryBooks),
     BottomNavItem("stats", "统计", Icons.Filled.Leaderboard, Icons.Outlined.Leaderboard),
     BottomNavItem("member_manage", "成员", Icons.Filled.Groups, Icons.Outlined.Groups),
-    BottomNavItem("tools", "工具", Icons.Filled.Build, Icons.Outlined.Build),
+    BottomNavItem("settings", "设置", Icons.Filled.Settings, Icons.Outlined.Settings),
 )
 
-private val TopLevelRoutes = setOf("event_list", "stats", "member_manage", "tools")
+private val TopLevelRoutes = setOf("event_list", "stats", "member_manage", "settings")
 
 @Composable
 private fun CocWarNavHost(
@@ -215,24 +220,50 @@ private fun CocWarNavHost(
                 )
             }
             composable("member_manage") {
-                MemberManageScreen(onBack = { nav.popBackStack() })
+                MemberManageScreen(
+                    onBack = { nav.popBackStack() },
+                    onSearch = { nav.navigate("member_search") },
+                )
+            }
+            composable("member_search") {
+                MemberSearchScreen(onBack = { nav.popBackStack() })
             }
             composable("sync") {
                 SyncScreen(onBack = { nav.popBackStack() })
             }
-            composable("tools") {
-                ToolsScreen(
-                    onSync = { nav.navigate("sync") },
-                    onOpenSettings = { nav.navigate("settings") },
+            composable("settings") {
+                SettingsScreen(
+                    onOpenAppearance = { nav.navigate("settings/appearance") },
+                    onOpenData = { nav.navigate("settings/data") },
+                    onOpenCapture = { nav.navigate("settings/capture") },
+                    onOpenGeneral = { nav.navigate("settings/general") },
+                    onOpenAbout = { nav.navigate("settings/about") },
+                )
+            }
+            composable("settings/appearance") {
+                AppearanceScreen(
+                    onBack = { nav.popBackStack() },
                     themeStyle = themeStyle,
                     onThemeChange = onThemeChange,
                 )
             }
-            composable("settings") {
-                SettingsScreen(
+            composable("settings/data") {
+                DataScreen(
                     onBack = { nav.popBackStack() },
-                    onOpenUpdate = { nav.navigate("update_settings") }
+                    onOpenSync = { nav.navigate("sync") },
                 )
+            }
+            composable("settings/capture") {
+                CaptureScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/general") {
+                GeneralScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenUpdate = { nav.navigate("update_settings") },
+                )
+            }
+            composable("settings/about") {
+                AboutScreen(onBack = { nav.popBackStack() })
             }
             composable("update_settings") {
                 UpdateSettingsScreen(onBack = { nav.popBackStack() })

@@ -7,8 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
 
     <!-- Android 11+ 包可见性：声明要查询的部落冲突包名与可启动应用扫描，
          否则 getLaunchIntentForPackage 返回 null，悬浮球无法自动打开游戏 -->
@@ -37,6 +35,7 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.CocWar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

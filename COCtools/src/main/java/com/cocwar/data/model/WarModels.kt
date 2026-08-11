@@ -41,14 +41,6 @@ data class Attack(
 /** 是否已发起进攻：摧毁率 > 0 视为已使用（原 status 字段语义由摧毁率是否为 0 推导）。 */
 fun Attack.isUsed(): Boolean = destructionPercentage > 0
 
-data class Member(
-    val rank: Int,
-    val playerName: String,
-    val role: String,
-    val totalStars: Int,
-    val attacks: List<Attack>
-)
-
 /** event_type values */
 const val EVENT_TYPE_WAR = "war"
 const val EVENT_TYPE_LEAGUE = "league"

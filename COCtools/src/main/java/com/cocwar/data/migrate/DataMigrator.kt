@@ -2,6 +2,7 @@ package com.cocwar.data.migrate
 
 import com.cocwar.data.db.WarDao
 import com.cocwar.data.db.WarEventEntity
+import com.cocwar.data.repository.EventNamingRules
 import com.cocwar.data.repository.WarRepository
 import java.io.File
 import java.text.SimpleDateFormat
@@ -49,41 +50,6 @@ class DataMigrator(
     private val repo: WarRepository
 ) {
 
-    /**
-     * 判断联赛名称是否属于「合法 SAABBCC 但 CC 不符合新 C1C2 合法集」的旧编码。
-     * 非标准名（如示例数据的「示例·15人联赛（第3轮）」）返回 false，不参与迁移。
-     */
-    fun needsMigration(name: String): Boolean {
-        if (name.length < 7 || name[0] != '1') return false
-        if (!name.substring(1, 7).all { it.isDigit() }) return false
-        val month = name.substring(3, 5).toIntOrNull() ?: return false
-        if (month !in 1..12) return false
-        val cc = name.substring(5, 7).toIntOrNull() ?: return false
-        return !(cc in 1..7 || cc in 11..17)
-    }
-
-    /**
-     * 纯函数：把同一（年,月）组内的事件按 createdAt 升序重编码。
-     * 前 7 个 → 月初场（CC=01..07，round=序号）；第 8~14 个 → 月中场（CC=11..17）；
-     * 溢出（>14）→ CC=99、round=0。名称前缀（S+AA+BB）原样保留。
-     */
-    fun remapMonth(events: List<WarEventEntity>): List<MigrationItem> {
-        return events.sortedBy { it.createdAt }.mapIndexed { index, ev ->
-            val cc = when {
-                index < 7 -> index + 1            // 01..07 月初场第 1~7 轮
-                index < 14 -> 10 + (index - 6)    // 11..17 月中场第 1~7 轮（index=7→11，index=13→17）
-                else -> 99                        // 溢出：显式无效
-            }
-            val newName = ev.eventName.substring(0, 5) + "%02d".format(cc)
-            MigrationItem(
-                eventId = ev.eventId,
-                oldName = ev.eventName,
-                newName = newName,
-                newRound = if (cc <= 17) cc % 10 else 0
-            )
-        }
-    }
-
     /** 扫描全库，生成迁移计划（不写任何数据）。 */
     suspend fun scan(): MigrationPlan {
         val leagues = dao.getAllEvents().filter { it.eventType == "league" }
@@ -124,5 +90,40 @@ class DataMigrator(
             skipped = skipped,
             overflow = plan.overflowCount
         )
+    }
+
+    companion object {
+        /**
+         * 判断联赛名称是否属于「合法 SAABBCC 但 CC 不符合新 C1C2 合法集」的旧编码。
+         * 非标准名（如示例数据的「示例·15人联赛（第3轮）」）返回 false，不参与迁移。
+         */
+        fun needsMigration(name: String): Boolean {
+            // 复用统一命名规则校验：非合法联赛名（S='1'、数字段、月份合法）不参与迁移
+            if (!EventNamingRules.isValidSeqName(name, '1')) return false
+            val cc = name.substring(5, 7).toIntOrNull() ?: return false
+            return !(cc in 1..7 || cc in 11..17)
+        }
+
+        /**
+         * 纯函数：把同一（年,月）组内的事件按 createdAt 升序重编码。
+         * 前 7 个 → 月初场（CC=01..07，round=序号）；第 8~14 个 → 月中场（CC=11..17）；
+         * 溢出（>14）→ CC=99、round=0。名称前缀（S+AA+BB）原样保留。
+         */
+        fun remapMonth(events: List<WarEventEntity>): List<MigrationItem> {
+            return events.sortedBy { it.createdAt }.mapIndexed { index, ev ->
+                val cc = when {
+                    index < 7 -> index + 1            // 01..07 月初场第 1~7 轮
+                    index < 14 -> 10 + (index - 6)    // 11..17 月中场第 1~7 轮（index=7→11，index=13→17）
+                    else -> 99                        // 溢出：显式无效
+                }
+                val newName = ev.eventName.substring(0, 5) + "%02d".format(cc)
+                MigrationItem(
+                    eventId = ev.eventId,
+                    oldName = ev.eventName,
+                    newName = newName,
+                    newRound = if (cc <= 17) cc % 10 else 0
+                )
+            }
+        }
     }
 }

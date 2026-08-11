@@ -3,6 +3,7 @@ package com.cocwar.ui.util
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
+import com.cocwar.data.repository.EventNamingRules
 
 fun eventTypeLabel(type: String): String = when (type) {
     EVENT_TYPE_WAR -> "部落战"
@@ -30,16 +31,15 @@ fun formatPercent(value: Int): String = "$value%"
  * 校验是否为合法的 SAABBCC 名称，并返回 (year, month)。
  * 要求：S ∈ {'0','1'}，AA/BB/CC 均为两位数字，BB(月) ∈ 1..12。
  * 非标准名称（如"示例·30人部落战"、"1212战报01"）返回 null，避免误判。
+ * 底层校验复用 [com.cocwar.data.repository.EventNamingRules.isValidSeqName]，口径与命名规则一致。
  */
 private fun parseNameParts(name: String): Pair<Int, Int>? {
-    if (name.length < 7) return null
+    if (name.isEmpty()) return null
     val s = name[0]
     if (s != '0' && s != '1') return null
-    val digits = name.substring(1, 7)
-    if (!digits.all { it.isDigit() }) return null
-    val year = digits.substring(0, 2).toIntOrNull() ?: return null
-    val month = digits.substring(2, 4).toIntOrNull() ?: return null
-    if (month !in 1..12) return null
+    if (!EventNamingRules.isValidSeqName(name, s)) return null
+    val year = name.substring(1, 3).toIntOrNull() ?: return null
+    val month = name.substring(3, 5).toIntOrNull() ?: return null
     return year to month
 }
 
@@ -136,13 +136,7 @@ fun parseMonthFromName(name: String): Int? = parseNameParts(name)?.second
 
 /**
  * 从名称解析轮次。联赛名称 SAABBCC 中 CC = C1C2，C2 即轮次（1..7）。
- * 部落战返回 0（无轮次概念）。
+ * 部落战返回 0（无轮次概念）。口径复用 [com.cocwar.data.repository.EventNamingRules.parseTypeAndRound]。
  */
-fun parseEventRoundFromName(name: String): Int {
-    val parts = parseNameParts(name) ?: return 0
-    val s = name[0]
-    if (s != '1') return 0  // 非联赛，无轮次
-    val cc = name.substring(5, 7).toIntOrNull() ?: return 0
-    // CC = C1C2：C2 即轮次；仅合法值 01..07 / 11..17 可解析
-    return if (cc in 1..7 || cc in 11..17) cc % 10 else 0
-}
+fun parseEventRoundFromName(name: String): Int =
+    EventNamingRules.parseTypeAndRound(name, EVENT_TYPE_WAR, 0).second

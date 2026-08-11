@@ -1,6 +1,5 @@
-package com.cocwar.ui.tools
+package com.cocwar.ui.settings
 
-import android.content.ContentValues
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -35,16 +34,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 data class ScreenshotItem(
@@ -114,11 +117,14 @@ fun ScreenshotGalleryDialog(onDismiss: () -> Unit) {
 
 @Composable
 private fun ScreenshotThumb(item: ScreenshotItem, onDelete: () -> Unit) {
-    val bitmap = remember(item.path) {
-        runCatching {
-            val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-            BitmapFactory.decodeFile(item.path, opts)
-        }.getOrNull()
+    // 异步解码：避免 LazyVerticalGrid 滚动时在 Compose 主线程做磁盘 IO + 位图解码
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, item.path) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                BitmapFactory.decodeFile(item.path, opts)?.asImageBitmap()
+            }.getOrNull()
+        }
     }
 
     Box(
@@ -128,9 +134,10 @@ private fun ScreenshotThumb(item: ScreenshotItem, onDelete: () -> Unit) {
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        if (bitmap != null) {
+        val bmp = bitmap
+        if (bmp != null) {
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = bmp,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

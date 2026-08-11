@@ -519,46 +519,86 @@ fun EmptyState(
 
 // ─── 设置/入口行 ────────────────────────────────────────────
 
-/** 设置列表行：图标 + 标题 + 副标题，右侧箭头，整行可点击（工具页/设置页共用）。 */
+/** 设置行图标块规格:柔和底色圆角块 + 等大图标 + 文本起始缩进 */
+object SettingsIconSpec {
+    val box = 36.dp
+    val icon = 19.dp
+    /** 发丝分隔线的文本对齐缩进:16(左距) + 36(图标块) + 13(间距) */
+    val startIndent = 65.dp
+}
+
+/**
+ * 现代设置行:柔和底色圆角图标块(彩色) + 标题 + 副标题 + 右侧控件/箭头。
+ * 整行可点击;trailing 缺省为右箭头(目录入口);showDivider 控制底部发丝线。
+ */
 @Composable
-fun ToolsRow(
+fun SettingsRow(
     icon: ImageVector,
+    iconColor: Color,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
+    showDivider: Boolean = true,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(13.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(1.dp))
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                // 长描述最多两行，超出省略：避免窄屏/大字号下异常换行把行高撑得过高
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(SettingsIconSpec.box)
+                    .clip(CocShape.panel)
+                    .background(iconColor.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, Modifier.size(SettingsIconSpec.icon), tint = iconColor)
+            }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(1.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // 长描述最多两行,超出省略:避免窄屏/大字号下异常换行把行高撑得过高
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            if (trailing != null) {
+                trailing()
+            } else {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        if (showDivider) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = SettingsIconSpec.startIndent)
+                    .height(1.dp)
+                    .background(MaterialTheme.cocColors.hairline)
             )
         }
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(18.dp)
-        )
     }
 }
+

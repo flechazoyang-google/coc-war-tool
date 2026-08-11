@@ -116,17 +116,30 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
-            runCatching { context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() } ?: "" }
-                .onSuccess { jsonText = it; doParse(it) }
-                .onFailure { errorMsg = "读取文件失败：${it.message}" }
+            // 文件读取移到 IO 线程，避免主线程磁盘 IO 卡顿
+            scope.launch {
+                runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() } ?: ""
+                    }
+                }
+                    .onSuccess { jsonText = it; doParse(it) }
+                    .onFailure { errorMsg = "读取文件失败：${it.message}" }
+            }
         }
     }
 
     val csvPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
-            runCatching { context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() } ?: "" }
-                .onSuccess { csvText = it; doParseCsv(it) }
-                .onFailure { errorMsg = "读取文件失败：${it.message}" }
+            scope.launch {
+                runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() } ?: ""
+                    }
+                }
+                    .onSuccess { csvText = it; doParseCsv(it) }
+                    .onFailure { errorMsg = "读取文件失败：${it.message}" }
+            }
         }
     }
 

@@ -67,28 +67,25 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MemberManageScreen(onBack: () -> Unit) {
+fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
     val viewModel: MemberManageViewModel = warViewModel { MemberManageViewModel(it) }
     val roster by viewModel.roster.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
-    // 搜索与排序：名字模糊搜索 + 序号/角色排序
-    var searchQuery by remember { mutableStateOf("") }
+    // 排序：序号/角色
     var sortMode by remember { mutableStateOf(MemberSort.SEQ) }
     // 长按菜单选择「删除」后待确认的成员名
     var pendingDeleteName by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 搜索过滤 + 排序后的展示列表（序号排序 = 花名册默认顺序，按名字字母序；角色排序按职位等级）
-    val displayList = remember(roster, searchQuery, sortMode) {
-        val query = searchQuery.trim()
-        val filtered = if (query.isEmpty()) roster else roster.filter { it.name.contains(query, ignoreCase = true) }
+    // 排序后的展示列表（序号排序 = 花名册默认顺序，按名字字母序；角色排序按职位等级）
+    val displayList = remember(roster, sortMode) {
         when (sortMode) {
-            MemberSort.SEQ -> filtered.sortedBy { it.name }
-            MemberSort.ROLE -> filtered
+            MemberSort.SEQ -> roster.sortedBy { it.name }
+            MemberSort.ROLE -> roster
                 .withIndex()
                 .sortedWith(compareBy({ roleRank(it.value.role) }, { it.index }))
                 .map { it.value }
@@ -122,6 +119,11 @@ fun MemberManageScreen(onBack: () -> Unit) {
                 overline = "花名册",
                 subtitle = if (roster.isEmpty()) "尚无成员" else "共 ${roster.size} 人",
                 actions = {
+                    CocIconButton(
+                        icon = Icons.Filled.Search,
+                        contentDescription = "搜索成员",
+                        onClick = onSearch
+                    )
                     CocIconButton(
                         icon = if (showImport) Icons.Filled.Close else Icons.Filled.Add,
                         contentDescription = "批量导入",
@@ -189,27 +191,7 @@ fun MemberManageScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(14.dp))
             }
 
-            // 搜索框 + 排序：名字模糊搜索，序号/角色排序
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("搜索成员名字") },
-                leadingIcon = {
-                    Icon(Icons.Filled.Search, null, Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                singleLine = true,
-                shape = CocShape.field,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedBorderColor = MaterialTheme.cocColors.hairline,
-                    cursorColor = MaterialTheme.cocColors.accent
-                )
-            )
-            Spacer(Modifier.height(10.dp))
+            // 排序：序号/角色
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -239,15 +221,6 @@ fun MemberManageScreen(onBack: () -> Unit) {
                         EmptyState(
                             title = "名单为空",
                             body = "点击右上角 + 批量导入成员\n导入战报时也会自动收录新成员"
-                        )
-                    }
-                } else if (displayList.isEmpty()) {
-                    // 搜索无匹配：带图标的空状态引导
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        EmptyState(
-                            icon = Icons.Filled.Search,
-                            title = "没有匹配的成员",
-                            body = "换个名字试试"
                         )
                     }
                 } else {
@@ -333,7 +306,7 @@ private fun roleRank(role: String): Int = when (role.lowercase().replace("-", ""
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberRow(
+internal fun MemberRow(
     entry: com.cocwar.data.db.MemberRosterEntity,
     index: Int,
     onRoleClick: () -> Unit,
@@ -424,7 +397,7 @@ private fun MemberRow(
 
 /** 职位选择对话框：单选首领/副首领/长老/成员。 */
 @Composable
-private fun RoleSelectDialog(
+internal fun RoleSelectDialog(
     currentRole: String,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit

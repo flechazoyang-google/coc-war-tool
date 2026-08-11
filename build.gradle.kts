@@ -1,6 +1,7 @@
+// 根构建脚本：仅声明插件版本（apply false），模块按需 alias 引用（版本见 gradle/libs.versions.toml）
 plugins {
-    id("com.android.application") version "8.7.0" apply false
-    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
-    id("com.google.devtools.ksp") version "2.0.21-1.0.28" apply false
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+    alias(libs.plugins.ksp) apply false
 }

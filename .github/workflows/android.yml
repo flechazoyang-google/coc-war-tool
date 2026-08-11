@@ -1,0 +1,58 @@
+# Android CI：lint + 单元测试 + Debug APK 构建门禁
+# 说明：仓库现托管于 Gitee，若启用 Gitee Go，可将本文件步骤迁移至 .workflow/ 下的
+# Gitee Go 配置（语法不同，但步骤与命令一致）。
+name: Android CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # lint 门禁：abortOnError=true（见 COCtools/build.gradle.kts）
+      - name: Lint
+        run: ./gradlew :COCtools:lintDebug --no-daemon
+
+      - name: Unit tests
+        run: ./gradlew :COCtools:testDebugUnitTest --no-daemon
+
+      - name: Assemble debug APK
+        run: ./gradlew :COCtools:assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: COCtools/build/outputs/apk/debug/COCtools-debug.apk

@@ -66,9 +66,14 @@ class SyncViewModel(
         val s = _state.value
         config.serverUrl = s.serverUrl.trimEnd('/')
         config.username = s.username.trim()
-        config.password = s.password
+        if (config.isSecureStorageAvailable) {
+            config.password = s.password
+            setStatus("配置已保存")
+        } else {
+            // 系统安全存储不可用：密码拒绝落盘（避免明文），其余配置正常保存
+            setStatus("⚠ 系统安全存储不可用，密码未保存")
+        }
         loadConfig()
-        setStatus("配置已保存")
     }
 
     /** 测试 WebDAV 连接 */

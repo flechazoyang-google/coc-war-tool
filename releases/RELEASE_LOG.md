@@ -1,5 +1,24 @@
 # COC War Tool 发行版日志
 
+## v4.5 (2026-08-11)
+
+正式版：设置页重构 + 花名册搜索 + 工程化与安全加固（自 v4.5-preview 起）
+
+- **设置页重构**：底部导航「工具」替换为「设置」；原工具页与二级设置页内容重组为目录式多级导航（外观 / 数据管理 / 截图工具 / 通用 / 关于 5 个子页），采用彩色图标分组卡片设计；云端同步、更新设置等子页保留
+- **花名册搜索**：常驻搜索框改为右上角搜索按钮，点击进入独立全屏模糊搜索页（输入框自动聚焦、子串包含过滤、结果支持改职位/删除）
+- **工程化**：引入 Gradle wrapper（8.11.1）与 version catalog（gradle/libs.versions.toml）；新增 .editorconfig 与 lint 门禁（abortOnError）；搭建 CI 工作流（lint + 测试 + assemble）
+- **依赖升级**：targetSdk 34→35（满足 Play 政策）、AGP 8.9.2、Kotlin 2.1.21、Compose BOM 2025.06.01、Room 2.7.2、core-ktx 1.16.0
+- **安全加固**：WebDAV 密码在加密存储不可用时拒绝落盘（修复原静默降级为明文的隐患）；密码存储由已停维护的 security-crypto 替换为自实现 AndroidKeyStore + AES/GCM（SecurePrefs），旧明文自动迁移
+- **性能**：截图缩略图位图解码与导入文件读取移入 IO 协程（消除主线程磁盘 IO）
+- **重构**：StatsScreen（1384 行）按视图拆分为 5 个文件；WarRepository 拆分为 BackupCodec / EventNamingRules；SAABBCC 命名规则在 DataMigrator / Labels 中收敛统一
+- **单元测试**：67 → 131 个用例全绿（新增数据迁移、WebDAV 协议、命名规则、备份往返、赛季统计、版本比较等覆盖）
+
+- **APK**: 见 Gitee Release 附件（`COCtools-v4.5.apk`，不入库）
+- **Version Code**: 25
+- **Gitee Release**: [v4.5](https://gitee.com/yang-genhao/coc-war-tool/releases/tag/v4.5)
+
+---
+
 ## v4.5-preview (2026-08-10)
 
 预览版：筛选状态跨进程持久化 + 战报/统计/成员/工具 UI/UX 优化

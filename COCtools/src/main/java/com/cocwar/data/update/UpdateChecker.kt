@@ -249,7 +249,7 @@ object UpdateChecker {
             .build()
 
     /** 版本号比较：按 "." 分割后逐段比较。返回 >0 表示 v1 > v2。 */
-    private fun compareVersion(v1: String, v2: String): Int {
+    internal fun compareVersion(v1: String, v2: String): Int {
         val (nums1, pre1) = parseVersion(v1)
         val (nums2, pre2) = parseVersion(v2)
         val maxLen = maxOf(nums1.size, nums2.size)

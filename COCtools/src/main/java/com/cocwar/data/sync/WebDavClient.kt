@@ -14,7 +14,11 @@ import java.util.Base64
 class WebDavClient(
     baseUrl: String,
     private val username: String,
-    private val password: String
+    private val password: String,
+    /** 连接工厂：默认用 URL.openConnection()；测试可注入 fake 以做协议级验证。 */
+    private val connectionFactory: (String) -> HttpURLConnection = { url ->
+        URL(url).openConnection() as HttpURLConnection
+    }
 ) {
     /** 规范化后的 baseUrl（去除尾部斜杠，避免拼接出双斜杠 URL）。 */
     private val normalizedUrl: String = baseUrl.trimEnd('/')
@@ -47,8 +51,7 @@ class WebDavClient(
             mkcol("$normalizedUrl/$BACKUP_DIR/")
             mkcol("$normalizedUrl/$ARCHIVES_DIR/")
 
-            val url = URL(path)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val conn = connectionFactory(path).apply {
                 requestMethod = "PUT"
                 setRequestProperty("Authorization", authHeader)
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -78,8 +81,7 @@ class WebDavClient(
     /** 从 WebDAV 下载备份文件。 */
     fun download(path: String = fileUrl): Result<String> {
         return runCatching {
-            val url = URL(path)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val conn = connectionFactory(path).apply {
                 requestMethod = "GET"
                 setRequestProperty("Authorization", authHeader)
                 connectTimeout = 15_000
@@ -107,8 +109,7 @@ class WebDavClient(
      */
     fun probe(): RemoteState {
         return runCatching {
-            val url = URL(fileUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val conn = connectionFactory(fileUrl).apply {
                 requestMethod = "HEAD"
                 setRequestProperty("Authorization", authHeader)
                 connectTimeout = 15_000
@@ -129,8 +130,7 @@ class WebDavClient(
     /** 删除文件（404 视为已删除，不报错）。 */
     fun delete(path: String): Result<Unit> {
         return runCatching {
-            val url = URL(path)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val conn = connectionFactory(path).apply {
                 requestMethod = "DELETE"
                 setRequestProperty("Authorization", authHeader)
                 connectTimeout = 15_000
@@ -150,8 +150,7 @@ class WebDavClient(
     /** 测试连接：用 GET 请求探测 baseUrl 是否可达且认证正确。 */
     fun testConnection(): Result<Boolean> {
         return runCatching {
-            val url = URL(normalizedUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val conn = connectionFactory(normalizedUrl).apply {
                 requestMethod = "GET"
                 setRequestProperty("Authorization", authHeader)
                 connectTimeout = 10_000
@@ -170,8 +169,7 @@ class WebDavClient(
     /** 创建目录（已存在则忽略错误）。 */
     private fun mkcol(dirUrl: String) {
         runCatching {
-            val url = URL(dirUrl)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val conn = connectionFactory(dirUrl).apply {
                 requestMethod = "MKCOL"
                 setRequestProperty("Authorization", authHeader)
                 connectTimeout = 10_000

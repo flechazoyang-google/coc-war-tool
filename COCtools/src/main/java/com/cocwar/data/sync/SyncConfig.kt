@@ -2,15 +2,12 @@ package com.cocwar.data.sync
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 
 /**
  * WebDAV 同步配置存储。
  *
- * URL / 用户名存放在普通 SharedPreferences（非敏感）；密码使用
- * EncryptedSharedPreferences（security-crypto）加密落盘，避免明文
- * 被 Android Auto Backup 上传云端。
+ * URL / 用户名存放在普通 SharedPreferences（非敏感）；密码经 [SecurePrefs]
+ * （AndroidKeyStore + AES/GCM）加密后落盘，避免明文被 Android Auto Backup 上传云端。
  */
 class SyncConfig(context: Context) {
     private val appContext = context.applicationContext
@@ -18,21 +15,13 @@ class SyncConfig(context: Context) {
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences("coc_webdav_prefs", Context.MODE_PRIVATE)
 
-    /** 密码专用加密存储；初始化失败时降级为普通存储（不崩溃，仅弱化加密）。 */
-    private val securePrefs: SharedPreferences = try {
-        val masterKey = MasterKey.Builder(appContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            appContext,
-            "coc_webdav_secure_prefs",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    } catch (e: Exception) {
-        prefs
-    }
+    /** 密码密文存储（普通 prefs，值为 [SecurePrefs] 的 AES/GCM 密文）。 */
+    private val securePrefs: SharedPreferences =
+        appContext.getSharedPreferences("coc_webdav_secure_prefs", Context.MODE_PRIVATE)
+
+    /** 加密存储是否可用（false = 密码无法安全保存，UI 应提示用户）。 */
+    val isSecureStorageAvailable: Boolean
+        get() = SecurePrefs.isKeystoreAvailable()
 
     init {
         // 一次性迁移：老版本密码明文存在普通 prefs，读到后写入加密存储并删除明文键
@@ -48,8 +37,20 @@ class SyncConfig(context: Context) {
         set(value) = prefs.edit().putString(KEY_USER, value).apply()
 
     var password: String
-        get() = securePrefs.getString(KEY_PASS, "") ?: ""
-        set(value) = securePrefs.edit().putString(KEY_PASS, value).apply()
+        get() {
+            val cipher = securePrefs.getString(KEY_PASS, null) ?: return ""
+            // 旧版 security-crypto 密文或损坏数据无法解密 → 返回空，用户重输后覆盖为新格式
+            return SecurePrefs.decrypt(cipher) ?: ""
+        }
+        set(value) {
+            if (value.isEmpty()) {
+                securePrefs.edit().remove(KEY_PASS).apply()
+                return
+            }
+            // AndroidKeyStore 不可用或加密失败时拒绝保存，避免明文写入普通 prefs
+            val encrypted = SecurePrefs.encrypt(value) ?: return
+            securePrefs.edit().putString(KEY_PASS, encrypted).apply()
+        }
 
     /** 是否已配置（URL 和用户名均非空）。 */
     val isConfigured: Boolean
@@ -89,11 +90,14 @@ class SyncConfig(context: Context) {
     }
 
     private fun migrateLegacyPassword() {
+        // AndroidKeyStore 不可用时不做迁移（迁移会把明文留在普通 prefs 中）
+        if (!SecurePrefs.isKeystoreAvailable()) return
         // 加密存储已有值则不迁移
         if (securePrefs.contains(KEY_PASS)) return
         val legacy = prefs.getString(KEY_PASS, null) ?: return
         if (legacy.isNotEmpty()) {
-            securePrefs.edit().putString(KEY_PASS, legacy).apply()
+            val encrypted = SecurePrefs.encrypt(legacy) ?: return
+            securePrefs.edit().putString(KEY_PASS, encrypted).apply()
         }
         prefs.edit().remove(KEY_PASS).apply()
     }
