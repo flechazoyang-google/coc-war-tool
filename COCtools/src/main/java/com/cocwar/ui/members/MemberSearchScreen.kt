@@ -61,6 +61,7 @@ fun MemberSearchScreen(onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var pendingDeleteName by remember { mutableStateOf<String?>(null) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
+    var detailName by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val focusRequester = remember { FocusRequester() }
@@ -164,6 +165,7 @@ fun MemberSearchScreen(onBack: () -> Unit) {
                             MemberRow(
                                 entry = entry,
                                 index = index,
+                                onClick = { detailName = entry.name },
                                 onRoleClick = { editingRoleName = entry.name },
                                 onDeleteRequest = { pendingDeleteName = entry.name }
                             )
@@ -212,6 +214,15 @@ fun MemberSearchScreen(onBack: () -> Unit) {
                 editingRoleName = null
             },
             onDismiss = { editingRoleName = null }
+        )
+    }
+
+    // 成员详情弹窗：展示距离上次参战已连续缺席的部落战场次
+    detailName?.let { name ->
+        MemberDetailDialog(
+            name = name,
+            loadAbsentCount = viewModel::getWarAbsentCount,
+            onDismiss = { detailName = null }
         )
     }
 }

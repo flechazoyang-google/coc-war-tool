@@ -66,6 +66,11 @@ class BackupCodecTest {
         override suspend fun getAllPlayerNames(): List<String> =
             membersByEvent.values.flatten().map { it.playerName }.distinct().sorted()
 
+        override suspend fun getWarEventIdsByPlayerName(name: String): List<String> =
+            membersByEvent.entries
+                .filter { (eventId, list) -> list.any { it.playerName == name } && events[eventId]?.eventType != "league" }
+                .map { it.key }
+
         override fun observeEvents(): Flow<List<WarEventEntity>> = flowOf(getAllEventsSafe())
         override fun observeEvent(id: String): Flow<WarEventEntity?> = flowOf(events[id])
         override fun observeMembers(eventId: String): Flow<List<MemberEntity>> =

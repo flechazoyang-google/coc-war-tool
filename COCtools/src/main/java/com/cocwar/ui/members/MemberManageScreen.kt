@@ -40,6 +40,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +73,8 @@ fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
+    // 点击成员行后弹窗展示「连续缺席场次」的目标成员
+    var detailName by remember { mutableStateOf<String?>(null) }
     // 长按菜单选择「删除」后待确认的成员名
     var pendingDeleteName by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -206,6 +209,7 @@ fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
                             MemberRow(
                                 entry = entry,
                                 index = index,
+                                onClick = { detailName = entry.name },
                                 onRoleClick = { editingRoleName = entry.name },
                                 onDeleteRequest = { pendingDeleteName = entry.name }
                             )
@@ -260,6 +264,15 @@ fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
             onDismiss = { editingRoleName = null }
         )
     }
+
+    // 成员详情弹窗：展示距离上次参战已连续缺席的部落战场次
+    detailName?.let { name ->
+        MemberDetailDialog(
+            name = name,
+            loadAbsentCount = viewModel::getWarAbsentCount,
+            onDismiss = { detailName = null }
+        )
+    }
 }
 
 /** 职位等级：首领 > 副首领 > 长老 > 成员 */
@@ -279,6 +292,7 @@ private fun roleRank(role: String): Int = when (role.lowercase().replace("-", ""
 internal fun MemberRow(
     entry: com.cocwar.data.db.MemberRosterEntity,
     index: Int,
+    onClick: () -> Unit,
     onRoleClick: () -> Unit,
     onDeleteRequest: () -> Unit
 ) {
@@ -287,7 +301,7 @@ internal fun MemberRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .combinedClickable(onClick = {}, onLongClick = { menuOpen = true })
+                .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
                 .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -420,6 +434,36 @@ internal fun RoleSelectDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+/** 成员详情弹窗：展示该成员距离上次参战已连续缺席的部落战场次。 */
+@Composable
+internal fun MemberDetailDialog(
+    name: String,
+    loadAbsentCount: suspend (String) -> Int,
+    onDismiss: () -> Unit
+) {
+    var absentCount by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(name) {
+        absentCount = loadAbsentCount(name)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(name) },
+        text = {
+            val count = absentCount
+            when {
+                count == null -> Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                count == 0 -> Text("最近一场部落战已参加")
+                else -> Text("已连续 $count 场部落战未参加")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
         }
     )
 }

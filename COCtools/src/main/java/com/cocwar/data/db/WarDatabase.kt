@@ -137,6 +137,10 @@ interface WarDao {
 
     @Query("SELECT DISTINCT playerName FROM members ORDER BY playerName")
     suspend fun getAllPlayerNames(): List<String>
+
+    /** 某成员参与过的部落战 eventId（用于计算连续缺席场次；联赛不参与）。 */
+    @Query("SELECT m.eventId FROM members m INNER JOIN war_events e ON m.eventId = e.eventId WHERE m.playerName = :name AND e.eventType != 'league'")
+    suspend fun getWarEventIdsByPlayerName(name: String): List<String>
 }
 
 @Dao

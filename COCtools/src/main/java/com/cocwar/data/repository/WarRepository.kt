@@ -69,6 +69,18 @@ class WarRepository(
     /** 一次性获取所有事件（用于统计页月份选择等）。 */
     suspend fun getAllEventsSync(): List<WarEventEntity> = dao.getAllEvents()
 
+    /**
+     * 计算某成员距离上次参战（出现在部落战名单，无论是否进攻）已连续缺席的部落战场次。
+     * 「参加了但没进攻」仍算参战；从未参战返回全部部落战场次；无部落战数据返回 0。
+     */
+    suspend fun getWarAbsentCount(name: String): Int {
+        val warEvents = dao.getAllEvents().filter { it.eventType != "league" }.sortedBy { it.createdAt }
+        if (warEvents.isEmpty()) return 0
+        val participated = dao.getWarEventIdsByPlayerName(name).toSet()
+        val lastIndex = warEvents.indexOfLast { it.eventId in participated }
+        return warEvents.size - 1 - lastIndex
+    }
+
     // === 正式成员名单 (roster) ===
 
     /** 获取名单流（供 UI 订阅）。 */

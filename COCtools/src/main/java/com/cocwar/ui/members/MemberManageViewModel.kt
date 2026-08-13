@@ -50,4 +50,7 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
     fun updateRole(name: String, role: String) {
         viewModelScope.launch { repo.updateRosterRole(name, role) }
     }
+
+    /** 查询某成员距离上次参战（出现在部落战名单）已连续缺席的部落战场次。 */
+    suspend fun getWarAbsentCount(name: String): Int = repo.getWarAbsentCount(name)
 }
