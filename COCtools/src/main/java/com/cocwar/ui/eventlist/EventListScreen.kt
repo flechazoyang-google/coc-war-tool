@@ -244,7 +244,9 @@ fun EventListScreen(
             ) {
                 FilterDropdown(
                     label = if (typeFilter == "1") "联赛" else "部落战",
-                    isActive = typeFilter != "0",
+                    // 类型筛选永远有选中值（部落战/联赛二选一），始终处于「已激活」态，
+                    // 避免把默认的「部落战」误显示成未选中（白底）
+                    isActive = true,
                     expanded = typeExpanded,
                     onToggle = { typeExpanded = true },
                     onDismiss = { typeExpanded = false }
@@ -415,11 +417,11 @@ private fun FilterDropdown(
         Surface(
             onClick = onToggle,
             shape = com.cocwar.ui.components.CocShape.chip,
-            color = if (isActive) MaterialTheme.colorScheme.primary
+            color = if (isActive) MaterialTheme.colorScheme.secondary
             else MaterialTheme.colorScheme.surface,
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
-                if (isActive) MaterialTheme.colorScheme.primary
+                if (isActive) MaterialTheme.colorScheme.secondary
                 else MaterialTheme.cocColors.hairline
             ),
             shadowElevation = 0.dp,
@@ -433,7 +435,7 @@ private fun FilterDropdown(
                     label,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isActive) MaterialTheme.colorScheme.onPrimary
+                    color = if (isActive) MaterialTheme.colorScheme.onSecondary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1
                 )
@@ -441,7 +443,7 @@ private fun FilterDropdown(
                 Icon(
                     Icons.Filled.KeyboardArrowDown,
                     contentDescription = null,
-                    tint = if (isActive) MaterialTheme.colorScheme.onPrimary
+                    tint = if (isActive) MaterialTheme.colorScheme.onSecondary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(15.dp)
                 )
@@ -520,7 +522,7 @@ private fun EventRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
-                .padding(start = 20.dp, end = 8.dp, top = 15.dp, bottom = 15.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 15.dp, bottom = 15.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {

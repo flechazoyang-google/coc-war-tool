@@ -63,7 +63,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
             SectionTitle("版本")
             CocCard(Modifier.fillMaxWidth()) {
-                Column {
+                Column(Modifier.padding(horizontal = 16.dp)) {
                     InfoRow(
                         label = "当前版本",
                         value = BuildConfig.VERSION_NAME,

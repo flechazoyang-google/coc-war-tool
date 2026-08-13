@@ -145,7 +145,7 @@ private fun SeasonContent(stats: LeagueSeasonStats, matchLabel: String) {
         Spacer(Modifier.height(4.dp))
 
         // 每轮摘要
-        SectionTitle("轮次总览")
+        SectionTitle("轮次总览", Modifier.padding(horizontal = 20.dp))
         CocCard(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                 stats.rounds.forEachIndexed { index, round ->
@@ -164,7 +164,7 @@ private fun SeasonContent(stats: LeagueSeasonStats, matchLabel: String) {
         Spacer(Modifier.height(20.dp))
 
         // 成员出战轮换
-        SectionTitle("出战轮换")
+        SectionTitle("出战轮换", Modifier.padding(horizontal = 20.dp))
         CocCard(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {

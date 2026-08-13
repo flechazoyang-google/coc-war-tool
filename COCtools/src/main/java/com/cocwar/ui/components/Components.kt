@@ -356,7 +356,7 @@ fun InitialAvatar(
 // ─── 分段选择器 ────────────────────────────────────────────
 
 /**
- * 编辑风分段 Tab：软底容器 + 墨色选中块（浅色）/纸色块（深色）。
+ * 编辑风分段 Tab：软底容器 + 主题强调色选中块。
  * 替代 M3 TabRow，去掉下划线指示器。
  */
 @Composable
@@ -381,7 +381,7 @@ fun SegmentedTabs(
                     .weight(1f)
                     .clip(CocShape.chip)
                     .background(
-                        if (selected) MaterialTheme.colorScheme.primary
+                        if (selected) MaterialTheme.colorScheme.secondary
                         else Color.Transparent
                     )
                     .clickable { onSelect(index) }
@@ -392,7 +392,7 @@ fun SegmentedTabs(
                     label,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selected) MaterialTheme.colorScheme.onPrimary
+                    color = if (selected) MaterialTheme.colorScheme.onSecondary
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -400,7 +400,7 @@ fun SegmentedTabs(
     }
 }
 
-/** 筛选小胶囊：选中=墨块纸字，未选=细线边框 */
+/** 筛选小胶囊：选中=主题强调色块，未选=细线边框 */
 @Composable
 fun FilterPill(
     label: String,
@@ -408,8 +408,8 @@ fun FilterPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
-    val fg = if (selected) MaterialTheme.colorScheme.onPrimary
+    val bg = if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent
+    val fg = if (selected) MaterialTheme.colorScheme.onSecondary
     else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         modifier = modifier,

@@ -1,8 +1,10 @@
 package com.cocwar.ui.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -33,14 +37,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.theme.ThemeStyle
 import com.cocwar.ui.theme.cocColors
 
 /**
- * 设置-外观页：主题风格选择（原工具页「外观」区块迁移）。
+ * 设置-外观页：主题风格选择。
+ * 每个主题以卡片展示：双色徽章 + 名称 + 风格描述，选中态用软底 + 强调边框 + 勾选强化反馈。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,20 +80,13 @@ fun AppearanceScreen(
         ) {
             Spacer(Modifier.height(4.dp))
             SectionTitle("主题风格")
-            CocCard(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 8.dp)
-                ) {
-                    ThemeStyle.entries.forEach { style ->
-                        ThemeChip(
-                            modifier = Modifier.weight(1f),
-                            style = style,
-                            selected = style == themeStyle,
-                            onClick = { onThemeChange(style) }
-                        )
-                    }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ThemeStyle.entries.forEach { style ->
+                    ThemeCard(
+                        style = style,
+                        selected = style == themeStyle,
+                        onClick = { onThemeChange(style) }
+                    )
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -104,58 +101,76 @@ fun AppearanceScreen(
     }
 }
 
-/** 主题选择 chip：双色徽章 + 名称，横向紧凑排列；选中项徽章描边 + 右上角勾选标记 + 名称高亮 */
+/** 主题卡片：双色徽章预览 + 名称 + 风格描述；选中态软底 + 强调边框 + 右上勾选。 */
 @Composable
-private fun ThemeChip(
-    modifier: Modifier = Modifier,
+private fun ThemeCard(
     style: ThemeStyle,
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    Column(
-        modifier
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    val shape = CocShape.card
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .clickable(onClick = onClick),
+        shape = shape,
+        color = if (selected) MaterialTheme.cocColors.accentSoft
+        else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.cocColors.accent.copy(alpha = 0.5f)
+            else MaterialTheme.cocColors.hairline
+        ),
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp
     ) {
-        Box(
+        Row(
             Modifier
-                .size(34.dp)
-                .then(
-                    if (selected) Modifier.border(2.dp, MaterialTheme.cocColors.accent, CocShape.panel)
-                    else Modifier
-                )
-                .clip(CocShape.panel)
-                .background(style.palette(false).accent),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            // 双色徽章：浅色 accent 为底、深色 accent 圆点居中，预览该主题两套色板
             Box(
                 Modifier
-                    .size(16.dp)
-                    .clip(CircleShape)
-                    .background(style.palette(true).accent)
-                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
-            )
-            // 选中态：右上角勾选标记（白底衬 + 主色对勾），比单纯描边更醒目
+                    .size(44.dp)
+                    .clip(CocShape.panel)
+                    .background(style.palette(false).accent),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(style.palette(true).accent)
+                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    style.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (selected) MaterialTheme.cocColors.accent
+                    else MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    style.tagline,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (selected) {
                 Icon(
                     Icons.Filled.CheckCircle,
                     contentDescription = "已选中",
                     tint = MaterialTheme.cocColors.accent,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(15.dp)
-                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            style.label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            color = if (selected) MaterialTheme.cocColors.accent
-            else MaterialTheme.colorScheme.onSurface
-        )
     }
 }

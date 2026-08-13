@@ -4,7 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,7 +56,6 @@ import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.EmptyState
-import com.cocwar.ui.components.FilterPill
 import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.theme.cocColors
@@ -74,22 +72,17 @@ fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
-    // 排序：序号/角色
-    var sortMode by remember { mutableStateOf(MemberSort.SEQ) }
     // 长按菜单选择「删除」后待确认的成员名
     var pendingDeleteName by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 排序后的展示列表（序号排序 = 花名册默认顺序，按名字字母序；角色排序按职位等级）
-    val displayList = remember(roster, sortMode) {
-        when (sortMode) {
-            MemberSort.SEQ -> roster.sortedBy { it.name }
-            MemberSort.ROLE -> roster
-                .withIndex()
-                .sortedWith(compareBy({ roleRank(it.value.role) }, { it.index }))
-                .map { it.value }
-        }
+    // 展示列表：固定按职位排序（首领 > 副首领 > 长老 > 成员），同职位保持花名册顺序
+    val displayList = remember(roster) {
+        roster
+            .withIndex()
+            .sortedWith(compareBy({ roleRank(it.value.role) }, { it.index }))
+            .map { it.value }
     }
 
     // 删除成员：立即落库删除 → Snackbar 提供撤销（含角色恢复），防误触
@@ -191,23 +184,6 @@ fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
                 Spacer(Modifier.height(14.dp))
             }
 
-            // 排序：序号/角色
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MemberSort.entries.forEach { mode ->
-                    FilterPill(
-                        label = mode.label,
-                        selected = sortMode == mode,
-                        onClick = { sortMode = mode }
-                    )
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-    
             // 下拉刷新：名单由 Room Flow 自动保持最新，下拉触发手动重读并提供状态反馈
             RefreshableBox(
                 isRefreshing = refreshing,
@@ -284,12 +260,6 @@ fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
             onDismiss = { editingRoleName = null }
         )
     }
-}
-
-/** 成员排序方式：序号（花名册默认顺序，按名字字母序）/ 角色（职位等级） */
-private enum class MemberSort(val label: String) {
-    SEQ("按序号"),
-    ROLE("按角色")
 }
 
 /** 职位等级：首领 > 副首领 > 长老 > 成员 */

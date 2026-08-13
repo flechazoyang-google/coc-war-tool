@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -170,11 +169,6 @@ fun StatsScreen(
             overline = "月度复盘",
             subtitle = selectedMonth?.label ?: "选择月份",
             actions = {
-                CocIconButton(
-                    icon = Icons.Filled.Refresh,
-                    contentDescription = "刷新数据",
-                    onClick = { viewModel.refresh() },
-                )
                 CocIconButton(
                     icon = Icons.Filled.Share,
                     contentDescription = "分享月度报告",
