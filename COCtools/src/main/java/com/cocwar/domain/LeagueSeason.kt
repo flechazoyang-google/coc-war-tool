@@ -57,6 +57,9 @@ object LeagueSeasonCalculator {
         allMembers: List<MemberEntity>
     ): LeagueSeasonStats {
         val eventIds = events.map { it.eventId }.toSet()
+        // 事件时间映射：取「最近一场」的角色用 createdAt 时间戳，而非 eventId 字符串排序
+        // （eventId = "type_createdAt_nanoTime"，字符串字典序 ≠ 时间顺序，nanoTime 长度不定时易错）
+        val timeByEvent = events.associate { it.eventId to it.createdAt }
         val membersByEvent = allMembers.filter { it.eventId in eventIds }.groupBy { it.eventId }
 
         // 每轮摘要：按 eventRound 升序（缺失轮次不占位，只列实际有的轮）
@@ -78,7 +81,7 @@ object LeagueSeasonCalculator {
         // 成员出战轮换：跨轮聚合
         val byPlayer = allMembers.filter { it.eventId in eventIds }.groupBy { it.playerName }
         val members = byPlayer.map { (name, list) ->
-            val role = list.maxByOrNull { m -> m.eventId }?.role ?: "member"
+            val role = list.maxByOrNull { timeByEvent[it.eventId] ?: 0L }?.role ?: "member"
             val attackedRounds = list.count { m -> m.attacks.any { it.isUsed() } }
             val totalStars = list.sumOf { it.totalStars }
             val threeStarCount = list.flatMap { it.attacks }.count { it.isUsed() && it.destructionPercentage == 100 }

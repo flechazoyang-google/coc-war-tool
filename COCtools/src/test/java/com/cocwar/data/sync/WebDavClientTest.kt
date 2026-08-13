@@ -121,6 +121,44 @@ class WebDavClientTest {
         assertEquals(WebDavClient.RemoteState.UNKNOWN, client.probe())
     }
 
+    @Test
+    fun `probe HEAD 405 回退 GET Range 返回 EXISTS`() {
+        var calls = 0
+        val codes = intArrayOf(405, 200)  // 第 1 次 HEAD=405，第 2 次 GET=200
+        val client = WebDavClient(
+            baseUrl = "https://dav.example.com/",
+            username = "user",
+            password = "pass",
+            connectionFactory = { url ->
+                val code = codes[calls.coerceAtMost(codes.lastIndex)]
+                FakeHttp(URL(url), code, "", "").also { requests.add(it); calls++ }
+            }
+        )
+        assertEquals(WebDavClient.RemoteState.EXISTS, client.probe())
+        assertEquals(2, requests.size)
+        assertEquals("HEAD", requests[0].reqMethod)
+        assertEquals("GET", requests[1].reqMethod)
+        assertEquals("bytes=0-0", requests[1].headers["Range"])
+    }
+
+    @Test
+    fun `probe HEAD 501 回退 GET Range 返回 MISSING`() {
+        var calls = 0
+        val codes = intArrayOf(501, 404)  // 第 1 次 HEAD=501，第 2 次 GET=404
+        val client = WebDavClient(
+            baseUrl = "https://dav.example.com/",
+            username = "user",
+            password = "pass",
+            connectionFactory = { url ->
+                val code = codes[calls.coerceAtMost(codes.lastIndex)]
+                FakeHttp(URL(url), code, "", "").also { requests.add(it); calls++ }
+            }
+        )
+        assertEquals(WebDavClient.RemoteState.MISSING, client.probe())
+        assertEquals(2, requests.size)
+        assertEquals("GET", requests[1].reqMethod)
+    }
+
     // ─── delete ───
 
     @Test

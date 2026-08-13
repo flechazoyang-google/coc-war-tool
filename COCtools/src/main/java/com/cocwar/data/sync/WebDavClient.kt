@@ -104,27 +104,47 @@ class WebDavClient(
 
     /**
      * 探测主备份文件状态。仅服务器明确返回 2xx（存在）/404（不存在）时给出确定结论；
-     * 认证失败、网络错误、超时或服务器不支持 HEAD 一律返回 [RemoteState.UNKNOWN]，
+     * 服务器明确拒绝 HEAD（405 Method Not Allowed / 501 Not Implemented）时回退到
+     * GET + Range: bytes=0-0 轻量探测（只取状态码，不读取正文）；
+     * 认证失败、网络错误、超时或其它响应一律返回 [RemoteState.UNKNOWN]，
      * 由调用方保守中止，避免把「不知道」当成「不存在」而覆盖有数据的远端。
      */
     fun probe(): RemoteState {
+        // 1) 先用 HEAD 探测（成本最低）
+        val headCode = probeStatusCode("HEAD") ?: return RemoteState.UNKNOWN
+        when (headCode) {
+            in 200..299 -> return RemoteState.EXISTS
+            404 -> return RemoteState.MISSING
+            // 服务器不支持 HEAD：回退 GET Range 兜底
+            405, 501 -> Unit
+            else -> return RemoteState.UNKNOWN  // 401/403/500 等，保守中止
+        }
+
+        // 2) GET + Range 兜底（不读取正文，仅凭状态码判定）
+        val getCode = probeStatusCode("GET", range = true) ?: return RemoteState.UNKNOWN
+        return when (getCode) {
+            in 200..299 -> RemoteState.EXISTS   // 200 或 206 Partial Content 均表示存在
+            404 -> RemoteState.MISSING
+            else -> RemoteState.UNKNOWN
+        }
+    }
+
+    /** 发起一次探测请求并返回 HTTP 状态码；网络/IO 异常返回 null（视为无法确认）。 */
+    private fun probeStatusCode(method: String, range: Boolean = false): Int? {
         return runCatching {
             val conn = connectionFactory(fileUrl).apply {
-                requestMethod = "HEAD"
+                requestMethod = method
                 setRequestProperty("Authorization", authHeader)
+                if (range) setRequestProperty("Range", "bytes=0-0")
                 connectTimeout = 15_000
                 readTimeout = 15_000
             }
             try {
-                when (conn.responseCode) {
-                    in 200..299 -> RemoteState.EXISTS
-                    404 -> RemoteState.MISSING
-                    else -> RemoteState.UNKNOWN
-                }
+                conn.responseCode
             } finally {
                 conn.disconnect()
             }
-        }.getOrDefault(RemoteState.UNKNOWN)
+        }.getOrNull()
     }
 
     /** 删除文件（404 视为已删除，不报错）。 */

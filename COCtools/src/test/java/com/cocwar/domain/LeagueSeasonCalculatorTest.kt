@@ -110,6 +110,22 @@ class LeagueSeasonCalculatorTest {
     }
 
     @Test
+    fun `成员角色取最近一场-按 createdAt 而非 eventId 字符串序`() {
+        // eventId 字符串序与 createdAt 时间序故意相反：e1(createdAt=200, 最近) vs e2(createdAt=100, 较早)。
+        // 字符串字典序 "e2" > "e1"，若按 eventId 排序会错误地取到 e2 的 member 角色。
+        val events = listOf(
+            event("e2", round = 1, stars = 3, createdAt = 100L),
+            event("e1", round = 2, stars = 3, createdAt = 200L),
+        )
+        val members = listOf(
+            MemberEntity("e2#1", "e2", 1, "甲", "member", 3, listOf(Attack(1, 100))),
+            MemberEntity("e1#1", "e1", 1, "甲", "leader", 3, listOf(Attack(1, 100))),
+        )
+        val stats = LeagueSeasonCalculator.compute(2026, 7, 1, events, members)
+        assertEquals("leader", stats.members.single { it.playerName == "甲" }.role)
+    }
+
+    @Test
     fun `聚合统计-总星数与满星轮数`() {
         val events = listOf(event("e1", round = 1, stars = 9), event("e2", round = 2, stars = 6))
         val members = listOf(
