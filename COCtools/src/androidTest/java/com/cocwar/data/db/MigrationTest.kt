@@ -102,7 +102,7 @@ class MigrationTest {
         assertEquals(0, li.totalStars)
 
         // 3. v5→v6 member_roster 有 role 列，默认 member
-        roomDb.execSQL("INSERT INTO member_roster (name) VALUES ('王五')")
+        roomDb.openHelper.writableDatabase.execSQL("INSERT INTO member_roster (name) VALUES ('王五')")
         val roster = roomDb.rosterDao().getAll()
         assertEquals(listOf("王五"), roster.map { it.name })
         assertEquals("member", roster.single().role)
