@@ -189,4 +189,164 @@ class WarJsonParserTest {
         // 成员元素非对象 → 无有效成员 → 保守部落战
         assertEquals(EVENT_TYPE_WAR, WarJsonParser.inferEventType("""{"members":[42,"x"]}"""))
     }
+
+    // === 容错与边界（lenient 解析，与 docs/RULES.md §4 对齐） ===
+
+    private fun parseOrError(json: String): WarJsonParser.ParseResult =
+        WarJsonParser.parse(json, eventType = "war")
+
+    /** 空白 / 字面量 null / 类型错误 → 必须返回 Error，不得抛出或崩溃。 */
+    @Test
+    fun `blank or null json returns error`() {
+        assertTrue(parseOrError("") is WarJsonParser.ParseResult.Error)
+        assertTrue(parseOrError("   ") is WarJsonParser.ParseResult.Error)
+        assertTrue(parseOrError("null") is WarJsonParser.ParseResult.Error)
+    }
+
+    @Test
+    fun `wrong type for members returns error`() {
+        assertTrue(
+            parseOrError("""{"members":"not an array"}""") is WarJsonParser.ParseResult.Error
+        )
+    }
+
+    /** 缺 members 字段 → 空成员列表，不报错（DTO 全可空）。 */
+    @Test
+    fun `missing members defaults to empty roster`() {
+        val parsed = parse("""{}""")
+        assertTrue(parsed.data.members.isEmpty())
+    }
+
+    /** 数组中 null 元素被跳过，不导致整个导入失败。 */
+    @Test
+    fun `null members entries are skipped`() {
+        val json = """
+            {"members":[null,{"player_name":"A","total_stars":3,"attacks":[]},null]}
+        """.trimIndent()
+        val parsed = parse(json)
+        assertEquals(1, parsed.data.members.size)
+        assertEquals("A", parsed.data.members.single().playerName)
+    }
+
+    /** 缺 player_name → 「未知玩家#rank」兜底。 */
+    @Test
+    fun `missing player name falls back to unknown with rank`() {
+        val json = """
+            {"members":[{"total_stars":3,"attacks":[]},{"total_stars":0,"attacks":[]}]}
+        """.trimIndent()
+        val parsed = parse(json)
+        assertEquals("未知玩家#1", parsed.data.members[0].playerName)
+        assertEquals("未知玩家#2", parsed.data.members[1].playerName)
+    }
+
+    /** 缺 rank → 按数组顺序 index+1。 */
+    @Test
+    fun `missing rank falls back to array index plus one`() {
+        val json = """
+            {"members":[{"player_name":"A"},{"player_name":"B"}]}
+        """.trimIndent()
+        val parsed = parse(json)
+        assertEquals(1, parsed.data.members[0].rank)
+        assertEquals(2, parsed.data.members[1].rank)
+    }
+
+    /** 摧毁率越界（>100 或 <0）被 coerce 回 0..100，不产生脏数据。 */
+    @Test
+    fun `destruction percentage is coerced into 0 to 100 range`() {
+        val json = """
+            {"members":[{"player_name":"A","attacks":[
+                {"attack_order":1,"destruction_percentage":150},
+                {"attack_order":2,"destruction_percentage":-20}
+            ]}]}
+        """.trimIndent()
+        val parsed = parse(json)
+        val attacks = parsed.data.members.single().attacks
+        assertEquals(100, attacks.first { it.attackOrder == 1 }.destructionPercentage)
+        assertEquals(0, attacks.first { it.attackOrder == 2 }.destructionPercentage)
+    }
+
+    /** 负总星数被钳到 0。 */
+    @Test
+    fun `negative total stars is clamped to zero`() {
+        val json = """{"members":[{"player_name":"A","total_stars":-5,"attacks":[]}]}"""
+        val parsed = parse(json)
+        assertEquals(0, parsed.data.members.single().totalStars)
+    }
+
+    /** 重复 rank 不静默覆盖成员（主键用数组 index，保证唯一）。 */
+    @Test
+    fun `duplicate rank does not silently overwrite members`() {
+        val json = """
+            {"members":[
+                {"rank":1,"player_name":"A","total_stars":3,"attacks":[]},
+                {"rank":1,"player_name":"B","total_stars":3,"attacks":[]}
+            ]}
+        """.trimIndent()
+        val parsed = parse(json)
+        assertEquals(2, parsed.data.members.size)
+        assertEquals(setOf("A", "B"), parsed.data.members.map { it.playerName }.toSet())
+    }
+
+    /** 同名成员按出现顺序编号「原名」「原名1」「原名2」。 */
+    @Test
+    fun `duplicate player names are suffixed in order`() {
+        val json = """
+            {"members":[
+                {"player_name":"重名","total_stars":3,"attacks":[]},
+                {"player_name":"重名","total_stars":3,"attacks":[]},
+                {"player_name":"重名","total_stars":3,"attacks":[]}
+            ]}
+        """.trimIndent()
+        val parsed = parse(json)
+        assertEquals(listOf("重名", "重名1", "重名2"), parsed.data.members.map { it.playerName })
+    }
+
+    /** attacks 中 null 元素被跳过，不足槽位仍补齐。 */
+    @Test
+    fun `null attack entries are skipped and slots padded`() {
+        val json = """
+            {"members":[{"player_name":"A","total_stars":3,"attacks":[
+                null,
+                {"attack_order":1,"destruction_percentage":100},
+                null
+            ]}]}
+        """.trimIndent()
+        val parsed = parse(json)
+        val attacks = parsed.data.members.single().attacks
+        assertEquals(2, attacks.size)  // 部落战 2 槽
+        assertEquals(100, attacks.first { it.attackOrder == 1 }.destructionPercentage)
+    }
+
+    /** 事件总星数 = 所有成员 total_stars 之和。 */
+    @Test
+    fun `clan stars is the sum of member stars`() {
+        val json = """
+            {"members":[
+                {"player_name":"A","total_stars":6,"attacks":[]},
+                {"player_name":"B","total_stars":3,"attacks":[]}
+            ]}
+        """.trimIndent()
+        val parsed = parse(json)
+        assertEquals(9, parsed.data.event.clanTotalStars)
+    }
+
+    /** 联赛每人 1 槽（部落战 2 槽），空 attacks 也补齐。 */
+    @Test
+    fun `league uses one attack slot`() {
+        val json = """{"members":[{"player_name":"A","total_stars":3,"attacks":[]}]}"""
+        val parsed = WarJsonParser.parse(json, eventType = "league") as WarJsonParser.ParseResult.Success
+        assertEquals(1, parsed.data.members.single().attacks.size)
+    }
+
+    /** 职位一律以花名册为准，JSON 中的 role 被忽略。 */
+    @Test
+    fun `role comes from roster not json`() {
+        val json = """{"members":[{"player_name":"A","role":"leader","total_stars":3,"attacks":[]}]}"""
+        val parsed = WarJsonParser.parse(
+            json,
+            eventType = "war",
+            rosterRoles = mapOf("A" to "coLeader")
+        ) as WarJsonParser.ParseResult.Success
+        assertEquals("coLeader", parsed.data.members.single().role)
+    }
 }

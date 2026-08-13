@@ -3,6 +3,13 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.detekt)
+}
+
+// detekt 静态检查：baseline 吸收存量告警，新代码告警数只降不升
+detekt {
+    buildUponDefaultConfig = true
+    baseline = file("config/detekt/baseline.xml")
 }
 
 android {
@@ -15,6 +22,8 @@ android {
         targetSdk = 35
         versionCode = 25
         versionName = "4.5"
+        // DB Migration 测试（androidTest）需要 instrumentation runner
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -100,4 +109,9 @@ dependencies {
 
     // 单元测试（StatsCalculator 等纯函数逻辑）
     testImplementation(libs.junit)
+
+    // DB Migration 测试（androidTest，需设备/模拟器；见 MigrationTest.kt）
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(libs.androidx.test.runner)
 }

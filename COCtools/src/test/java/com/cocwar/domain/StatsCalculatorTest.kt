@@ -272,4 +272,105 @@ class StatsCalculatorTest {
         assertEquals(1, byName["A"]!!.missedCount)
         assertEquals(1, byName["B"]!!.missedCount)
     }
+
+    // === 空输入与未覆盖分支 ===
+
+    @Test
+    fun `空输入 - 各统计入口返回空或全零`() {
+        val overview = StatsCalculator.computeOverview(emptyList(), emptyList())
+        assertEquals(0, overview.totalEvents)
+        assertEquals(0, overview.warCount)
+        assertEquals(0, overview.leagueCount)
+        assertEquals(0f, overview.overallAttackRate, 0.001f)
+        assertTrue(overview.war == null)
+        assertTrue(overview.league == null)
+
+        assertTrue(StatsCalculator.computeMonthly(emptyList(), emptyList()).isEmpty())
+        assertTrue(StatsCalculator.computeRecentMissed(emptyList(), emptyList(), 10).isEmpty())
+        assertTrue(StatsCalculator.computeRecentMissed(emptyList(), emptyList(), -1).isEmpty())
+        assertTrue(StatsCalculator.computeTopMembers(emptyList(), emptyList()).isEmpty())
+        assertTrue(StatsCalculator.computeEventSummaries(emptyList(), emptyList()).isEmpty())
+
+        val stats = StatsCalculator.compute(event("e"), emptyList())
+        assertEquals(0, stats.totalMembers)
+        assertEquals(0, stats.totalUsedAttacks)
+        assertEquals(0, stats.threeStarCount)
+        assertEquals(0f, stats.threeStarRate, 0.001f)
+        assertEquals(0f, stats.avgDestruction, 0.001f)
+    }
+
+    // === computeEventSummaries（单场战报摘要） ===
+
+    @Test
+    fun `单场摘要 - 联赛每人1槽 部落战每人2槽`() {
+        val war = event("w", clanStars = 6)
+        val warMembers = listOf(
+            member("w", "A", rank = 1, stars = 6, attacks = listOf(used(1, 100), used(2, 100)))
+        )
+        val warSummary = StatsCalculator.computeEventSummaries(listOf(war), warMembers).single()
+        assertEquals(2, warSummary.possibleAttacks)
+        assertEquals(2, warSummary.totalUsedAttacks)
+        assertEquals(1f, warSummary.participationRate, 0.001f)
+        assertEquals(2, warSummary.threeStarCount)
+
+        val lg = event("l", type = "league", clanStars = 3)
+        val lgMembers = listOf(
+            member("l", "A", rank = 1, stars = 3, attacks = listOf(used(1, 100)))
+        )
+        val lgSummary = StatsCalculator.computeEventSummaries(listOf(lg), lgMembers).single()
+        assertEquals(1, lgSummary.possibleAttacks)
+        assertEquals(1f, lgSummary.participationRate, 0.001f)
+    }
+
+    @Test
+    fun `单场摘要 - 参与率为使用进攻除以可用槽位`() {
+        // 10 人部落战：5 人各进攻 1 次 → used=5, possible=20 → 25%
+        val ev = event("e", clanStars = 10)
+        val members = (0 until 10).map { i ->
+            member("e", "P$i", rank = i + 1, stars = if (i < 5) 2 else 0,
+                attacks = if (i < 5) listOf(used(1, 94), unused(2)) else listOf(unused(1), unused(2)))
+        }
+        val summary = StatsCalculator.computeEventSummaries(listOf(ev), members).single()
+        assertEquals(5, summary.totalUsedAttacks)
+        assertEquals(20, summary.possibleAttacks)
+        assertEquals(0.25f, summary.participationRate, 0.001f)
+    }
+
+    // === computeOverview 分类型汇总 ===
+
+    @Test
+    fun `分类型统计 - 部落战与联赛分开汇总`() {
+        val war = event("w", clanStars = 9)
+        val league = event("l", type = "league", clanStars = 3, createdAt = 1)
+        val members = listOf(
+            member("w", "A", rank = 1, stars = 6, attacks = listOf(used(1, 100), used(2, 100))),
+            member("w", "B", rank = 2, stars = 3, attacks = listOf(used(1, 100), unused(2))),
+            member("l", "C", rank = 1, stars = 3, attacks = listOf(used(1, 100)))
+        )
+        val overview = StatsCalculator.computeOverview(listOf(war, league), members)
+        assertEquals(2, overview.totalEvents)
+        assertEquals(1, overview.warCount)
+        assertEquals(1, overview.leagueCount)
+        assertEquals(9, overview.war!!.totalStars)
+        assertEquals(3, overview.league!!.totalStars)
+        assertEquals(3f, overview.league!!.avgStarsPerEvent, 0.001f)  // 场均星数 = 单场总星 3
+        assertEquals(1, overview.league!!.totalUsedAttacks)
+        assertEquals(1, overview.league!!.totalPossibleAttacks)  // 1 人联赛 × 1 槽
+        assertEquals(1f, overview.league!!.attackRate, 0.001f)
+    }
+
+    // === computeMonthly 角色取最近事件 ===
+
+    @Test
+    fun `月度统计 - 角色取最近一次参战事件`() {
+        val ev1 = event("e1", createdAt = 1)
+        val ev2 = event("e2", createdAt = 2)
+        val members = listOf(
+            member("e1", "A", rank = 1, stars = 3, attacks = listOf(used(1, 100), unused(2))),
+            member("e2", "A", rank = 1, stars = 3, attacks = listOf(used(1, 100), unused(2)))
+                .copy(role = "leader")
+        )
+        val stats = StatsCalculator.computeMonthly(listOf(ev1, ev2), members)
+        assertEquals("leader", stats.single().role)
+    }
 }
