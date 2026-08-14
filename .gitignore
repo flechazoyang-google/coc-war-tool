@@ -14,6 +14,7 @@
 
 # Gradle
 **/build/
+.gradle-home/
 .gradle-home_tmp_*/
 .gradle_bak_*/
 
