@@ -1,0 +1,574 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>ComplexCondition:CsvCodec.kt$CsvCodec$value.none { it == ',' || it == '"' || it == '\n' || it == '\r' }</ID>
+    <ID>ComplexCondition:StatsViewModel.kt$StatsViewModel$allowFallback &amp;&amp; typeFilter.value == TypeFilter.LEAGUE &amp;&amp; leagueMatch.value == LeagueMatch.MID &amp;&amp; events.isNotEmpty() &amp;&amp; events.none { parseLeagueMatchFromName(it.eventName) == 2 }</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupAttack$val attack_order: Int? = 0</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupAttack$val destruction_percentage: Int? = 0</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupEvent$val clan_total_destruction: String? = "0%"</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupEvent$val clan_total_stars: Int? = 0</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupEvent$val created_at: Long? = 0</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupEvent$val event_name: String? = null</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupEvent$val event_round: Int? = 0</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupEvent$val event_type: String? = null</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupEvent$val is_sample: Boolean? = null</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupMember$val player_name: String? = null</ID>
+    <ID>ConstructorParameterNaming:BackupCodec.kt$BackupMember$val total_stars: Int? = 0</ID>
+    <ID>CyclomaticComplexMethod:BackupCodec.kt$BackupCodec$suspend fun restoreFromBackupJson(json: String)</ID>
+    <ID>CyclomaticComplexMethod:CaptureScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun CaptureScreen(onBack: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:ClipboardImportDialog.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ClipboardImportDialog( parsed: WarJsonParser.ParsedEvent, repo: WarRepository, onSaved: (String) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:DataScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DataScreen( onBack: () -&gt; Unit, onOpenSync: () -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:EventDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun EventDetailScreen(eventId: String, onBack: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:EventListScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun EventListScreen( onOpen: (String) -&gt; Unit, onImport: () -&gt; Unit = {}, onOpenSeason: (Int, Int, Int) -&gt; Unit = { _, _, _ -&gt; }, )</ID>
+    <ID>CyclomaticComplexMethod:FloatingBallService.kt$FloatingBallService$private fun handleBallTouch(event: MotionEvent, params: WindowManager.LayoutParams)</ID>
+    <ID>CyclomaticComplexMethod:ImportForm.kt$@Composable private fun UnmatchedRow( state: MemberMatchState, index: Int, roster: List&lt;String&gt;, onNameEdit: (Int, String) -&gt; Unit, onOptionChange: (Int, MatchOption) -&gt; Unit, onRosterPick: (Int, String) -&gt; Unit, onToggleDropdown: (Int) -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:ImportScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ImportScreen(onBack: () -&gt; Unit, onSaved: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen(onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {})</ID>
+    <ID>CyclomaticComplexMethod:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RefreshIndicator( modifier: Modifier = Modifier, state: PullToRefreshState, isRefreshing: Boolean, showDone: Boolean, doneText: String )</ID>
+    <ID>CyclomaticComplexMethod:StatsCalculator.kt$StatsCalculator$fun computeTopMembers( events: List&lt;WarEventEntity&gt;, allMembers: List&lt;MemberEntity&gt;, roster: List&lt;String&gt; = emptyList(), rosterRoles: Map&lt;String, String&gt; = emptyMap() ): List&lt;TopMemberScore&gt;</ID>
+    <ID>CyclomaticComplexMethod:StatsScreen.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) @Composable fun StatsScreen( onBack: () -&gt; Unit, onOpenEvent: (String) -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:SyncViewModel.kt$SyncViewModel$fun syncNow()</ID>
+    <ID>CyclomaticComplexMethod:UpdateChecker.kt$UpdateChecker$suspend fun downloadAndInstall(context: Context, info: UpdateInfo): Result&lt;Unit&gt;</ID>
+    <ID>CyclomaticComplexMethod:WarJsonParser.kt$WarJsonParser$fun inferEventType(json: String): String</ID>
+    <ID>EmptyFunctionBlock:ScreenCaptureService.kt$ScreenCaptureService${}</ID>
+    <ID>EmptyFunctionBlock:ScreenCaptureService.kt$ScreenCaptureService.&lt;no name provided&gt;${}</ID>
+    <ID>FunctionNaming:AboutScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AboutScreen(onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:AppearanceScreen.kt$@Composable private fun ThemeCard( style: ThemeStyle, selected: Boolean, onClick: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:AppearanceScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppearanceScreen( onBack: () -&gt; Unit, themeStyle: ThemeStyle = ThemeStyle.LEDGER, onThemeChange: (ThemeStyle) -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:CaptureScreen.kt$@Composable private fun SettingSlider( label: String, valueText: String, value: Float, onValueChange: (Float) -&gt; Unit, onValueChangeFinished: () -&gt; Unit, valueRange: ClosedFloatingPointRange&lt;Float&gt;, steps: Int )</ID>
+    <ID>FunctionNaming:CaptureScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun CaptureScreen(onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:ClipboardImportDialog.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ClipboardImportDialog( parsed: WarJsonParser.ParsedEvent, repo: WarRepository, onSaved: (String) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun AttackStatusChip(used: Boolean)</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun CocCard( modifier: Modifier = Modifier, onClick: (() -&gt; Unit)? = null, content: @Composable () -&gt; Unit )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun CocIconButton( icon: ImageVector, contentDescription: String?, onClick: () -&gt; Unit, modifier: Modifier = Modifier, filled: Boolean = false )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun EmptyState( title: String, modifier: Modifier = Modifier, body: String? = null, icon: ImageVector? = null )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun FilterPill( label: String, selected: Boolean, onClick: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun InfoRow( label: String, value: String, modifier: Modifier = Modifier, showDivider: Boolean = true, valueColor: Color = MaterialTheme.colorScheme.onSurface )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun InitialAvatar( name: String, color: Color, modifier: Modifier = Modifier, size: Dp = 38.dp )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun RoleBadge(role: String)</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun ScreenHeader( title: String, modifier: Modifier = Modifier, overline: String? = null, subtitle: String? = null, actions: @Composable RowScope.() -&gt; Unit = {} )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun SectionTitle(text: String, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun SegmentedTabs( options: List&lt;String&gt;, selectedIndex: Int, onSelect: (Int) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun SettingsRow( icon: ImageVector, iconColor: Color, title: String, subtitle: String, onClick: () -&gt; Unit, modifier: Modifier = Modifier, trailing: (@Composable () -&gt; Unit)? = null, showDivider: Boolean = true, )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun SoftTag( text: String, fg: Color, bg: Color, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun StatTile( label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = MaterialTheme.colorScheme.onSurface, highlight: Boolean = false )</ID>
+    <ID>FunctionNaming:Components.kt$@Composable fun TypeBadge(type: String, round: Int)</ID>
+    <ID>FunctionNaming:DataScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DataScreen( onBack: () -&gt; Unit, onOpenSync: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun AttackEditDialog( attackOrder: Int, destructionText: String, onDestructionChange: (String) -&gt; Unit, onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun Masthead(ev: WarEventEntity, stats: WarStats)</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun MastheadMeta( label: String, value: String, modifier: Modifier = Modifier, valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.cocColors.onMasthead )</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun MemberCard( member: MemberEntity, onEditAttack: (MemberEntity, Int) -&gt; Unit = { _, _ -&gt; } )</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun MembersTab( members: List&lt;MemberEntity&gt;, modifier: Modifier = Modifier, onEditAttack: (MemberEntity, Int) -&gt; Unit = { _, _ -&gt; } )</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun OverviewTab(ev: WarEventEntity, stats: WarStats, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun StatsTab(stats: WarStats, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:EventDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun EventDetailScreen(eventId: String, onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:EventListScreen.kt$@Composable private fun FilterDropdown( label: String, isActive: Boolean, expanded: Boolean, onToggle: () -&gt; Unit, onDismiss: () -&gt; Unit, modifier: Modifier = Modifier, content: @Composable () -&gt; Unit )</ID>
+    <ID>FunctionNaming:EventListScreen.kt$@Composable private fun LeagueGroupHeader(year: Int?, month: Int?, match: Int?, size: Int, onClick: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:EventListScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun EventRow( event: WarEventEntity, onClick: () -&gt; Unit, onDeleteRequest: (WarEventEntity) -&gt; Unit )</ID>
+    <ID>FunctionNaming:EventListScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun EventListScreen( onOpen: (String) -&gt; Unit, onImport: () -&gt; Unit = {}, onOpenSeason: (Int, Int, Int) -&gt; Unit = { _, _, _ -&gt; }, )</ID>
+    <ID>FunctionNaming:GeneralScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun GeneralScreen( onBack: () -&gt; Unit, onOpenUpdate: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:ImportForm.kt$@Composable fun MemberMatchPreview( matchStates: List&lt;MemberMatchState&gt;, roster: List&lt;String&gt;, onNameEdit: (Int, String) -&gt; Unit, onOptionChange: (Int, MatchOption) -&gt; Unit, onRosterPick: (Int, String) -&gt; Unit, onToggleDropdown: (Int) -&gt; Unit )</ID>
+    <ID>FunctionNaming:ImportForm.kt$@Composable fun WarNameField( name: String, onNameChange: (String) -&gt; Unit, isError: Boolean = false, errorText: String? = null )</ID>
+    <ID>FunctionNaming:ImportForm.kt$@Composable fun WarPreviewCard(parsed: WarJsonParser.ParsedEvent)</ID>
+    <ID>FunctionNaming:ImportForm.kt$@Composable fun WarTypeRoundSection(eventType: String, onTypeChange: (String) -&gt; Unit)</ID>
+    <ID>FunctionNaming:ImportForm.kt$@Composable private fun OptionRow( label: String, selected: Boolean, onClick: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:ImportForm.kt$@Composable private fun UnmatchedRow( state: MemberMatchState, index: Int, roster: List&lt;String&gt;, onNameEdit: (Int, String) -&gt; Unit, onOptionChange: (Int, MatchOption) -&gt; Unit, onRosterPick: (Int, String) -&gt; Unit, onToggleDropdown: (Int) -&gt; Unit )</ID>
+    <ID>FunctionNaming:ImportScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ImportScreen(onBack: () -&gt; Unit, onSaved: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:LeagueSeasonScreen.kt$@Composable fun LeagueSeasonScreen( year: Int, month: Int, match: Int, onBack: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:LeagueSeasonScreen.kt$@Composable private fun RoundRow(round: LeagueRoundSummary)</ID>
+    <ID>FunctionNaming:LeagueSeasonScreen.kt$@Composable private fun SeasonContent(stats: LeagueSeasonStats, matchLabel: String)</ID>
+    <ID>FunctionNaming:LeagueSeasonScreen.kt$@Composable private fun SeasonHeroCard(stats: LeagueSeasonStats, matchLabel: String)</ID>
+    <ID>FunctionNaming:LeagueSeasonScreen.kt$@Composable private fun SeasonMiniStat(label: String, value: String, ink: Color)</ID>
+    <ID>FunctionNaming:LeagueSeasonScreen.kt$@Composable private fun SeasonRingStat( rate: Float, color: Color, size: Dp = 52.dp, strokeWidth: Dp = 4.5.dp, modifier: Modifier = Modifier, labelColor: Color = MaterialTheme.colorScheme.onSurface, trackColor: Color = MaterialTheme.colorScheme.surfaceVariant )</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun CocWarNavHost( themeStyle: ThemeStyle = ThemeStyle.LEDGER, onThemeChange: (ThemeStyle) -&gt; Unit = {}, )</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@Composable internal fun MemberDetailDialog( name: String, loadAbsentCount: suspend (String) -&gt; Int, onDismiss: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@Composable internal fun RoleSelectDialog( currentRole: String, onSelect: (String) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable internal fun MemberRow( entry: com.cocwar.data.db.MemberRosterEntity, index: Int, onClick: () -&gt; Unit, onRoleClick: () -&gt; Unit, onDeleteRequest: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen(onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {})</ID>
+    <ID>FunctionNaming:MemberSearchScreen.kt$@Composable fun MemberSearchScreen(onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun RefreshableBox( isRefreshing: Boolean, onRefresh: () -&gt; Unit, modifier: Modifier = Modifier, doneText: String = "已刷新", content: @Composable BoxScope.() -&gt; Unit )</ID>
+    <ID>FunctionNaming:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RefreshIndicator( modifier: Modifier = Modifier, state: PullToRefreshState, isRefreshing: Boolean, showDone: Boolean, doneText: String )</ID>
+    <ID>FunctionNaming:ScreenshotGalleryDialog.kt$@Composable fun ScreenshotGalleryDialog(onDismiss: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:ScreenshotGalleryDialog.kt$@Composable private fun ScreenshotThumb(item: ScreenshotItem, onDelete: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable fun SettingsScreen( onOpenAppearance: () -&gt; Unit, onOpenData: () -&gt; Unit, onOpenCapture: () -&gt; Unit, onOpenGeneral: () -&gt; Unit, onOpenAbout: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:SettingsScreen.kt$@Composable private fun SectionTitleWithPadding(text: String)</ID>
+    <ID>FunctionNaming:StatsMembersTab.kt$@Composable internal fun MemberDetailDialog( stat: MemberMonthlyStat, details: List&lt;MemberEventDetail&gt;, onDismiss: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:StatsMembersTab.kt$@Composable internal fun MembersTab( stats: List&lt;MemberMonthlyStat&gt;, modifier: Modifier = Modifier, onMemberClick: (MemberMonthlyStat) -&gt; Unit )</ID>
+    <ID>FunctionNaming:StatsMembersTab.kt$@Composable internal fun RankBadge(rank: Int, modifier: Modifier = Modifier, size: Dp = 28.dp)</ID>
+    <ID>FunctionNaming:StatsMembersTab.kt$@Composable private fun MemberDetailRow(detail: MemberEventDetail)</ID>
+    <ID>FunctionNaming:StatsMembersTab.kt$@Composable private fun MemberStatRow( stat: MemberMonthlyStat, rank: Int, onClick: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:StatsMissedTab.kt$@Composable internal fun MissedTab( ranks: List&lt;RecentMissedRank&gt;, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:StatsMissedTab.kt$@Composable private fun MissedRankRow(rank: RecentMissedRank, index: Int)</ID>
+    <ID>FunctionNaming:StatsOverviewTab.kt$@Composable internal fun OverviewTab( overview: StatsOverview?, eventSummaries: List&lt;EventStatSummary&gt;, typeFilter: TypeFilter, modifier: Modifier = Modifier, onEventClick: (String) -&gt; Unit )</ID>
+    <ID>FunctionNaming:StatsOverviewTab.kt$@Composable private fun EventSummaryHeader()</ID>
+    <ID>FunctionNaming:StatsOverviewTab.kt$@Composable private fun EventSummaryRow( summary: EventStatSummary, index: Int, maxTotalStars: Int, maxThreeStar: Int, maxUsedAttacks: Int, onClick: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:StatsOverviewTab.kt$@Composable private fun HeroCard(overview: StatsOverview, typeLabel: String)</ID>
+    <ID>FunctionNaming:StatsOverviewTab.kt$@Composable private fun HeroMiniStat(label: String, value: String, fg: Color)</ID>
+    <ID>FunctionNaming:StatsOverviewTab.kt$@Composable private fun RingStat( rate: Float, color: Color, size: Dp = 52.dp, strokeWidth: Dp = 4.5.dp, modifier: Modifier = Modifier, labelColor: Color = MaterialTheme.colorScheme.onSurface, trackColor: Color = MaterialTheme.colorScheme.surfaceVariant, label: String? = null )</ID>
+    <ID>FunctionNaming:StatsScreen.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) @Composable fun StatsScreen( onBack: () -&gt; Unit, onOpenEvent: (String) -&gt; Unit )</ID>
+    <ID>FunctionNaming:StatsTopTab.kt$@Composable internal fun TopMembersTab( topMembers: List&lt;TopMemberScore&gt;, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:StatsTopTab.kt$@Composable private fun ScoreDetailDialog(score: TopMemberScore, onDismiss: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:StatsTopTab.kt$@Composable private fun ScoreRuleRow(label: String, unit: String, count: Int, per: Int)</ID>
+    <ID>FunctionNaming:StatsTopTab.kt$@Composable private fun TopScoreRow(index: Int, score: TopMemberScore)</ID>
+    <ID>FunctionNaming:SyncScreen.kt$@Composable private fun SyncTextField( value: String, onValueChange: (String) -&gt; Unit, label: String, placeholder: String? = null, isPassword: Boolean = false )</ID>
+    <ID>FunctionNaming:SyncScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SyncScreen(onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:Theme.kt$@Composable fun CocWarTheme( style: ThemeStyle = ThemeStyle.LEDGER, content: @Composable () -&gt; Unit )</ID>
+    <ID>FunctionNaming:UpdateDialog.kt$@Composable fun UpdateDialog( info: UpdateInfo, onDismiss: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:UpdateSettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun UpdateSettingsScreen(onBack: () -&gt; Unit)</ID>
+    <ID>FunctionOnlyReturningConstant:SyncDeciderTest.kt$SyncDeciderTest$private fun c(): String</ID>
+    <ID>LongMethod:AppearanceScreen.kt$@Composable private fun ThemeCard( style: ThemeStyle, selected: Boolean, onClick: () -&gt; Unit )</ID>
+    <ID>LongMethod:CaptureScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun CaptureScreen(onBack: () -&gt; Unit)</ID>
+    <ID>LongMethod:ClipboardImportDialog.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ClipboardImportDialog( parsed: WarJsonParser.ParsedEvent, repo: WarRepository, onSaved: (String) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
+    <ID>LongMethod:DataScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DataScreen( onBack: () -&gt; Unit, onOpenSync: () -&gt; Unit, )</ID>
+    <ID>LongMethod:EventDetailScreen.kt$@Composable private fun Masthead(ev: WarEventEntity, stats: WarStats)</ID>
+    <ID>LongMethod:EventDetailScreen.kt$@Composable private fun MemberCard( member: MemberEntity, onEditAttack: (MemberEntity, Int) -&gt; Unit = { _, _ -&gt; } )</ID>
+    <ID>LongMethod:EventDetailScreen.kt$@Composable private fun StatsTab(stats: WarStats, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:EventDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun EventDetailScreen(eventId: String, onBack: () -&gt; Unit)</ID>
+    <ID>LongMethod:EventListScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun EventRow( event: WarEventEntity, onClick: () -&gt; Unit, onDeleteRequest: (WarEventEntity) -&gt; Unit )</ID>
+    <ID>LongMethod:EventListScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun EventListScreen( onOpen: (String) -&gt; Unit, onImport: () -&gt; Unit = {}, onOpenSeason: (Int, Int, Int) -&gt; Unit = { _, _, _ -&gt; }, )</ID>
+    <ID>LongMethod:GeneralScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun GeneralScreen( onBack: () -&gt; Unit, onOpenUpdate: () -&gt; Unit, )</ID>
+    <ID>LongMethod:ImportForm.kt$@Composable private fun UnmatchedRow( state: MemberMatchState, index: Int, roster: List&lt;String&gt;, onNameEdit: (Int, String) -&gt; Unit, onOptionChange: (Int, MatchOption) -&gt; Unit, onRosterPick: (Int, String) -&gt; Unit, onToggleDropdown: (Int) -&gt; Unit )</ID>
+    <ID>LongMethod:ImportScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ImportScreen(onBack: () -&gt; Unit, onSaved: () -&gt; Unit)</ID>
+    <ID>LongMethod:LeagueSeasonScreen.kt$@Composable fun LeagueSeasonScreen( year: Int, month: Int, match: Int, onBack: () -&gt; Unit )</ID>
+    <ID>LongMethod:LeagueSeasonScreen.kt$@Composable private fun RoundRow(round: LeagueRoundSummary)</ID>
+    <ID>LongMethod:LeagueSeasonScreen.kt$@Composable private fun SeasonContent(stats: LeagueSeasonStats, matchLabel: String)</ID>
+    <ID>LongMethod:LeagueSeasonScreen.kt$@Composable private fun SeasonHeroCard(stats: LeagueSeasonStats, matchLabel: String)</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable private fun CocWarNavHost( themeStyle: ThemeStyle = ThemeStyle.LEDGER, onThemeChange: (ThemeStyle) -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:MemberManageScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable internal fun MemberRow( entry: com.cocwar.data.db.MemberRosterEntity, index: Int, onClick: () -&gt; Unit, onRoleClick: () -&gt; Unit, onDeleteRequest: () -&gt; Unit )</ID>
+    <ID>LongMethod:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen(onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {})</ID>
+    <ID>LongMethod:MemberSearchScreen.kt$@Composable fun MemberSearchScreen(onBack: () -&gt; Unit)</ID>
+    <ID>LongMethod:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RefreshIndicator( modifier: Modifier = Modifier, state: PullToRefreshState, isRefreshing: Boolean, showDone: Boolean, doneText: String )</ID>
+    <ID>LongMethod:ScreenCaptureService.kt$ScreenCaptureService$private suspend fun captureWithScrollStitch(maxPages: Int): Int</ID>
+    <ID>LongMethod:SettingsScreen.kt$@Composable fun SettingsScreen( onOpenAppearance: () -&gt; Unit, onOpenData: () -&gt; Unit, onOpenCapture: () -&gt; Unit, onOpenGeneral: () -&gt; Unit, onOpenAbout: () -&gt; Unit, )</ID>
+    <ID>LongMethod:StatsCalculator.kt$StatsCalculator$fun computeTopMembers( events: List&lt;WarEventEntity&gt;, allMembers: List&lt;MemberEntity&gt;, roster: List&lt;String&gt; = emptyList(), rosterRoles: Map&lt;String, String&gt; = emptyMap() ): List&lt;TopMemberScore&gt;</ID>
+    <ID>LongMethod:StatsMembersTab.kt$@Composable internal fun MemberDetailDialog( stat: MemberMonthlyStat, details: List&lt;MemberEventDetail&gt;, onDismiss: () -&gt; Unit )</ID>
+    <ID>LongMethod:StatsOverviewTab.kt$@Composable internal fun OverviewTab( overview: StatsOverview?, eventSummaries: List&lt;EventStatSummary&gt;, typeFilter: TypeFilter, modifier: Modifier = Modifier, onEventClick: (String) -&gt; Unit )</ID>
+    <ID>LongMethod:StatsOverviewTab.kt$@Composable private fun HeroCard(overview: StatsOverview, typeLabel: String)</ID>
+    <ID>LongMethod:StatsScreen.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) @Composable fun StatsScreen( onBack: () -&gt; Unit, onOpenEvent: (String) -&gt; Unit )</ID>
+    <ID>LongMethod:SyncScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun SyncScreen(onBack: () -&gt; Unit)</ID>
+    <ID>LongMethod:SyncViewModel.kt$SyncViewModel$fun syncNow()</ID>
+    <ID>LongMethod:UpdateChecker.kt$UpdateChecker$suspend fun downloadAndInstall(context: Context, info: UpdateInfo): Result&lt;Unit&gt;</ID>
+    <ID>LongMethod:UpdateSettingsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun UpdateSettingsScreen(onBack: () -&gt; Unit)</ID>
+    <ID>LongParameterList:CaptureScreen.kt$( label: String, valueText: String, value: Float, onValueChange: (Float) -&gt; Unit, onValueChangeFinished: () -&gt; Unit, valueRange: ClosedFloatingPointRange&lt;Float&gt;, steps: Int )</ID>
+    <ID>LongParameterList:Components.kt$( icon: ImageVector, iconColor: Color, title: String, subtitle: String, onClick: () -&gt; Unit, modifier: Modifier = Modifier, trailing: (@Composable () -&gt; Unit)? = null, showDivider: Boolean = true, )</ID>
+    <ID>LongParameterList:CsvImporter.kt$CsvImporter$( text: String, slotCount: Int, isSample: Boolean = false, createdAt: Long = System.currentTimeMillis(), eventType: String = EVENT_TYPE_WAR, eventRound: Int = 0, rosterRoles: Map&lt;String, String&gt; = emptyMap() )</ID>
+    <ID>LongParameterList:EventListScreen.kt$( label: String, isActive: Boolean, expanded: Boolean, onToggle: () -&gt; Unit, onDismiss: () -&gt; Unit, modifier: Modifier = Modifier, content: @Composable () -&gt; Unit )</ID>
+    <ID>LongParameterList:ImportForm.kt$( matchStates: List&lt;MemberMatchState&gt;, roster: List&lt;String&gt;, onNameEdit: (Int, String) -&gt; Unit, onOptionChange: (Int, MatchOption) -&gt; Unit, onRosterPick: (Int, String) -&gt; Unit, onToggleDropdown: (Int) -&gt; Unit )</ID>
+    <ID>LongParameterList:ImportForm.kt$( state: MemberMatchState, index: Int, roster: List&lt;String&gt;, onNameEdit: (Int, String) -&gt; Unit, onOptionChange: (Int, MatchOption) -&gt; Unit, onRosterPick: (Int, String) -&gt; Unit, onToggleDropdown: (Int) -&gt; Unit )</ID>
+    <ID>LongParameterList:LeagueSeasonScreen.kt$( rate: Float, color: Color, size: Dp = 52.dp, strokeWidth: Dp = 4.5.dp, modifier: Modifier = Modifier, labelColor: Color = MaterialTheme.colorScheme.onSurface, trackColor: Color = MaterialTheme.colorScheme.surfaceVariant )</ID>
+    <ID>LongParameterList:StatsOverviewTab.kt$( rate: Float, color: Color, size: Dp = 52.dp, strokeWidth: Dp = 4.5.dp, modifier: Modifier = Modifier, labelColor: Color = MaterialTheme.colorScheme.onSurface, trackColor: Color = MaterialTheme.colorScheme.surfaceVariant, label: String? = null )</ID>
+    <ID>LongParameterList:StatsOverviewTab.kt$( summary: EventStatSummary, index: Int, maxTotalStars: Int, maxThreeStar: Int, maxUsedAttacks: Int, onClick: () -&gt; Unit )</ID>
+    <ID>LongParameterList:WarJsonParser.kt$WarJsonParser$( dto: WarDto, isSample: Boolean, createdAt: Long, eventType: String = EVENT_TYPE_WAR, eventRound: Int = 0, rosterRoles: Map&lt;String, String&gt; = emptyMap() )</ID>
+    <ID>LongParameterList:WarJsonParser.kt$WarJsonParser$( json: String, isSample: Boolean = false, createdAt: Long = System.currentTimeMillis(), eventType: String = EVENT_TYPE_WAR, eventRound: Int = 0, rosterRoles: Map&lt;String, String&gt; = emptyMap() )</ID>
+    <ID>LoopWithTooManyJumpStatements:ScreenCaptureService.kt$ScreenCaptureService$for</ID>
+    <ID>LoopWithTooManyJumpStatements:UpdateChecker.kt$UpdateChecker$for</ID>
+    <ID>LoopWithTooManyJumpStatements:WarJsonParser.kt$WarJsonParser$for</ID>
+    <ID>MagicNumber:BackupCodec.kt$8</ID>
+    <ID>MagicNumber:CaptureScreen.kt$30f</ID>
+    <ID>MagicNumber:CaptureScreen.kt$7</ID>
+    <ID>MagicNumber:ClipboardImportDialog.kt$200_000</ID>
+    <ID>MagicNumber:CsvExporter.kt$CsvExporter$100</ID>
+    <ID>MagicNumber:CsvImporter.kt$CsvImporter$100</ID>
+    <ID>MagicNumber:CsvImporter.kt$CsvImporter$3</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator$5</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$10</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$11</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$14</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$17</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$5</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$6</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$7</ID>
+    <ID>MagicNumber:DataMigrator.kt$DataMigrator.Companion$99</ID>
+    <ID>MagicNumber:DataScreen.kt$3</ID>
+    <ID>MagicNumber:EventDetailScreen.kt$100</ID>
+    <ID>MagicNumber:EventDetailViewModel.kt$EventDetailViewModel$100</ID>
+    <ID>MagicNumber:EventDetailViewModel.kt$EventDetailViewModel$5000</ID>
+    <ID>MagicNumber:EventListViewModel.kt$EventListViewModel$5000</ID>
+    <ID>MagicNumber:EventListViewModel.kt$EventListViewModel$600</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$10</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$11</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$12</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$17</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$3</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$5</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$7</ID>
+    <ID>MagicNumber:EventNamingRules.kt$EventNamingRules$99</ID>
+    <ID>MagicNumber:FilterPrefs.kt$FilterPrefs$3</ID>
+    <ID>MagicNumber:FilterPrefs.kt$FilterPrefs$7</ID>
+    <ID>MagicNumber:FloatingBallService.kt$FloatingBallService$0.7f</ID>
+    <ID>MagicNumber:FloatingBallService.kt$FloatingBallService$10</ID>
+    <ID>MagicNumber:FloatingBallService.kt$FloatingBallService$1001</ID>
+    <ID>MagicNumber:FloatingBallService.kt$FloatingBallService$200</ID>
+    <ID>MagicNumber:FloatingBallService.kt$FloatingBallService$24</ID>
+    <ID>MagicNumber:FloatingBallService.kt$FloatingBallService$300</ID>
+    <ID>MagicNumber:GeneralScreen.kt$10</ID>
+    <ID>MagicNumber:GeneralScreen.kt$1024.0</ID>
+    <ID>MagicNumber:GeneralScreen.kt$1048576.0</ID>
+    <ID>MagicNumber:GeneralScreen.kt$1073741824.0</ID>
+    <ID>MagicNumber:GeneralScreen.kt$20</ID>
+    <ID>MagicNumber:GeneralScreen.kt$30</ID>
+    <ID>MagicNumber:ImportForm.kt$0.6f</ID>
+    <ID>MagicNumber:Labels.kt$10</ID>
+    <ID>MagicNumber:Labels.kt$11</ID>
+    <ID>MagicNumber:Labels.kt$17</ID>
+    <ID>MagicNumber:Labels.kt$3</ID>
+    <ID>MagicNumber:Labels.kt$5</ID>
+    <ID>MagicNumber:Labels.kt$7</ID>
+    <ID>MagicNumber:Labels.kt$99</ID>
+    <ID>MagicNumber:LeagueSeason.kt$LeagueSeasonCalculator$100</ID>
+    <ID>MagicNumber:LeagueSeason.kt$LeagueSeasonCalculator$3</ID>
+    <ID>MagicNumber:LeagueSeasonScreen.kt$100</ID>
+    <ID>MagicNumber:LeagueSeasonScreen.kt$2.2f</ID>
+    <ID>MagicNumber:LeagueSeasonScreen.kt$50</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$100</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$33</ID>
+    <ID>MagicNumber:MemberManageScreen.kt$3</ID>
+    <ID>MagicNumber:MemberManageViewModel.kt$MemberManageViewModel$600</ID>
+    <ID>MagicNumber:Refreshable.kt$0.4f</ID>
+    <ID>MagicNumber:Refreshable.kt$1300</ID>
+    <ID>MagicNumber:Refreshable.kt$160</ID>
+    <ID>MagicNumber:Refreshable.kt$1600</ID>
+    <ID>MagicNumber:Refreshable.kt$2.5f</ID>
+    <ID>MagicNumber:Refreshable.kt$50</ID>
+    <ID>MagicNumber:Refreshable.kt$800</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$100</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$13</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$14</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$18</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$27</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$28</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$29</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$3</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$4</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$5</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$7</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$92</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$94</ID>
+    <ID>MagicNumber:SampleDataProvider.kt$SampleDataProvider$95</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$0.03f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$0.05f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$0.08f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$0.5f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$0xFF</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$100</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$1000</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$100f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$10f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$114</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$16</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$255</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$299</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$300</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$30f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$340</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$587</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$60f</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$8</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService$900</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService.Companion$1000</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService.Companion$1000L</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService.Companion$24</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService.Companion$60</ID>
+    <ID>MagicNumber:ScreenCaptureService.kt$ScreenCaptureService.Companion$7</ID>
+    <ID>MagicNumber:ScreenshotGalleryDialog.kt$4</ID>
+    <ID>MagicNumber:SecurePrefs.kt$SecurePrefs$256</ID>
+    <ID>MagicNumber:StatsCalculator.kt$StatsCalculator$100</ID>
+    <ID>MagicNumber:StatsCalculator.kt$StatsCalculator$10f</ID>
+    <ID>MagicNumber:StatsCalculator.kt$StatsCalculator$3</ID>
+    <ID>MagicNumber:StatsCalculator.kt$StatsCalculator$3f</ID>
+    <ID>MagicNumber:StatsCalculator.kt$StatsCalculator$4f</ID>
+    <ID>MagicNumber:StatsCalculator.kt$StatsCalculator$6</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$0.3f</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$0.4f</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$0.7f</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$0xFF9AA3AD</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$0xFFB87333</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$0xFFC9A227</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$1.4f</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$100</ID>
+    <ID>MagicNumber:StatsMembersTab.kt$3</ID>
+    <ID>MagicNumber:StatsOverviewTab.kt$0.5f</ID>
+    <ID>MagicNumber:StatsOverviewTab.kt$0.7f</ID>
+    <ID>MagicNumber:StatsOverviewTab.kt$0.8f</ID>
+    <ID>MagicNumber:StatsOverviewTab.kt$0.9f</ID>
+    <ID>MagicNumber:StatsOverviewTab.kt$1.3f</ID>
+    <ID>MagicNumber:StatsOverviewTab.kt$100</ID>
+    <ID>MagicNumber:StatsOverviewTab.kt$50</ID>
+    <ID>MagicNumber:StatsScreen.kt$0.3f</ID>
+    <ID>MagicNumber:StatsScreen.kt$0.5f</ID>
+    <ID>MagicNumber:StatsScreen.kt$3</ID>
+    <ID>MagicNumber:StatsScreen.kt$7</ID>
+    <ID>MagicNumber:StatsTopTab.kt$3</ID>
+    <ID>MagicNumber:StatsViewModel.kt$StatsViewModel$100</ID>
+    <ID>MagicNumber:Theme.kt$0xFF06291D</ID>
+    <ID>MagicNumber:Theme.kt$0xFF09100C</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0A101C</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0B1B3A</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0B452E</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0C1424</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0C1712</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0C2A1E</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0E3B2A</ID>
+    <ID>MagicNumber:Theme.kt$0xFF0E8A5E</ID>
+    <ID>MagicNumber:Theme.kt$0xFF122019</ID>
+    <ID>MagicNumber:Theme.kt$0xFF131209</ID>
+    <ID>MagicNumber:Theme.kt$0xFF131E31</ID>
+    <ID>MagicNumber:Theme.kt$0xFF140B07</ID>
+    <ID>MagicNumber:Theme.kt$0xFF146B4C</ID>
+    <ID>MagicNumber:Theme.kt$0xFF150D12</ID>
+    <ID>MagicNumber:Theme.kt$0xFF163B7A</ID>
+    <ID>MagicNumber:Theme.kt$0xFF171612</ID>
+    <ID>MagicNumber:Theme.kt$0xFF173129</ID>
+    <ID>MagicNumber:Theme.kt$0xFF17392C</ID>
+    <ID>MagicNumber:Theme.kt$0xFF182231</ID>
+    <ID>MagicNumber:Theme.kt$0xFF1B100B</ID>
+    <ID>MagicNumber:Theme.kt$0xFF1B1117</ID>
+    <ID>MagicNumber:Theme.kt$0xFF1B2B4A</ID>
+    <ID>MagicNumber:Theme.kt$0xFF1B2C23</ID>
+    <ID>MagicNumber:Theme.kt$0xFF1C1B17</ID>
+    <ID>MagicNumber:Theme.kt$0xFF1C2940</ID>
+    <ID>MagicNumber:Theme.kt$0xFF201F1A</ID>
+    <ID>MagicNumber:Theme.kt$0xFF22392F</ID>
+    <ID>MagicNumber:Theme.kt$0xFF241820</ID>
+    <ID>MagicNumber:Theme.kt$0xFF243B30</ID>
+    <ID>MagicNumber:Theme.kt$0xFF251710</ID>
+    <ID>MagicNumber:Theme.kt$0xFF26344D</ID>
+    <ID>MagicNumber:Theme.kt$0xFF2A2922</ID>
+    <ID>MagicNumber:Theme.kt$0xFF2B1F16</ID>
+    <ID>MagicNumber:Theme.kt$0xFF2E2129</ID>
+    <ID>MagicNumber:Theme.kt$0xFF2E2403</ID>
+    <ID>MagicNumber:Theme.kt$0xFF2E6FD8</ID>
+    <ID>MagicNumber:Theme.kt$0xFF2F2017</ID>
+    <ID>MagicNumber:Theme.kt$0xFF32242B</ID>
+    <ID>MagicNumber:Theme.kt$0xFF35332B</ID>
+    <ID>MagicNumber:Theme.kt$0xFF393017</ID>
+    <ID>MagicNumber:Theme.kt$0xFF39321F</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3A1703</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3A3119</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3A5749</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3C2520</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3C2B20</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3D2416</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3D2721</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3D2B34</ID>
+    <ID>MagicNumber:Theme.kt$0xFF3D4E6C</ID>
+    <ID>MagicNumber:Theme.kt$0xFF402019</ID>
+    <ID>MagicNumber:Theme.kt$0xFF412334</ID>
+    <ID>MagicNumber:Theme.kt$0xFF481009</ID>
+    <ID>MagicNumber:Theme.kt$0xFF48172F</ID>
+    <ID>MagicNumber:Theme.kt$0xFF4A150C</ID>
+    <ID>MagicNumber:Theme.kt$0xFF4A3705</ID>
+    <ID>MagicNumber:Theme.kt$0xFF4FD8A1</ID>
+    <ID>MagicNumber:Theme.kt$0xFF555246</ID>
+    <ID>MagicNumber:Theme.kt$0xFF594451</ID>
+    <ID>MagicNumber:Theme.kt$0xFF5A4005</ID>
+    <ID>MagicNumber:Theme.kt$0xFF5A4534</ID>
+    <ID>MagicNumber:Theme.kt$0xFF5C1509</ID>
+    <ID>MagicNumber:Theme.kt$0xFF5C756A</ID>
+    <ID>MagicNumber:Theme.kt$0xFF5D6B80</ID>
+    <ID>MagicNumber:Theme.kt$0xFF63C9A4</ID>
+    <ID>MagicNumber:Theme.kt$0xFF641009</ID>
+    <ID>MagicNumber:Theme.kt$0xFF64140A</ID>
+    <ID>MagicNumber:Theme.kt$0xFF6C1740</ID>
+    <ID>MagicNumber:Theme.kt$0xFF6E2406</ID>
+    <ID>MagicNumber:Theme.kt$0xFF6E6A5F</ID>
+    <ID>MagicNumber:Theme.kt$0xFF7D6A59</ID>
+    <ID>MagicNumber:Theme.kt$0xFF7E6971</ID>
+    <ID>MagicNumber:Theme.kt$0xFF82A9FF</ID>
+    <ID>MagicNumber:Theme.kt$0xFF90A89B</ID>
+    <ID>MagicNumber:Theme.kt$0xFF97A5BB</ID>
+    <ID>MagicNumber:Theme.kt$0xFF9A7412</ID>
+    <ID>MagicNumber:Theme.kt$0xFF9BDFC6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFA39D8E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFA9EDCF</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB03527</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB29C87</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB3261E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB49AA6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB7CDC0</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB8860B</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB8C5D6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFB9D0FF</ID>
+    <ID>MagicNumber:Theme.kt$0xFFC0392B</ID>
+    <ID>MagicNumber:Theme.kt$0xFFC08A1E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFC2437E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFC24A1F</ID>
+    <ID>MagicNumber:Theme.kt$0xFFC7C4B8</ID>
+    <ID>MagicNumber:Theme.kt$0xFFD7BCC6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFD8BFA9</ID>
+    <ID>MagicNumber:Theme.kt$0xFFDCE4EF</ID>
+    <ID>MagicNumber:Theme.kt$0xFFDCEAE1</ID>
+    <ID>MagicNumber:Theme.kt$0xFFDDF1E7</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE08D7E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE0B84E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE0EDE4</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE1EAFB</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE3E1D7</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE3EFE8</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE7EDF5</ID>
+    <ID>MagicNumber:Theme.kt$0xFFE8EEF8</ID>
+    <ID>MagicNumber:Theme.kt$0xFFECEAE1</ID>
+    <ID>MagicNumber:Theme.kt$0xFFECEBE3</ID>
+    <ID>MagicNumber:Theme.kt$0xFFEF8F7F</ID>
+    <ID>MagicNumber:Theme.kt$0xFFEFC04C</ID>
+    <ID>MagicNumber:Theme.kt$0xFFEFD590</ID>
+    <ID>MagicNumber:Theme.kt$0xFFEFDEE4</ID>
+    <ID>MagicNumber:Theme.kt$0xFFEFE0D1</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF0BDB2</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF0C14E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF0F6F2</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF2F5FA</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF3ECD6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF48CB9</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF4D88C</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF5B9AC</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF5D98F</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF5E8EC</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF5F4EF</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF6EBE0</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF7E4E0</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF7EBE1</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF7ECD3</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF7EDD6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF8B4A9</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF8DDD9</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF8E2ED</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF8EAF0</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF8FAFD</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF8FBF9</ID>
+    <ID>MagicNumber:Theme.kt$0xFFF9E3DE</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFAE3D5</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFAF9F5</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFBC4DC</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFBF4F6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFBF5EF</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFEF9FB</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFEFBF7</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFF7A6E</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFF8A5C</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFFC3A6</ID>
+    <ID>MagicNumber:Theme.kt$0xFFFFFFFF</ID>
+    <ID>MagicNumber:UpdateChecker.kt$UpdateChecker$100</ID>
+    <ID>MagicNumber:UpdateChecker.kt$UpdateChecker$1000</ID>
+    <ID>MagicNumber:UpdateChecker.kt$UpdateChecker$120_000</ID>
+    <ID>MagicNumber:UpdateChecker.kt$UpdateChecker$15_000</ID>
+    <ID>MagicNumber:UpdateChecker.kt$UpdateChecker$30_000</ID>
+    <ID>MagicNumber:UpdateChecker.kt$UpdateChecker$500</ID>
+    <ID>MagicNumber:UpdateChecker.kt$UpdateChecker$8192</ID>
+    <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$100</ID>
+    <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$3</ID>
+    <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$4</ID>
+    <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$5</ID>
+    <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$50</ID>
+    <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$6</ID>
+    <ID>MagicNumber:WarJsonParser.kt$WarJsonParser$100</ID>
+    <ID>MagicNumber:WarRepository.kt$WarRepository$100</ID>
+    <ID>MagicNumber:WarRepository.kt$WarRepository$1_000</ID>
+    <ID>MagicNumber:WarRepository.kt$WarRepository$2_000</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$10_000</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$15_000</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$200</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$299</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$30_000</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$404</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$405</ID>
+    <ID>MagicNumber:WebDavClient.kt$WebDavClient$501</ID>
+    <ID>MatchingDeclarationName:ScreenshotGalleryDialog.kt$ScreenshotItem</ID>
+    <ID>MatchingDeclarationName:UpdateConfig.kt$UpdatePrefs</ID>
+    <ID>MaxLineLength:BackupCodec.kt$BackupCodec$rosterDao.insertAll(entries.map { com.cocwar.data.db.MemberRosterEntity(name = it.first, role = it.second) })</ID>
+    <ID>MaxLineLength:BackupCodecTest.kt$BackupCodecTest.FakeWarDao$.</ID>
+    <ID>MaxLineLength:ClipboardImportDialog.kt$Column</ID>
+    <ID>MaxLineLength:ClipboardImportDialog.kt$WarNameField(name = name, onNameChange = { name = it; nameError = false }, isError = nameError, errorText = "请填写战报名称")</ID>
+    <ID>MaxLineLength:ClipboardImportDialog.kt$members = finalMembers.map { it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#")) }</ID>
+    <ID>MaxLineLength:ClipboardImportDialog.kt$onNameEdit = { i, n -&gt; matchStates = matchStates.toMutableList().also { it[i] = it[i].copy(editedName = n) } }</ID>
+    <ID>MaxLineLength:EventDetailScreen.kt$android.widget.Toast.makeText(context, "导出失败：${it.message}", android.widget.Toast.LENGTH_SHORT).show()</ID>
+    <ID>MaxLineLength:EventDetailScreen.kt$eventTypeLabel(ev.eventType) + if (ev.eventType == "league") leagueRoundLabel(ev.eventName, ev.eventRound) else ""</ID>
+    <ID>MaxLineLength:EventListScreen.kt$is WarJsonParser.ParseResult.Error -&gt; Toast.makeText(context, "战报解析失败：${result.message}", Toast.LENGTH_LONG).show()</ID>
+    <ID>MaxLineLength:ImportScreen.kt$members = finalMembers.map { it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#")) }</ID>
+    <ID>MaxLineLength:ImportScreen.kt$onNameEdit = { i, n -&gt; matchStates = matchStates.toMutableList().also { it[i] = it[i].copy(editedName = n) } }</ID>
+    <ID>MaxLineLength:SampleDataProvider.kt$SampleDataProvider$return</ID>
+    <ID>MaxLineLength:ScreenCaptureService.kt$ScreenCaptureService$put(MediaStore.Images.Media.DISPLAY_NAME, "COC_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.png")</ID>
+    <ID>MaxLineLength:ScreenCaptureService.kt$ScreenCaptureService.Companion$context.contentResolver.query(collection, projection, selection, selectionArgs, null)</ID>
+    <ID>MaxLineLength:ScreenCaptureService.kt$ScreenCaptureService.Companion$val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Images.Media.DATE_ADDED} &lt; ?"</ID>
+    <ID>MaxLineLength:StatsMembersTab.kt$"本月 ${roleLabel(stat.role)} · 参战 ${stat.attacked}/${stat.participated} · 三星率 ${formatPercent(stat.threeStarRate * 100)}"</ID>
+    <ID>MaxLineLength:StatsScreen.kt$var savedLeagueMatchLabel by rememberSaveable { mutableStateOf(FilterPrefs.statsLeagueMatch(context)) } // 持久化联赛场次归属标签</ID>
+    <ID>MaxLineLength:SyncScreen.kt$visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None</ID>
+    <ID>MaxLineLength:UpdateChecker.kt$UpdateChecker$suspend</ID>
+    <ID>MaxLineLength:UpdateCheckerTest.kt$UpdateCheckerTest$"""[{"name":"COCtools-$tag.apk","browser_download_url":"https://gitee.com/x/y/releases/download/$tag/COCtools-$tag.apk"}]"""</ID>
+    <ID>MaxLineLength:WarDatabase.kt$&lt;no name provided&gt;$db.execSQL("CREATE TABLE IF NOT EXISTS war_events_new (eventId TEXT PRIMARY KEY NOT NULL, eventName TEXT NOT NULL, eventType TEXT NOT NULL, eventRound INTEGER NOT NULL, clanTotalStars INTEGER NOT NULL, clanTotalDestruction TEXT NOT NULL, isSample INTEGER NOT NULL, createdAt INTEGER NOT NULL)")</ID>
+    <ID>MaxLineLength:WarDatabase.kt$&lt;no name provided&gt;$db.execSQL("INSERT INTO war_events_new SELECT eventId, eventName, eventType, eventRound, clanTotalStars, clanTotalDestruction, isSample, createdAt FROM war_events")</ID>
+    <ID>MaxLineLength:WarDatabase.kt$WarDao$@Query("SELECT m.eventId FROM members m INNER JOIN war_events e ON m.eventId = e.eventId WHERE m.playerName = :name AND e.eventType != 'league'")</ID>
+    <ID>MaxLineLength:WarJsonParserTest.kt$WarJsonParserTest$assertEquals(EVENT_TYPE_LEAGUE, WarJsonParser.inferEventType("""{"members":[{"player_name":"A","attacks":42}]}"""))</ID>
+    <ID>MaxLineLength:WarJsonParserTest.kt$WarJsonParserTest$val json = """{"season":"2026-08","members":[{"player_name":"A","total_stars":3,"attacks":[{"attack_order":1,"destruction_percentage":100}]}]}"""</ID>
+    <ID>MaxLineLength:WarJsonParserTest.kt$WarJsonParserTest$val json = """{"type":"cwl","members":[{"player_name":"A","total_stars":3,"attacks":[{"attack_order":1,"destruction_percentage":100}]}]}"""</ID>
+    <ID>MaxLineLength:WarJsonParserTest.kt$WarJsonParserTest$val json = """{"war_type":"clan_war","members":[{"player_name":"A","total_stars":3,"attacks":[{"attack_order":1,"destruction_percentage":100}]}]}"""</ID>
+    <ID>NestedBlockDepth:CsvCodec.kt$CsvCodec$fun parse(text: String): List&lt;List&lt;String&gt;&gt;</ID>
+    <ID>NestedBlockDepth:CsvExporter.kt$CsvExporter$fun exportEventsCsv( events: List&lt;WarEventEntity&gt;, membersByEvent: Map&lt;String, List&lt;MemberEntity&gt;&gt; ): String</ID>
+    <ID>NestedBlockDepth:ScreenCaptureService.kt$ScreenCaptureService$private suspend fun captureWithScrollStitch(maxPages: Int): Int</ID>
+    <ID>NestedBlockDepth:WarDatabase.kt$&lt;no name provided&gt;$override fun migrate(db: SupportSQLiteDatabase)</ID>
+    <ID>ReturnCount:CsvImporter.kt$CsvImporter$fun parse( text: String, slotCount: Int, isSample: Boolean = false, createdAt: Long = System.currentTimeMillis(), eventType: String = EVENT_TYPE_WAR, eventRound: Int = 0, rosterRoles: Map&lt;String, String&gt; = emptyMap() ): WarJsonParser.ParseResult</ID>
+    <ID>ReturnCount:DataMigrator.kt$DataMigrator.Companion$fun needsMigration(name: String): Boolean</ID>
+    <ID>ReturnCount:EventNamingRules.kt$EventNamingRules$fun isValidSeqName(name: String, s: Char): Boolean</ID>
+    <ID>ReturnCount:EventNamingRules.kt$EventNamingRules$fun parseTypeAndRound(name: String, fallbackType: String, fallbackRound: Int): Pair&lt;String, Int&gt;</ID>
+    <ID>ReturnCount:FloatingBallService.kt$FloatingBallService$override fun onCreate()</ID>
+    <ID>ReturnCount:Labels.kt$fun parseEventDisplayName(name: String): String</ID>
+    <ID>ReturnCount:Labels.kt$fun parseLeagueMatchFromName(name: String): Int?</ID>
+    <ID>ReturnCount:Labels.kt$fun parseWarSeqFromName(name: String): Int?</ID>
+    <ID>ReturnCount:Labels.kt$private fun parseNameParts(name: String): Pair&lt;Int, Int&gt;?</ID>
+    <ID>ReturnCount:ScreenCaptureService.kt$ScreenCaptureService$private fun dispatchSwipeUp(): Boolean</ID>
+    <ID>ReturnCount:StringMatcher.kt$StringMatcher$fun levenshtein(a: String, b: String): Int</ID>
+    <ID>ReturnCount:SyncConfig.kt$SyncConfig$private fun migrateLegacyPassword()</ID>
+    <ID>ReturnCount:SyncDecider.kt$SyncDecider$fun decide( localFp: String?, remoteFp: String?, lastLocalFp: String?, lastRemoteFp: String? ): SyncAction</ID>
+    <ID>ReturnCount:UpdateChecker.kt$UpdateChecker$fun releaseToUpdateInfo(obj: JsonObject): UpdateInfo?</ID>
+    <ID>ReturnCount:UpdateChecker.kt$UpdateChecker$internal fun compareVersion(v1: String, v2: String): Int</ID>
+    <ID>ReturnCount:WarJsonParser.kt$WarJsonParser$fun inferEventType(json: String): String</ID>
+    <ID>ReturnCount:WarJsonParser.kt$WarJsonParser$fun parse( json: String, isSample: Boolean = false, createdAt: Long = System.currentTimeMillis(), eventType: String = EVENT_TYPE_WAR, eventRound: Int = 0, rosterRoles: Map&lt;String, String&gt; = emptyMap() ): ParseResult</ID>
+    <ID>ReturnCount:WebDavClient.kt$WebDavClient$fun probe(): RemoteState</ID>
+    <ID>SwallowedException:BackupCodec.kt$BackupCodec$e: Exception</ID>
+    <ID>SwallowedException:BackupCodecTest.kt$BackupCodecTest$e: IllegalStateException</ID>
+    <ID>SwallowedException:ScreenCaptureService.kt$ScreenCaptureService$e: Exception</ID>
+    <ID>SwallowedException:SecurePrefs.kt$SecurePrefs$e: Exception</ID>
+    <ID>SwallowedException:WarJsonParser.kt$WarJsonParser$e: Exception</ID>
+    <ID>ThrowsCount:BackupCodec.kt$BackupCodec$suspend fun restoreFromBackupJson(json: String)</ID>
+    <ID>ThrowsCount:DataScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DataScreen( onBack: () -&gt; Unit, onOpenSync: () -&gt; Unit, )</ID>
+    <ID>TooGenericExceptionCaught:BackupCodec.kt$BackupCodec$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:CsvImporter.kt$CsvImporter$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DataScreen.kt$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:FloatingBallService.kt$FloatingBallService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ScreenCaptureService.kt$ScreenCaptureService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ScreenCaptureService.kt$ScreenCaptureService.Companion$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SecurePrefs.kt$SecurePrefs$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SyncViewModel.kt$SyncViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:UpdateChecker.kt$UpdateChecker$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:WarJsonParser.kt$WarJsonParser$e: Exception</ID>
+    <ID>TooGenericExceptionThrown:WebDavClient.kt$WebDavClient$throw Exception("下载失败 — 目标: $path — 服务器返回 $code（文件可能不存在）")</ID>
+    <ID>TooGenericExceptionThrown:WebDavClient.kt$WebDavClient$throw Exception("删除失败 — 目标: $path — 服务器返回 $code")</ID>
+    <ID>TooGenericExceptionThrown:WebDavClient.kt$WebDavClient$throw Exception(msg)</ID>
+    <ID>TooManyFunctions:Components.kt$com.cocwar.ui.components.Components.kt</ID>
+    <ID>TooManyFunctions:FilterPrefs.kt$FilterPrefs</ID>
+    <ID>TooManyFunctions:FloatingBallService.kt$FloatingBallService : Service</ID>
+    <ID>TooManyFunctions:Labels.kt$com.cocwar.ui.util.Labels.kt</ID>
+    <ID>TooManyFunctions:ScreenCaptureService.kt$ScreenCaptureService : AccessibilityService</ID>
+    <ID>TooManyFunctions:StatsViewModel.kt$StatsViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:SyncViewModel.kt$SyncViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:WarDatabase.kt$WarDao</ID>
+    <ID>TooManyFunctions:WarRepository.kt$WarRepository</ID>
+    <ID>UnusedParameter:BackupCodec.kt$BackupCodec$event: WarEventEntity</ID>
+    <ID>UnusedParameter:MemberManageScreen.kt$onBack: () -&gt; Unit</ID>
+    <ID>UnusedParameter:StatsCalculator.kt$StatsCalculator$event: WarEventEntity</ID>
+    <ID>UnusedParameter:StatsScreen.kt$onBack: () -&gt; Unit</ID>
+    <ID>UnusedParameter:StatsViewModel.kt$StatsViewModel$members: List&lt;MemberEntity&gt; = currentMembers.filter { it.eventId in events.map { e -&gt; e.eventId }.toSet() }</ID>
+    <ID>UnusedParameter:UpdateChecker.kt$UpdateChecker$context: Context</ID>
+    <ID>UnusedPrivateProperty:Labels.kt$val parts = parseNameParts(name) ?: return name</ID>
+    <ID>UnusedPrivateProperty:UpdateChecker.kt$UpdateChecker$private val gson = Gson()</ID>
+    <ID>UseCheckOrError:BackupCodec.kt$BackupCodec$throw IllegalStateException("事件不存在")</ID>
+    <ID>UseCheckOrError:BackupCodec.kt$BackupCodec$throw IllegalStateException("备份 JSON 解析结果为空")</ID>
+    <ID>UseCheckOrError:BackupCodec.kt$BackupCodec$throw IllegalStateException("备份中未包含任何战报数据，已中止还原（本地数据未改动）")</ID>
+    <ID>UseCheckOrError:BackupCodec.kt$BackupCodec$throw IllegalStateException("备份中某场战报数据损坏，已中止还原（本地数据未改动）")</ID>
+    <ID>UseCheckOrError:DataScreen.kt$throw IllegalStateException("所选文件不是有效的备份 JSON")</ID>
+    <ID>UseCheckOrError:DataScreen.kt$throw IllegalStateException("无法打开输出流")</ID>
+    <ID>WildcardImport:WarDatabase.kt$import androidx.room.*</ID>
+    <ID>WildcardImport:WarJsonParser.kt$import com.cocwar.data.model.*</ID>
+  </CurrentIssues>
+</SmellBaseline>
