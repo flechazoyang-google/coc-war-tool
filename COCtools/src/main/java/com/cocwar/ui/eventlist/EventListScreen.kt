@@ -1,5 +1,8 @@
 package com.cocwar.ui.eventlist
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -20,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -40,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,11 +59,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.di.warViewModel
+import com.cocwar.service.FloatingBallService
+import com.cocwar.service.ScreenCaptureService
 import com.cocwar.ui.ClipboardImportDialog
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
@@ -89,6 +99,38 @@ fun EventListScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 截图辅助（悬浮球）快捷开关：右上角按钮一键开启/关闭
+    var isBallRunning by remember { mutableStateOf(FloatingBallService.isRunning()) }
+    var showCapturePermissionDialog by remember { mutableStateOf(false) }
+    // 从其他页面/设置回来时刷新悬浮球运行状态（避免按钮状态过期）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) isBallRunning = FloatingBallService.isRunning()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 一键开关截图悬浮球；权限缺失时弹窗引导（与设置-截图工具页口径一致）
+    fun toggleCaptureHelper() {
+        if (FloatingBallService.isRunning()) {
+            FloatingBallService.stop(context)
+            isBallRunning = false
+            Toast.makeText(context, "截图悬浮球已关闭", Toast.LENGTH_SHORT).show()
+        } else {
+            val a11y = ScreenCaptureService.isAccessibilityServiceEnabled(context)
+            val overlay = Settings.canDrawOverlays(context)
+            if (!a11y || !overlay) {
+                showCapturePermissionDialog = true
+            } else {
+                FloatingBallService.start(context)
+                isBallRunning = true
+                Toast.makeText(context, "截图悬浮球已开启", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // 删除战报：立即落库删除 → Snackbar 提供撤销（重插快照），防误触
     fun deleteEventWithUndo(event: WarEventEntity) {
@@ -201,6 +243,12 @@ fun EventListScreen(
                 subtitle = if (events.isEmpty()) "尚无归档"
                 else "共 ${events.size} 份 · 部落战 $warCount · 联赛 $leagueCount",
                 actions = {
+                    CocIconButton(
+                        icon = Icons.Filled.CameraAlt,
+                        contentDescription = if (isBallRunning) "截图悬浮球运行中，点击关闭" else "截图辅助（悬浮球）",
+                        onClick = { toggleCaptureHelper() },
+                        filled = isBallRunning
+                    )
                     CocIconButton(
                         icon = Icons.Filled.ContentPaste,
                         contentDescription = "读取剪切板",
@@ -396,6 +444,59 @@ fun EventListScreen(
                 onOpen(eventId)
             },
             onDismiss = { clipboardParsed = null }
+        )
+    }
+
+    // 截图辅助权限引导：悬浮球需要「悬浮窗 + 无障碍」两项权限，缺失时弹窗引导开启
+    if (showCapturePermissionDialog) {
+        val a11yEnabled = ScreenCaptureService.isAccessibilityServiceEnabled(context)
+        val overlayGranted = Settings.canDrawOverlays(context)
+        val missingParts = buildList {
+            if (!overlayGranted) add("悬浮窗权限")
+            if (!a11yEnabled) add("无障碍服务")
+        }
+        AlertDialog(
+            onDismissRequest = { showCapturePermissionDialog = false },
+            title = { Text("需要开启以下权限") },
+            text = {
+                Text("使用截图辅助需要开启：${missingParts.joinToString("、")}\n\n" +
+                    "1. 悬浮窗权限：允许在游戏上方显示截图按钮\n" +
+                    "2. 无障碍服务：允许自动截图和滑动")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (!a11yEnabled) {
+                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } else if (!overlayGranted) {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    }
+                }) { Text("去开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    // 用户可能已去系统设置完成授权后返回：重新读取，齐备则直接开启
+                    val stillOverlay = Settings.canDrawOverlays(context)
+                    val stillA11y = ScreenCaptureService.isAccessibilityServiceEnabled(context)
+                    val stillMissing = buildList {
+                        if (!stillOverlay) add("悬浮窗权限")
+                        if (!stillA11y) add("无障碍服务")
+                    }
+                    if (stillMissing.isEmpty()) {
+                        FloatingBallService.start(context)
+                        isBallRunning = true
+                        Toast.makeText(context, "截图悬浮球已开启", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "仍缺少：${stillMissing.joinToString("、")}，请先开启后再试",
+                            Toast.LENGTH_LONG).show()
+                    }
+                    showCapturePermissionDialog = false
+                }) { Text("取消") }
+            }
         )
     }
 }
