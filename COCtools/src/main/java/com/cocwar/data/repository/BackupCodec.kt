@@ -27,10 +27,13 @@ class BackupCodec(
         val sb = StringBuilder()
         sb.append("{\n")
 
-        // 花名册（含职位，与新版结构一致）
+        // 花名册（含职位与在册状态，与新版结构一致）
         sb.append("  \"roster\": [\n")
         roster.forEachIndexed { i, entry ->
-            sb.append("    {\"name\": \"${escapeJson(entry.name)}\", \"role\": \"${escapeJson(entry.role)}\"}")
+            sb.append(
+                "    {\"name\": \"${escapeJson(entry.name)}\", " +
+                    "\"role\": \"${escapeJson(entry.role)}\", \"active\": ${entry.active}}"
+            )
             if (i < roster.lastIndex) sb.append(",")
             sb.append("\n")
         }
@@ -144,19 +147,24 @@ class BackupCodec(
         if (rosterJson != null) {
             val entries = rosterJson.mapNotNull { e ->
                 when {
-                    e.isJsonPrimitive -> e.asString to "member"
+                    // 旧版字符串数组：默认成员、在册
+                    e.isJsonPrimitive -> Triple(e.asString, "member", true)
                     e.isJsonObject -> {
                         val obj = e.asJsonObject
                         val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: return@mapNotNull null
                         val role = obj.get("role")?.takeIf { it.isJsonPrimitive }?.asString ?: "member"
-                        name to role
+                        // 旧版对象无 active 字段：默认在册
+                        val active = obj.get("active")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: true
+                        Triple(name, role, active)
                     }
                     else -> null
                 }
             }.filter { it.first.isNotBlank() }
             if (entries.isNotEmpty()) {
                 rosterDao.clearAll()
-                rosterDao.insertAll(entries.map { com.cocwar.data.db.MemberRosterEntity(name = it.first, role = it.second) })
+                rosterDao.insertAll(entries.map {
+                    com.cocwar.data.db.MemberRosterEntity(name = it.first, role = it.second, active = it.third)
+                })
             }
         }
 

@@ -83,18 +83,20 @@ class WarRepository(
 
     /**
      * 批量计算多个成员「距离上次参战已连续缺席的部落战场次」（name → count），
-     * 语义与 [getWarAbsentCount] 完全一致，但一次查询完成，供花名册排序使用。
+     * 语义与 [getWarAbsentCount] 完全一致，但一次查询完成；同时带出部落战场次总数，
+     * 供「疑似离队」判定（count == totalWarCount 表示从未参战，不误报新成员）。
      */
-    suspend fun getWarAbsentCounts(names: Collection<String>): Map<String, Int> {
+    suspend fun getWarAbsentInfo(names: Collection<String>): WarAbsentInfo {
         val warEvents = dao.getAllEvents().filter { it.eventType != "league" }.sortedBy { it.createdAt }
-        if (warEvents.isEmpty()) return names.associateWith { 0 }
+        if (warEvents.isEmpty()) return WarAbsentInfo(names.associateWith { 0 }, 0)
         val members = dao.getMembersByEventIds(warEvents.map { it.eventId })
         val participated = members.groupBy { it.playerName }
             .mapValues { (_, ms) -> ms.map { it.eventId }.toSet() }
-        return names.associateWith { name ->
+        val counts = names.associateWith { name ->
             val lastIndex = warEvents.indexOfLast { it.eventId in (participated[name] ?: emptySet()) }
             warEvents.size - 1 - lastIndex
         }
+        return WarAbsentInfo(counts, warEvents.size)
     }
 
     // === 正式成员名单 (roster) ===
@@ -108,9 +110,30 @@ class WarRepository(
     /** 一次性获取名单（含职位）。 */
     suspend fun getRosterWithRoles(): List<MemberRosterEntity> = rosterDao.getAll()
 
+    /** 一次性获取在册（未离队）成员名字列表（统计评选只认在册成员）。 */
+    suspend fun getActiveRoster(): List<String> =
+        rosterDao.getAll().filter { it.active }.map { it.name }
+
     /** 花名册职位映射：名字 → role（职位以花名册为准）。 */
     suspend fun rosterRoleMap(): Map<String, String> =
         rosterDao.getAll().associate { it.name to it.role }
+
+    /** 批量设置在册状态：active=false 标记离队，active=true 恢复（职位保留）。 */
+    suspend fun setRosterActive(names: Collection<String>, active: Boolean) {
+        if (names.isEmpty()) return
+        rosterDao.setActive(names.toList(), active)
+    }
+
+    // === 花名册维护设置 ===
+
+    /** 疑似离队判定阈值：连续缺席部落战 ≥ N 场，默认 3，范围 1..10。 */
+    fun suspectThreshold(): Int =
+        prefs.getInt(KEY_SUSPECT_THRESHOLD, DEFAULT_SUSPECT_THRESHOLD)
+            .coerceIn(SUSPECT_THRESHOLD_MIN, SUSPECT_THRESHOLD_MAX)
+
+    fun setSuspectThreshold(n: Int) {
+        prefs.edit().putInt(KEY_SUSPECT_THRESHOLD, n.coerceIn(SUSPECT_THRESHOLD_MIN, SUSPECT_THRESHOLD_MAX)).apply()
+    }
 
     /** 批量添加新成员到名单（默认职位：成员）。 */
     suspend fun addToRoster(names: List<String>) {
@@ -272,5 +295,17 @@ class WarRepository(
         backupCodec.restoreFromBackupJson(json)
     }
 
-    companion object { private const val KEY_SAMPLES = "samples_inserted" }
+    companion object {
+        private const val KEY_SAMPLES = "samples_inserted"
+        private const val KEY_SUSPECT_THRESHOLD = "suspect_depart_threshold"
+        private const val DEFAULT_SUSPECT_THRESHOLD = 3
+        private const val SUSPECT_THRESHOLD_MIN = 1
+        private const val SUSPECT_THRESHOLD_MAX = 10
+    }
 }
+
+/** 批量连续缺席计算结果：各成员缺席场次 + 部落战场次总数（疑似离队判定用）。 */
+data class WarAbsentInfo(
+    val counts: Map<String, Int>,
+    val totalWarCount: Int
+)

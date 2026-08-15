@@ -49,6 +49,7 @@ import com.cocwar.ui.components.UpdateDialog
 import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
 import com.cocwar.ui.importflow.ImportScreen
+import com.cocwar.ui.members.DepartedMembersScreen
 import com.cocwar.ui.members.MemberManageScreen
 import com.cocwar.ui.members.MemberSearchScreen
 import com.cocwar.ui.season.LeagueSeasonScreen
@@ -223,10 +224,14 @@ private fun CocWarNavHost(
                 MemberManageScreen(
                     onBack = { nav.popBackStack() },
                     onSearch = { nav.navigate("member_search") },
+                    onOpenDeparted = { nav.navigate("member_departed") },
                 )
             }
             composable("member_search") {
                 MemberSearchScreen(onBack = { nav.popBackStack() })
+            }
+            composable("member_departed") {
+                DepartedMembersScreen(onBack = { nav.popBackStack() })
             }
             composable("sync") {
                 SyncScreen(onBack = { nav.popBackStack() })

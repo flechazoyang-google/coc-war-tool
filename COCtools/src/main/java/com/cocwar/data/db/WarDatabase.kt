@@ -43,7 +43,9 @@ data class MemberEntity(
 @Entity(tableName = "member_roster")
 data class MemberRosterEntity(
     @PrimaryKey val name: String,
-    val role: String = "member"
+    val role: String = "member",
+    /** 是否在册：false = 已标记离队（保留职位与历史，可一键恢复）。 */
+    val active: Boolean = true
 )
 
 class Converters {
@@ -160,6 +162,10 @@ interface RosterDao {
     @Query("UPDATE member_roster SET role = :role WHERE name = :name")
     suspend fun updateRole(name: String, role: String)
 
+    /** 批量设置成员在册状态（标记离队 / 恢复）。 */
+    @Query("UPDATE member_roster SET active = :active WHERE name IN (:names)")
+    suspend fun setActive(names: List<String>, active: Boolean)
+
     @Query("DELETE FROM member_roster")
     suspend fun clearAll()
 }
@@ -253,9 +259,27 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
+// v6→v7: member_roster 新增 active 列（false = 已标记离队；幂等：已存在则跳过）
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val hasColumn = db.query("PRAGMA table_info(member_roster)").use { cursor ->
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(1) == "active") { found = true; break }
+            }
+            found
+        }
+        if (!hasColumn) {
+            db.execSQL("ALTER TABLE member_roster ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        }
+    }
+}
+
+private const val DB_VERSION = 7
+
 @Database(
     entities = [WarEventEntity::class, MemberEntity::class, MemberRosterEntity::class],
-    version = 6,
+    version = DB_VERSION,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -268,7 +292,10 @@ abstract class WarDatabase : RoomDatabase() {
 
         fun build(context: android.content.Context): WarDatabase =
             Room.databaseBuilder(context.applicationContext, WarDatabase::class.java, NAME)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5,
+                    MIGRATION_5_6, MIGRATION_6_7
+                )
                 .build()
     }
 }

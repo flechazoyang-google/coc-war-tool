@@ -67,11 +67,13 @@ fun MemberSearchScreen(onBack: () -> Unit) {
     val snackbarHostState = remember { SnackbarHostState() }
     val focusRequester = remember { FocusRequester() }
 
-    // 子串包含模糊过滤：输入为空显示全部名单（与花名册排序一致：职位 → 连续缺席场次从少到多）
+    // 子串包含模糊过滤：输入为空显示全部在册成员（与花名册排序一致：职位 → 连续缺席场次从少到多）；
+    // 已离队成员不在搜索范围（在「已离队成员」页管理）
     val filtered = remember(roster, absentCounts, query) {
+        val active = roster.filter { it.active }
         val q = query.trim()
-        if (q.isEmpty()) sortRoster(roster, absentCounts)
-        else roster.filter { it.name.contains(q, ignoreCase = true) }
+        if (q.isEmpty()) sortRoster(active, absentCounts)
+        else active.filter { it.name.contains(q, ignoreCase = true) }
     }
 
     // 删除成员：立即落库删除 → Snackbar 提供撤销（含角色恢复），防误触

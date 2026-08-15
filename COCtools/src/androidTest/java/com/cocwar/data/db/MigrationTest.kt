@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,11 +15,12 @@ import org.junit.runner.RunWith
 /**
  * DB Migration 链式升级测试（androidTest，需在设备/模拟器运行）。
  *
- * 覆盖 v1 库 → 链式迁移到 v6：
+ * 覆盖 v1 库 → 链式迁移到 v7：
  * - v1→v2：war_events 重建（保留 8 列，数据不丢）
  * - v2→v3：members 新增 totalStars 并回填（摧毁率 >=100→3、>=50→2、>0→1）
  * - v3→v5 / v4→v5：创建 member_roster
  * - v5→v6：member_roster 新增 role 列（默认 member）
+ * - v6→v7：member_roster 新增 active 列（默认在册）
  *
  * 项目 exportSchema=false 无 schema 文件，故手动构造 v1 库（依赖迁移的列），
  * 用 Room 打开触发真实链式迁移，迁移后经 DAO 与 SQL 断言结构与数据。
@@ -79,12 +81,15 @@ class MigrationTest {
     }
 
     @Test
-    fun migrateV1ToV6_keepsDataAndFinalSchema() = runBlocking {
+    fun migrateV1ToV7_keepsDataAndFinalSchema() = runBlocking {
         createV1Database()
 
-        // Room 打开 v1 库 → 自动链式迁移到 v6（缺任一环会抛 IllegalStateException）
+        // Room 打开 v1 库 → 自动链式迁移到 v7（缺任一环会抛 IllegalStateException）
         val roomDb = Room.databaseBuilder(context, WarDatabase::class.java, dbName)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5,
+                MIGRATION_5_6, MIGRATION_6_7
+            )
             .build()
         roomDb.openHelper.writableDatabase
 
@@ -101,11 +106,12 @@ class MigrationTest {
         val li = members.first { it.playerName == "李四" }
         assertEquals(0, li.totalStars)
 
-        // 3. v5→v6 member_roster 有 role 列，默认 member
+        // 3. v5→v6/v6→v7 member_roster 有 role 与 active 列：默认 member、在册
         roomDb.openHelper.writableDatabase.execSQL("INSERT INTO member_roster (name) VALUES ('王五')")
         val roster = roomDb.rosterDao().getAll()
         assertEquals(listOf("王五"), roster.map { it.name })
         assertEquals("member", roster.single().role)
+        assertTrue(roster.single().active)
 
         roomDb.close()
     }

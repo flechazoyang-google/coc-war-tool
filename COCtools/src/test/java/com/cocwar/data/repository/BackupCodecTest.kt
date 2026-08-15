@@ -90,6 +90,9 @@ class BackupCodecTest {
         override suspend fun updateRole(name: String, role: String) {
             entries.replaceAll { if (it.name == name) it.copy(role = role) else it }
         }
+        override suspend fun setActive(names: List<String>, active: Boolean) {
+            entries.replaceAll { if (it.name in names) it.copy(active = active) else it }
+        }
         override suspend fun clearAll() { entries.clear() }
         override fun observeAll(): Flow<List<MemberRosterEntity>> = flowOf(entries.toList())
     }
@@ -226,8 +229,50 @@ class BackupCodecTest {
             }
         """.trimIndent()
         f.codec.restoreFromBackupJson(legacy)
-        // 旧版字符串名单 → 默认职位 member
+        // 旧版字符串名单 → 默认职位 member、默认在册
         assertEquals(setOf("张三", "李四"), f.rosterDao.entries.map { it.name }.toSet())
         assertTrue(f.rosterDao.entries.all { it.role == "member" })
+        assertTrue(f.rosterDao.entries.all { it.active })
+    }
+
+    @Test
+    fun `往返-已离队标记随备份保留`() = runBlocking {
+        val f = Fixture()
+        f.rosterDao.entries += MemberRosterEntity(name = "甲", role = "elder", active = true)
+        f.rosterDao.entries += MemberRosterEntity(name = "乙", role = "member", active = false)
+        f.warDao.events["e1"] = event("e1", "0030701", 6, 1_000L)
+        f.warDao.membersByEvent["e1"] = mutableListOf(
+            member("e1", 1, "甲", 3),
+            member("e1", 2, "乙", 3)
+        )
+
+        val json = f.codec.exportAllDataJson()
+        assertTrue(json.contains("\"active\": true"))
+        assertTrue(json.contains("\"active\": false"))
+
+        // 还原到"另一个"空库（模拟换机/云端还原）
+        val target = Fixture()
+        target.codec.restoreFromBackupJson(json)
+        val byName = target.rosterDao.entries.associateBy { it.name }
+        assertTrue(byName["甲"]!!.active)
+        assertFalse(byName["乙"]!!.active)
+    }
+
+    @Test
+    fun `还原-旧版对象名单无 active 默认在册`() = runBlocking {
+        val f = Fixture()
+        val legacy = """
+            {
+              "roster": [{"name": "张三", "role": "elder"}],
+              "events": [
+                {"event_name": "0030701", "clan_total_stars": 0,
+                 "members": [{"player_name": "张三", "total_stars": 0, "attacks": []}]}
+              ]
+            }
+        """.trimIndent()
+        f.codec.restoreFromBackupJson(legacy)
+        val entry = f.rosterDao.entries.single()
+        assertEquals("elder", entry.role)
+        assertTrue(entry.active)
     }
 }

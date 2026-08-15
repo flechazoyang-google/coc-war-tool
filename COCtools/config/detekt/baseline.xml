@@ -24,7 +24,7 @@
     <ID>CyclomaticComplexMethod:FloatingBallService.kt$FloatingBallService$private fun handleBallTouch(event: MotionEvent, params: WindowManager.LayoutParams)</ID>
     <ID>CyclomaticComplexMethod:ImportForm.kt$@Composable private fun UnmatchedRow( state: MemberMatchState, index: Int, roster: List&lt;String&gt;, onNameEdit: (Int, String) -&gt; Unit, onOptionChange: (Int, MatchOption) -&gt; Unit, onRosterPick: (Int, String) -&gt; Unit, onToggleDropdown: (Int) -&gt; Unit )</ID>
     <ID>CyclomaticComplexMethod:ImportScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun ImportScreen(onBack: () -&gt; Unit, onSaved: () -&gt; Unit)</ID>
-    <ID>CyclomaticComplexMethod:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen(onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {})</ID>
+    <ID>CyclomaticComplexMethod:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen( onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {}, onOpenDeparted: () -&gt; Unit = {}, )</ID>
     <ID>CyclomaticComplexMethod:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RefreshIndicator( modifier: Modifier = Modifier, state: PullToRefreshState, isRefreshing: Boolean, showDone: Boolean, doneText: String )</ID>
     <ID>CyclomaticComplexMethod:StatsCalculator.kt$StatsCalculator$fun computeTopMembers( events: List&lt;WarEventEntity&gt;, allMembers: List&lt;MemberEntity&gt;, roster: List&lt;String&gt; = emptyList(), rosterRoles: Map&lt;String, String&gt; = emptyMap() ): List&lt;TopMemberScore&gt;</ID>
     <ID>CyclomaticComplexMethod:StatsScreen.kt$@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class) @Composable fun StatsScreen( onBack: () -&gt; Unit, onOpenEvent: (String) -&gt; Unit )</ID>
@@ -55,6 +55,11 @@
     <ID>FunctionNaming:Components.kt$@Composable fun StatTile( label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = MaterialTheme.colorScheme.onSurface, highlight: Boolean = false )</ID>
     <ID>FunctionNaming:Components.kt$@Composable fun TypeBadge(type: String, round: Int)</ID>
     <ID>FunctionNaming:DataScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DataScreen( onBack: () -&gt; Unit, onOpenSync: () -&gt; Unit, )</ID>
+    <ID>FunctionNaming:DepartedMembersScreen.kt$@Composable private fun DepartedDeleteDialog( name: String, onConfirm: () -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:DepartedMembersScreen.kt$@Composable private fun DepartedMemberList( departed: List&lt;MemberRosterEntity&gt;, onRestore: (String) -&gt; Unit, onDeleteRequest: (String) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:DepartedMembersScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable private fun DepartedMemberRow( entry: MemberRosterEntity, onRestore: () -&gt; Unit, onDeleteRequest: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:DepartedMembersScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DepartedMembersScreen(onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:DepartedMembersScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun DepartedTopBar( hasDeparted: Boolean, onBack: () -&gt; Unit, onRestoreAll: () -&gt; Unit )</ID>
     <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun AttackEditDialog( attackOrder: Int, destructionText: String, onDestructionChange: (String) -&gt; Unit, onDismiss: () -&gt; Unit, onConfirm: () -&gt; Unit )</ID>
     <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun Masthead(ev: WarEventEntity, stats: WarStats)</ID>
     <ID>FunctionNaming:EventDetailScreen.kt$@Composable private fun MastheadMeta( label: String, value: String, modifier: Modifier = Modifier, valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.cocColors.onMasthead )</ID>
@@ -84,8 +89,11 @@
     <ID>FunctionNaming:MainActivity.kt$@Composable private fun CocWarNavHost( themeStyle: ThemeStyle = ThemeStyle.LEDGER, onThemeChange: (ThemeStyle) -&gt; Unit = {}, )</ID>
     <ID>FunctionNaming:MemberManageScreen.kt$@Composable internal fun MemberDetailDialog( name: String, loadAbsentCount: suspend (String) -&gt; Int, onDismiss: () -&gt; Unit )</ID>
     <ID>FunctionNaming:MemberManageScreen.kt$@Composable internal fun RoleSelectDialog( currentRole: String, onSelect: (String) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@Composable private fun SuspectDialog( suspects: List&lt;SuspectMember&gt;, threshold: Int, onThresholdChange: (Int) -&gt; Unit, onMarkDeparted: (String) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@Composable private fun SuspectMemberList( suspects: List&lt;SuspectMember&gt;, threshold: Int, onMarkDeparted: (String) -&gt; Unit )</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@Composable private fun SuspectThresholdStepper( threshold: Int, onThresholdChange: (Int) -&gt; Unit )</ID>
     <ID>FunctionNaming:MemberManageScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable internal fun MemberRow( entry: com.cocwar.data.db.MemberRosterEntity, index: Int, onClick: () -&gt; Unit, onRoleClick: () -&gt; Unit, onDeleteRequest: () -&gt; Unit )</ID>
-    <ID>FunctionNaming:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen(onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {})</ID>
+    <ID>FunctionNaming:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen( onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {}, onOpenDeparted: () -&gt; Unit = {}, )</ID>
     <ID>FunctionNaming:MemberSearchScreen.kt$@Composable fun MemberSearchScreen(onBack: () -&gt; Unit)</ID>
     <ID>FunctionNaming:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun RefreshableBox( isRefreshing: Boolean, onRefresh: () -&gt; Unit, modifier: Modifier = Modifier, doneText: String = "已刷新", content: @Composable BoxScope.() -&gt; Unit )</ID>
     <ID>FunctionNaming:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RefreshIndicator( modifier: Modifier = Modifier, state: PullToRefreshState, isRefreshing: Boolean, showDone: Boolean, doneText: String )</ID>
@@ -136,7 +144,7 @@
     <ID>LongMethod:LeagueSeasonScreen.kt$@Composable private fun SeasonHeroCard(stats: LeagueSeasonStats, matchLabel: String)</ID>
     <ID>LongMethod:MainActivity.kt$@Composable private fun CocWarNavHost( themeStyle: ThemeStyle = ThemeStyle.LEDGER, onThemeChange: (ThemeStyle) -&gt; Unit = {}, )</ID>
     <ID>LongMethod:MemberManageScreen.kt$@OptIn(ExperimentalFoundationApi::class) @Composable internal fun MemberRow( entry: com.cocwar.data.db.MemberRosterEntity, index: Int, onClick: () -&gt; Unit, onRoleClick: () -&gt; Unit, onDeleteRequest: () -&gt; Unit )</ID>
-    <ID>LongMethod:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen(onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {})</ID>
+    <ID>LongMethod:MemberManageScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MemberManageScreen( onBack: () -&gt; Unit, onSearch: () -&gt; Unit = {}, onOpenDeparted: () -&gt; Unit = {}, )</ID>
     <ID>LongMethod:MemberSearchScreen.kt$@Composable fun MemberSearchScreen(onBack: () -&gt; Unit)</ID>
     <ID>LongMethod:Refreshable.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun RefreshIndicator( modifier: Modifier = Modifier, state: PullToRefreshState, isRefreshing: Boolean, showDone: Boolean, doneText: String )</ID>
     <ID>LongMethod:ScreenCaptureService.kt$ScreenCaptureService$private suspend fun captureWithScrollStitch(maxPages: Int): Int</ID>
@@ -462,6 +470,7 @@
     <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$5</ID>
     <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$50</ID>
     <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$6</ID>
+    <ID>MagicNumber:WarDatabase.kt$&lt;no name provided&gt;$7</ID>
     <ID>MagicNumber:WarJsonParser.kt$WarJsonParser$100</ID>
     <ID>MagicNumber:WarRepository.kt$WarRepository$100</ID>
     <ID>MagicNumber:WarRepository.kt$WarRepository$1_000</ID>
@@ -476,7 +485,6 @@
     <ID>MagicNumber:WebDavClient.kt$WebDavClient$501</ID>
     <ID>MatchingDeclarationName:ScreenshotGalleryDialog.kt$ScreenshotItem</ID>
     <ID>MatchingDeclarationName:UpdateConfig.kt$UpdatePrefs</ID>
-    <ID>MaxLineLength:BackupCodec.kt$BackupCodec$rosterDao.insertAll(entries.map { com.cocwar.data.db.MemberRosterEntity(name = it.first, role = it.second) })</ID>
     <ID>MaxLineLength:BackupCodecTest.kt$BackupCodecTest.FakeWarDao$.</ID>
     <ID>MaxLineLength:ClipboardImportDialog.kt$Column</ID>
     <ID>MaxLineLength:ClipboardImportDialog.kt$WarNameField(name = name, onNameChange = { name = it; nameError = false }, isError = nameError, errorText = "请填写战报名称")</ID>

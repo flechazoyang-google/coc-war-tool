@@ -443,7 +443,8 @@ object StatsCalculator {
      * - 参战但空 1 个进攻机会 -3；两次进攻全空 -10
      * - 名单成员未参与该场部落战 -4
      *
-     * @param roster 正式成员名单（花名册），用于未参战扣分。
+     * @param roster 在册（未离队）成员名单，用于未参战扣分。已离队成员不参与评选，
+     *               除非其当期实际参战（此时按参战成员计入，见 RULES §5）。
      */
     fun computeTopMembers(
         events: List<WarEventEntity>,
