@@ -81,6 +81,22 @@ class WarRepository(
         return warEvents.size - 1 - lastIndex
     }
 
+    /**
+     * 批量计算多个成员「距离上次参战已连续缺席的部落战场次」（name → count），
+     * 语义与 [getWarAbsentCount] 完全一致，但一次查询完成，供花名册排序使用。
+     */
+    suspend fun getWarAbsentCounts(names: Collection<String>): Map<String, Int> {
+        val warEvents = dao.getAllEvents().filter { it.eventType != "league" }.sortedBy { it.createdAt }
+        if (warEvents.isEmpty()) return names.associateWith { 0 }
+        val members = dao.getMembersByEventIds(warEvents.map { it.eventId })
+        val participated = members.groupBy { it.playerName }
+            .mapValues { (_, ms) -> ms.map { it.eventId }.toSet() }
+        return names.associateWith { name ->
+            val lastIndex = warEvents.indexOfLast { it.eventId in (participated[name] ?: emptySet()) }
+            warEvents.size - 1 - lastIndex
+        }
+    }
+
     // === 正式成员名单 (roster) ===
 
     /** 获取名单流（供 UI 订阅）。 */

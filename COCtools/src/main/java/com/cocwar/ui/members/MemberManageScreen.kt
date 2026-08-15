@@ -69,6 +69,7 @@ import kotlinx.coroutines.launch
 fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
     val viewModel: MemberManageViewModel = warViewModel { MemberManageViewModel(it) }
     val roster by viewModel.roster.collectAsStateWithLifecycle()
+    val absentCounts by viewModel.absentCounts.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
@@ -80,12 +81,10 @@ fun MemberManageScreen(onBack: () -> Unit, onSearch: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 展示列表：固定按职位排序（首领 > 副首领 > 长老 > 成员），同职位保持花名册顺序
-    val displayList = remember(roster) {
-        roster
-            .withIndex()
-            .sortedWith(compareBy({ roleRank(it.value.role) }, { it.index }))
-            .map { it.value }
+    // 展示列表：先按职位排序（首领 > 副首领 > 长老 > 成员），
+    // 同职位按「距离上次参战已连续缺席的部落战场次」从少到多（最近参战过的在前）
+    val displayList = remember(roster, absentCounts) {
+        sortRoster(roster, absentCounts)
     }
 
     // 删除成员：立即落库删除 → Snackbar 提供撤销（含角色恢复），防误触
@@ -282,6 +281,27 @@ private fun roleRank(role: String): Int = when (role.lowercase().replace("-", ""
     "elder" -> 2
     else -> 3
 }
+
+/**
+ * 花名册排序：先按职位（首领 > 副首领 > 长老 > 成员），
+ * 同职位按「距离上次参战已连续缺席的部落战场次」从少到多；
+ * 次数相同保持花名册原有顺序（名字字母序）。
+ * 花名册页与搜索页共用，保证两处顺序一致。
+ */
+internal fun sortRoster(
+    roster: List<com.cocwar.data.db.MemberRosterEntity>,
+    absentCounts: Map<String, Int>
+): List<com.cocwar.data.db.MemberRosterEntity> =
+    roster
+        .withIndex()
+        .sortedWith(
+            compareBy(
+                { roleRank(it.value.role) },
+                { absentCounts[it.value.name] ?: Int.MAX_VALUE },
+                { it.index }
+            )
+        )
+        .map { it.value }
 
 /**
  * 成员行：序号 + 名字 + 职位（点击设置职位）。

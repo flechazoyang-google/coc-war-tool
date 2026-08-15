@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 fun MemberSearchScreen(onBack: () -> Unit) {
     val viewModel: MemberManageViewModel = warViewModel { MemberManageViewModel(it) }
     val roster by viewModel.roster.collectAsStateWithLifecycle()
+    val absentCounts by viewModel.absentCounts.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var pendingDeleteName by remember { mutableStateOf<String?>(null) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
@@ -66,10 +67,10 @@ fun MemberSearchScreen(onBack: () -> Unit) {
     val snackbarHostState = remember { SnackbarHostState() }
     val focusRequester = remember { FocusRequester() }
 
-    // 子串包含模糊过滤：输入为空显示全部名单（与花名册序号排序一致，按名字字母序）
-    val filtered = remember(roster, query) {
+    // 子串包含模糊过滤：输入为空显示全部名单（与花名册排序一致：职位 → 连续缺席场次从少到多）
+    val filtered = remember(roster, absentCounts, query) {
         val q = query.trim()
-        if (q.isEmpty()) roster.sortedBy { it.name }
+        if (q.isEmpty()) sortRoster(roster, absentCounts)
         else roster.filter { it.name.contains(q, ignoreCase = true) }
     }
 
