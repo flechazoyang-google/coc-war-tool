@@ -24,8 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
@@ -67,7 +67,6 @@ import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.EmptyState
 import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
-import com.cocwar.ui.components.SettingsRow
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.roleLabel
@@ -84,11 +83,12 @@ fun MemberManageScreen(
     val roster by viewModel.roster.collectAsStateWithLifecycle()
     val absentCounts by viewModel.absentCounts.collectAsStateWithLifecycle()
     val suspects by viewModel.suspects.collectAsStateWithLifecycle()
-    val departed by viewModel.departed.collectAsStateWithLifecycle()
     val suspectThreshold by viewModel.suspectThreshold.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
+    // 右上角「更多」菜单开关（导入新成员 / 疑似离队确认 / 已离队成员）
+    var showMoreMenu by remember { mutableStateOf(false) }
     var showSuspectDialog by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
     // 点击成员行后弹窗展示「连续缺席场次」的目标成员
@@ -141,12 +141,50 @@ fun MemberManageScreen(
                         contentDescription = "搜索成员",
                         onClick = onSearch
                     )
-                    CocIconButton(
-                        icon = if (showImport) Icons.Filled.Close else Icons.Filled.Add,
-                        contentDescription = "批量导入",
-                        onClick = { showImport = !showImport },
-                        filled = showImport
-                    )
+                    // 右上角「更多」：导入新成员 / 疑似离队确认 / 已离队成员
+                    Box {
+                        CocIconButton(
+                            icon = Icons.Filled.MoreVert,
+                            contentDescription = "更多操作",
+                            onClick = { showMoreMenu = true },
+                            filled = showMoreMenu
+                        )
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("导入新成员") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showImport = !showImport
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("疑似离队确认") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Warning, null, Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showSuspectDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("已离队成员") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Person, null, Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onOpenDeparted()
+                                }
+                            )
+                        }
+                    }
                 }
             )
     
@@ -208,30 +246,6 @@ fun MemberManageScreen(
                 Spacer(Modifier.height(14.dp))
             }
 
-            // 更新花名册：疑似离队确认 + 已离队成员管理入口
-            CocCard(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-            ) {
-                SettingsRow(
-                    icon = Icons.Filled.Warning,
-                    iconColor = MaterialTheme.cocColors.accent,
-                    title = "疑似离队确认",
-                    subtitle = "连续缺席 ≥ $suspectThreshold 场部落战 · 当前 ${suspects.size} 人",
-                    onClick = { showSuspectDialog = true }
-                )
-                SettingsRow(
-                    icon = Icons.Filled.Person,
-                    iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    title = "已离队成员",
-                    subtitle = if (departed.isEmpty()) "暂无" else "${departed.size} 人",
-                    onClick = onOpenDeparted,
-                    showDivider = false
-                )
-            }
-            Spacer(Modifier.height(14.dp))
-
             // 下拉刷新：名单由 Room Flow 自动保持最新，下拉触发手动重读并提供状态反馈
             RefreshableBox(
                 isRefreshing = refreshing,
@@ -244,7 +258,7 @@ fun MemberManageScreen(
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         EmptyState(
                             title = "名单为空",
-                            body = "点击右上角 + 批量导入成员\n导入战报时也会自动收录新成员"
+                            body = "点击右上角更多 · 导入新成员\n导入战报时也会自动收录新成员"
                         )
                     }
                 } else {
