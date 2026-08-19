@@ -58,6 +58,7 @@ import com.cocwar.ui.settings.AppearanceScreen
 import com.cocwar.ui.settings.CaptureScreen
 import com.cocwar.ui.settings.DataScreen
 import com.cocwar.ui.settings.GeneralScreen
+import com.cocwar.ui.settings.OcrSettingsScreen
 import com.cocwar.ui.settings.SettingsScreen
 import com.cocwar.ui.settings.UpdateSettingsScreen
 import com.cocwar.ui.stats.StatsScreen
@@ -243,6 +244,7 @@ private fun CocWarNavHost(
                     onOpenCapture = { nav.navigate("settings/capture") },
                     onOpenGeneral = { nav.navigate("settings/general") },
                     onOpenAbout = { nav.navigate("settings/about") },
+                    onOpenOcr = { nav.navigate("settings/ocr") },
                 )
             }
             composable("settings/appearance") {
@@ -269,6 +271,9 @@ private fun CocWarNavHost(
             }
             composable("settings/about") {
                 AboutScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/ocr") {
+                OcrSettingsScreen(onBack = { nav.popBackStack() })
             }
             composable("update_settings") {
                 UpdateSettingsScreen(onBack = { nav.popBackStack() })

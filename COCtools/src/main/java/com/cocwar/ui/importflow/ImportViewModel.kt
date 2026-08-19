@@ -2,11 +2,17 @@ package com.cocwar.ui.importflow
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cocwar.data.ocr.OcrClient
+import com.cocwar.data.ocr.OcrConfig
+import com.cocwar.data.ocr.OcrCsvExtractor
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.repository.WarRepository
 import kotlinx.coroutines.launch
 
-class ImportViewModel(private val repo: WarRepository) : ViewModel() {
+class ImportViewModel(
+    private val repo: WarRepository,
+    private val ocrConfig: OcrConfig? = null
+) : ViewModel() {
 
     /** 解析战报：先按 JSON 内容自动识别类型（RULES §4.9），再解析并注入花名册职位映射。 */
     suspend fun parse(json: String): WarJsonParser.ParseResult {
@@ -35,6 +41,21 @@ class ImportViewModel(private val repo: WarRepository) : ViewModel() {
 
     suspend fun generateName(eventType: String, eventRound: Int): String =
         repo.generateEventName(eventType, eventRound)
+
+    /**
+     * 识图：调用已配置的视觉模型（默认千问），返回提取后的纯 CSV。
+     * @throws OcrClient.OcrException 未配置 Key / 网络 / 超时 / API 错误 / 响应解析失败
+     */
+    suspend fun recognize(imageBase64: String, mimeType: String = "image/jpeg"): String {
+        val config = ocrConfig ?: throw OcrClient.OcrException.NotConfigured()
+        if (!config.isConfigured) throw OcrClient.OcrException.NotConfigured()
+        val client = OcrClient(
+            apiKey = config.apiKey,
+            baseUrl = config.baseUrl,
+            model = config.model
+        )
+        return OcrCsvExtractor.extract(client.recognize(imageBase64, mimeType))
+    }
 
     suspend fun loadRoster(): List<String> = repo.getRoster()
 

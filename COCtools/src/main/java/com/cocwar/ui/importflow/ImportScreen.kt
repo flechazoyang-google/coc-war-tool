@@ -19,9 +19,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +49,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
+import com.cocwar.data.ocr.OcrClient
+import com.cocwar.data.ocr.OcrConfig
+import com.cocwar.data.ocr.OcrValidation
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.di.warViewModel
 import com.cocwar.ui.components.CocCard
@@ -54,14 +59,16 @@ import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.components.SegmentedTabs
 import com.cocwar.ui.theme.cocColors
+import com.cocwar.ui.util.ImageCompress
 import kotlinx.coroutines.launch
 import com.cocwar.ui.util.parseEventRoundFromName
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
-    val viewModel: ImportViewModel = warViewModel { ImportViewModel(it) }
     val context = LocalContext.current
+    val ocrConfig = remember { OcrConfig(context) }
+    val viewModel: ImportViewModel = warViewModel { ImportViewModel(it, ocrConfig) }
     val scope = rememberCoroutineScope()
 
     var jsonText by remember { mutableStateOf("") }
@@ -75,6 +82,9 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
     var roster by remember { mutableStateOf<List<String>>(emptyList()) }
     // 数据来源：0=JSON，1=CSV（B2）
     var sourceMode by remember { mutableStateOf(0) }
+    // 截图识别：进行中 / 识别数值警告
+    var recognizing by remember { mutableStateOf(false) }
+    var ocrWarning by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(parsedEvent) {
         parsedEvent?.let { parsed ->
@@ -139,6 +149,51 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                 }
                     .onSuccess { csvText = it; doParseCsv(it) }
                     .onFailure { errorMsg = "读取文件失败：${it.message}" }
+            }
+        }
+    }
+
+    /** 截图识别：压缩图片 → 调模型 → CSV 填入并自动解析，复用现有导入链路。 */
+    val ocrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            scope.launch {
+                recognizing = true
+                errorMsg = null
+                ocrWarning = null
+                try {
+                    val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        ImageCompress.readAndCompressToBase64(context, it)
+                    }
+                    if (base64 == null) {
+                        errorMsg = "读取图片失败，请换一张截图重试"
+                        return@launch
+                    }
+                    val csv = viewModel.recognize(base64)
+                    if (csv.isBlank()) {
+                        errorMsg = "识别结果为空（图片中未识别到战报数据）"
+                        return@launch
+                    }
+                    csvText = csv
+                    val issues = OcrValidation.validate(csv)
+                    ocrWarning = if (issues.isEmpty()) null
+                    else "识别结果有 ${issues.size} 处可疑数值，请核对：\n" +
+                        issues.joinToString("\n") { "  ${it.name}（${it.field}=${it.value}）" }
+                    doParseCsv(csv)
+                } catch (e: OcrClient.OcrException.NotConfigured) {
+                    errorMsg = e.message
+                } catch (e: OcrClient.OcrException.Timeout) {
+                    errorMsg = "识别超时（120 秒），请重试"
+                } catch (e: OcrClient.OcrException.Network) {
+                    errorMsg = "网络错误：${e.detail}，请检查网络后重试"
+                } catch (e: OcrClient.OcrException.ApiError) {
+                    errorMsg = "${e.message}"
+                } catch (e: OcrClient.OcrException.BadResponse) {
+                    errorMsg = "识别响应无法解析，请重试"
+                } catch (e: Exception) {
+                    errorMsg = "识别失败：${e.message}"
+                } finally {
+                    recognizing = false
+                }
             }
         }
     }
@@ -265,6 +320,26 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                         Spacer(Modifier.width(6.dp))
                         Text("选择文件")
                     }
+                    OutlinedButton(
+                        onClick = { ocrPicker.launch("image/*") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !recognizing,
+                        shape = CocShape.field,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, MaterialTheme.cocColors.hairline
+                        )
+                    ) {
+                        if (recognizing) {
+                            CircularProgressIndicator(
+                                Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Filled.ImageSearch, null, Modifier.size(17.dp))
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (recognizing) "识别中…" else "截图识别")
+                    }
                     Button(
                         onClick = { doParseCsv(csvText) },
                         modifier = Modifier.weight(1f),
@@ -292,6 +367,18 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                     Text(
                         it,
                         color = MaterialTheme.cocColors.danger,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+            }
+
+            ocrWarning?.let {
+                Spacer(Modifier.height(12.dp))
+                CocCard(Modifier.fillMaxWidth()) {
+                    Text(
+                        it,
+                        color = MaterialTheme.cocColors.star,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(14.dp)
                     )

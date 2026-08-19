@@ -1,5 +1,21 @@
 # COC War Tool 发行版日志
 
+## v4.7.1-preview (2026-08-19)
+
+预览版：截图识图导入（AI OCR）——导入页「截图识别」一键识别部落战报截图，直接转为 CSV 走现有导入链路
+
+- **识图导入**：导入页 CSV 区新增「截图识别」入口：选图 → 自动压缩（最长边 1600 + JPEG 80）→ 视觉模型识别（默认千问 DashScope，OpenAI 兼容协议）→ 识别结果以 CSV 填入并自动解析，复用现有花名册匹配预览/保存链路
+- **识图设置**：设置 → 识图设置（API Key 明文/密文切换，AndroidKeyStore 加密存储，不落盘明文）；BaseURL/模型可配置，可切换豆包 / SiliconFlow 等兼容服务
+- **识别可靠性**：识别中 loading 与错误分级提示（未配置 Key / 网络 / 超时 / API 错误 / 响应不可解析）；识别后星数（0-6）/摧毁率（0-100）合法性校验，可疑值高亮提示人工核对（不阻断导入）
+- **准确度验证**：45 人真实部落战报实测（10 屏截图）：数值类 100%、成员名模糊匹配 95.6%，达到导入要求（详见 `docs/DOUBAO_OCR_VALIDATION.md`）
+- **测试**：单测 193 用例全绿（新增 ocr 21：extractor 6 / client 9 / validation 6）
+
+- **APK**: 见 Gitee Release 附件（`COCtools-v4.7.1-preview.apk`，不入库）
+- **Version Code**: 29
+- **Gitee Release**: [v4.7.1-preview](https://gitee.com/yang-genhao/coc-war-tool/releases/tag/v4.7.1-preview)
+
+---
+
 ## v4.6 (2026-08-17)
 
 正式版：花名册离队管理 + 缺席排序 + 截图辅助快捷按钮 + 成员页「更多」菜单（自 v4.5.2-preview 起）

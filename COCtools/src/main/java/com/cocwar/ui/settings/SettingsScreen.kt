@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Screenshot
@@ -36,6 +37,7 @@ fun SettingsScreen(
     onOpenCapture: () -> Unit,
     onOpenGeneral: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenOcr: () -> Unit,
 ) {
     Column(
         Modifier
@@ -75,6 +77,13 @@ fun SettingsScreen(
                     title = "截图工具",
                     subtitle = "悬浮球 · 滑动步长 · 自动清理",
                     onClick = onOpenCapture
+                )
+                SettingsRow(
+                    icon = Icons.Filled.ImageSearch,
+                    iconColor = MaterialTheme.cocColors.roleLeader,
+                    title = "识图设置",
+                    subtitle = "AI 识图 · API Key 配置",
+                    onClick = onOpenOcr
                 )
                 SettingsRow(
                     icon = Icons.Filled.Tune,
