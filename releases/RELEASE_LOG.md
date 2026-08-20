@@ -1,5 +1,20 @@
 # COC War Tool 发行版日志
 
+## v4.7.2-preview (2026-08-21)
+
+预览版：识图客户端协议修复 + 默认后端切为 agnes + 空返回自动重试
+
+- **识图协议修复**：`OcrClient` 请求体图片块补齐标准 OpenAI 多模态 `type: image_url` 字段 —— 此前仅 DashScope 容忍缺省，严格校验的兼容服务（如 agnes-ai）会直接 HTTP 500，现所有 OpenAI 兼容服务通用
+- **默认识图后端切为 agnes**：识图设置默认端点改为 `https://api.agnes-ai.cn/v1`、模型 `agnes-2.5-pro`（45 人真实战报实测：数值 100%、成员名模糊 93.3%），仍可切换千问 / 豆包 / SiliconFlow
+- **空返回自动重试**：视觉模型偶发返回空内容时自动重试（最多 3 次、间隔 800ms），消除识图偶发空结果需手动重试的问题
+- **测试**：单测 194 用例全绿（OcrClient 9→10：新增 type 协议断言 + 空返回重试用例）
+
+- **APK**: 见 Gitee Release 附件（`COCtools-v4.7.2-preview.apk`，不入库）
+- **Version Code**: 30
+- **Gitee Release**: [v4.7.2-preview](https://gitee.com/yang-genhao/coc-war-tool/releases/tag/v4.7.2-preview)
+
+---
+
 ## v4.7.1-preview (2026-08-19)
 
 预览版：截图识图导入（AI OCR）——导入页「截图识别」一键识别部落战报截图，直接转为 CSV 走现有导入链路

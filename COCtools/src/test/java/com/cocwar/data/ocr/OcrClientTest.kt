@@ -59,8 +59,31 @@ class OcrClientTest {
         )
         val body = req.writtenBody()
         assertTrue("请求体应含 base64 图片 data URL", body.contains("data:image/jpeg;base64,QUJD"))
+        assertTrue("图片块应含 type:image_url 字段", body.contains("\"type\":\"image_url\""))
         assertTrue("请求体应含模型名", body.contains("\"model\":\"qwen-test\""))
         assertTrue("请求体应含提示词", body.contains("成员名,排名,总星数"))
+    }
+
+    @Test
+    fun `blank content retries then succeeds`() {
+        var calls = 0
+        val client = OcrClient(
+            apiKey = "sk-test",
+            baseUrl = "https://dashscope.example.com/compatible-mode/v1",
+            model = "qwen-test",
+            connectionFactory = { url ->
+                calls++
+                val body = if (calls == 1) {
+                    """{"choices":[{"message":{"content":""}}]}"""
+                } else {
+                    """{"choices":[{"message":{"content":"成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率\n张三,1,6,100,100"}}]}"""
+                }
+                FakeHttp(URL(url), 200, body, "").also { requests.add(it) }
+            }
+        )
+        val content = run(client, "QUJD")
+        assertTrue(content.contains("张三"))
+        assertEquals("空返回后应重试一次", 2, requests.size)
     }
 
     @Test

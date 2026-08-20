@@ -8,10 +8,11 @@ import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
- * 识图客户端：调用 OpenAI 兼容 `chat/completions` 视觉接口（默认千问 DashScope，
+ * 识图客户端：调用 OpenAI 兼容 `chat/completions` 视觉接口（默认 agnes-ai，
  * 可配置为豆包 / SiliconFlow 等），base64 图片 → 模型响应文本。
  *
  * 网络层沿用 WebDavClient 模式：`HttpURLConnection` + 可注入 [connectionFactory]
@@ -49,6 +50,7 @@ class OcrClient(
 
     /**
      * 识别图片，返回模型输出原始文本（调用方用 [OcrCsvExtractor] 提取 CSV）。
+     * 模型偶发返回空 content 时自动重试，最多 [MAX_ATTEMPTS] 次（含首次）。
      * @param imageBase64 图片的 base64 内容（不含 data: 前缀）
      */
     suspend fun recognize(
@@ -58,6 +60,17 @@ class OcrClient(
     ): String = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) throw OcrException.NotConfigured()
 
+        var last = ""
+        repeat(MAX_ATTEMPTS) { attempt ->
+            last = executeRequest(imageBase64, mimeType, prompt)
+            if (last.isNotBlank()) return@withContext last
+            if (attempt < MAX_ATTEMPTS - 1) delay(RETRY_DELAY_MS)
+        }
+        throw OcrException.BadResponse("连续 $MAX_ATTEMPTS 次返回空内容")
+    }
+
+    /** 单次请求并解析内容；网络/HTTP/解析错误映射为 [OcrException] 子类。 */
+    private fun executeRequest(imageBase64: String, mimeType: String, prompt: String): String {
         val url = baseUrl.trimEnd('/') + "/chat/completions"
         val payload = buildPayload(imageBase64, mimeType, prompt)
         val body = payload.toString().toByteArray(Charsets.UTF_8)
@@ -81,9 +94,8 @@ class OcrClient(
                     }.getOrDefault("")
                     throw OcrException.ApiError(code, extractApiErrorMessage(errBody))
                 }
-                InputStreamReader(conn.inputStream, Charsets.UTF_8).use { reader ->
-                    parseContent(reader.readText())
-                }
+                val text = InputStreamReader(conn.inputStream, Charsets.UTF_8).use { reader -> reader.readText() }
+                return parseContent(text)
             } finally {
                 conn.disconnect()
             }
@@ -99,7 +111,10 @@ class OcrClient(
     /** 构造 OpenAI 兼容多模态请求体（image_url + text）。 */
     private fun buildPayload(imageBase64: String, mimeType: String, prompt: String): JsonObject {
         val imageUrl = JsonObject().apply { addProperty("url", "data:$mimeType;base64,$imageBase64") }
-        val imageContent = JsonObject().apply { add("image_url", imageUrl) }
+        val imageContent = JsonObject().apply {
+            addProperty("type", "image_url")
+            add("image_url", imageUrl)
+        }
         val textContent = JsonObject().apply { addProperty("type", "text"); addProperty("text", prompt) }
         val userMessage = JsonObject().apply {
             addProperty("role", "user")
@@ -135,5 +150,13 @@ class OcrClient(
         } catch (e: Exception) {
             body.take(300)
         }
+    }
+
+    companion object {
+        /** 识别最大尝试次数（含首次；空返回自动重试）。 */
+        private const val MAX_ATTEMPTS = 3
+
+        /** 空返回重试前的等待时间。 */
+        private const val RETRY_DELAY_MS = 800L
     }
 }

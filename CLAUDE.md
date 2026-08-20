@@ -27,7 +27,7 @@ GRADLE=/home/ygh/projects/coc/.toolchain/gradle-8.10.2/bin/gradle
 - APK output: `COCtools/build/outputs/apk/debug/COCtools-debug.apk`
 - Android SDK at `../.toolchain/android-sdk` (already set in `local.properties` `sdk.dir`).
 - Dependency/plugin versions are centralized in `gradle/libs.versions.toml` (version catalog).
-- Current version: 4.5-preview (versionCode 24, targetSdk 35). Releases tagged `vX.Y` in git; changelog in `releases/RELEASE_LOG.md`.
+- Current version: 4.7.2-preview (versionCode 30, targetSdk 35). Releases tagged `vX.Y` in git; changelog in `releases/RELEASE_LOG.md`.
 
 ## Architecture
 
@@ -39,12 +39,13 @@ Clash of Clans war/league data-management Android app (Kotlin 2.1.21, JVM 21, Je
 
 | Package | Role |
 |---------|------|
-| `data/db/WarDatabase.kt` | Room DB (**v6**), `WarDao`, `RosterDao`, entities, `Converters`, migrations |
+| `data/db/WarDatabase.kt` | Room DB (**v7**), `WarDao`, `RosterDao`, entities, `Converters`, migrations |
 | `data/model/WarModels.kt` | DTOs (nullable fields, lenient) + domain models |
 | `data/parser/WarJsonParser.kt` | Gson JSON → `ParseResult.Success(ParsedEvent)` / `.Error(msg)`; never throws on missing keys; fills unused-attack placeholders |
 | `data/repository/WarRepository.kt` | CRUD, samples, JSON export/import, SAABBCC event-name generation, roster management |
 | `data/migrate/DataMigrator.kt` | League event-name migration fix (旧编码 → 新编码) |
 | `data/csv/` | CSV codec/export/import (`CsvCodec`, `CsvExporter`, `CsvImporter`) |
+| `data/ocr/` | Screenshot OCR import (OpenAI-compatible; default agnes-ai (agnes-2.5-pro), switchable to Qianwen/Doubao/SiliconFlow) — `OcrClient`, `OcrConfig`, `OcrPrompts`, `OcrCsvExtractor`, `OcrValidation` |
 | `data/samples/SampleDataProvider.kt` | Built-in sample war + league data |
 | `data/sync/` | WebDAV sync (`WebDavClient`, `SyncConfig`, `SyncDecider`) |
 | `data/update/UpdateChecker.kt` | Version update check |
@@ -71,7 +72,7 @@ Clash of Clans war/league data-management Android app (Kotlin 2.1.21, JVM 21, Je
 - ViewModels: plain classes taking `WarRepository`; use `warViewModel { repo -> … }` instead of `ViewModelProvider.Factory`.
 - Navigation: `rememberNavController()` + string routes; bottom bar uses `popUpTo` + `saveState/restoreState`.
 - Dependency repos: Aliyun mirrors first (`settings.gradle.kts`); `gradle.properties` clears proxy settings. WebDAV password encrypted via `data/sync/SecurePrefs.kt` (AndroidKeyStore + AES/GCM; replaces deprecated security-crypto).
-- Tests: plain JUnit (no Android framework), pure logic only — `StatsCalculatorTest`, `WarJsonParserTest`, `CsvTest`, `SyncDeciderTest`, `LabelsTest`, `DataMigratorTest`, `WebDavClientTest`, `BackupCodecTest`, `EventNamingRulesTest`, `StringMatcherTest`, `LeagueSeasonCalculatorTest`, `UpdateCheckerVersionTest` under `COCtools/src/test/`.
+- Tests: plain JUnit (no Android framework), pure logic only — `StatsCalculatorTest`, `WarJsonParserTest`, `CsvTest`, `SyncDeciderTest`, `LabelsTest`, `DataMigratorTest`, `WebDavClientTest`, `BackupCodecTest`, `EventNamingRulesTest`, `StringMatcherTest`, `LeagueSeasonCalculatorTest`, `UpdateCheckerTest`, `UpdateCheckerVersionTest`, `RosterMaintenanceTest`, `MemberRosterSortTest`, `OcrClientTest`, `OcrCsvExtractorTest`, `OcrValidationTest`, `DoubaoOcrCsvValidationTest` under `COCtools/src/test/` (194 cases).
 
 ## Notes
 

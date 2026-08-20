@@ -9,7 +9,7 @@ import com.cocwar.data.sync.SecurePrefs
  *
  * API Key 经 [SecurePrefs]（AndroidKeyStore + AES/GCM）加密后落盘，避免明文被
  * Android Auto Backup 上传云端；BaseURL / 模型名非敏感，存普通 SharedPreferences。
- * 默认指向千问 DashScope 兼容端点（与验证一致，见 docs/DOUBAO_OCR_VALIDATION.md）；
+ * 默认指向 agnes-ai 端点（agnes-2.5-pro，45 人真实战报实测达标，见 docs/DOUBAO_OCR_VALIDATION.md）；
  * BaseURL / 模型可改，预留切换豆包 / SiliconFlow 等 OpenAI 兼容服务。
  */
 class OcrConfig(context: Context) {
@@ -43,12 +43,12 @@ class OcrConfig(context: Context) {
             securePrefs.edit().putString(KEY_API_KEY, encrypted).apply()
         }
 
-    /** OpenAI 兼容端点 BaseURL（默认千问 DashScope）。 */
+    /** OpenAI 兼容端点 BaseURL（默认 agnes-ai）。 */
     var baseUrl: String
         get() = prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
         set(value) = prefs.edit().putString(KEY_BASE_URL, value.trim().trimEnd('/')).apply()
 
-    /** 视觉模型名（默认千问 omni，与验证一致）。 */
+    /** 视觉模型名（默认 agnes-2.5-pro）。 */
     var model: String
         get() = prefs.getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
         set(value) = prefs.edit().putString(KEY_MODEL, value.trim()).apply()
@@ -58,11 +58,11 @@ class OcrConfig(context: Context) {
         get() = apiKey.isNotBlank()
 
     companion object {
-        /** 千问 DashScope OpenAI 兼容端点。 */
-        const val DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        /** agnes-ai OpenAI 兼容端点。 */
+        const val DEFAULT_BASE_URL = "https://api.agnes-ai.cn/v1"
 
-        /** 千问多模态模型（验证实测达标，见 docs/DOUBAO_OCR_VALIDATION.md §3）。 */
-        const val DEFAULT_MODEL = "qwen3.5-omni-plus"
+        /** agnes 视觉模型（45 人真实战报实测：数值 100%、名字模糊 93.3%）。 */
+        const val DEFAULT_MODEL = "agnes-2.5-pro"
 
         private const val KEY_API_KEY = "ocr_api_key"
         private const val KEY_BASE_URL = "ocr_base_url"
