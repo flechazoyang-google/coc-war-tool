@@ -1,6 +1,9 @@
 package com.cocwar.ui.importflow
 
 import android.net.Uri
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Save
@@ -388,6 +392,8 @@ fun ImportScreen(
                 )
             }
 
+            CopyPromptRow()
+
             errorMsg?.let {
                 Spacer(Modifier.height(12.dp))
                 CocCard(Modifier.fillMaxWidth()) {
@@ -534,6 +540,80 @@ fun ImportScreen(
                 }
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun CopyPromptRow() {
+    val context = LocalContext.current
+    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+    Spacer(Modifier.height(20.dp))
+    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.cocColors.hairline)
+    Spacer(Modifier.height(14.dp))
+    SectionTitle("AI 识别提示词")
+    Text(
+        "复制提示词后粘贴到任意 AI 工具（ChatGPT / 通义千问 / 豆包等），再附上战报截图即可转换数据",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 10.dp)
+    )
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        // JSON 提示词
+        OutlinedButton(
+            onClick = {
+                clipboard.setPrimaryClip(ClipData.newPlainText("JSON 识别提示词", CopyPrompts.JSON_PROMPT))
+                Toast.makeText(context, "JSON 提示词已复制", Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier.weight(1f).height(72.dp),
+            shape = CocShape.field,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("复制 JSON 提示词", fontWeight = FontWeight.SemiBold)
+                }
+                Text(
+                    "截图 → JSON 格式",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        // CSV 提示词
+        OutlinedButton(
+            onClick = {
+                clipboard.setPrimaryClip(ClipData.newPlainText("CSV 识别提示词", CopyPrompts.CSV_PROMPT))
+                Toast.makeText(context, "CSV 提示词已复制", Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier.weight(1f).height(72.dp),
+            shape = CocShape.field,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("复制 CSV 提示词", fontWeight = FontWeight.SemiBold)
+                }
+                Text(
+                    "截图 → CSV 格式",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
