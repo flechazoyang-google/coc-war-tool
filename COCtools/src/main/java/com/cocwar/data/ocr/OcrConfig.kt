@@ -10,7 +10,8 @@ import com.cocwar.data.sync.SecurePrefs
  * API Key 经 [SecurePrefs]（AndroidKeyStore + AES/GCM）加密后落盘，避免明文被
  * Android Auto Backup 上传云端；BaseURL / 模型名非敏感，存普通 SharedPreferences。
  * 默认指向 agnes-ai 端点（agnes-2.5-pro，45 人真实战报实测达标，见 docs/DOUBAO_OCR_VALIDATION.md）；
- * BaseURL / 模型可改，预留切换豆包 / SiliconFlow 等 OpenAI 兼容服务。
+ * BaseURL / 模型可改，设置页提供「百炼（阿里云）/ agnes-ai / 自定义」一键切换，也可手填豆包 / SiliconFlow 等。
+ * 百炼走阿里云 DashScope compatible-mode 端点。
  */
 class OcrConfig(context: Context) {
 
@@ -63,6 +64,12 @@ class OcrConfig(context: Context) {
 
         /** agnes 视觉模型（45 人真实战报实测：数值 100%、名字模糊 93.3%）。 */
         const val DEFAULT_MODEL = "agnes-2.5-pro"
+
+        /** 阿里云百炼（DashScope）OpenAI 兼容端点。 */
+        const val BAILIAN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+        /** 百炼通义千问 VL 视觉模型（qwen-vl-max，战报截图识别旗舰档）。 */
+        const val BAILIAN_MODEL = "qwen-vl-max"
 
         private const val KEY_API_KEY = "ocr_api_key"
         private const val KEY_BASE_URL = "ocr_base_url"

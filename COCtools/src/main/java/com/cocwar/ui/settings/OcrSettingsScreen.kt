@@ -42,16 +42,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
 import com.cocwar.data.ocr.OcrConfig
+import com.cocwar.data.ocr.OcrProviders
 import com.cocwar.di.warViewModel
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.InfoRow
 import com.cocwar.ui.components.SectionTitle
+import com.cocwar.ui.components.SegmentedTabs
 import com.cocwar.ui.theme.cocColors
 
 /**
- * 设置-识图设置页：API Key（SecurePrefs 加密存储）+ BaseURL/模型高级项。
- * 默认指向千问 DashScope 兼容端点；可改为豆包 / SiliconFlow 等 OpenAI 兼容服务。
+ * 设置-识图设置页：服务商预设（百炼/agnes-ai/自定义）+ API Key（SecurePrefs 加密存储）+ BaseURL/模型高级项。
+ * 全部走 OpenAI 兼容 /chat/completions；百炼为阿里云 DashScope compatible-mode（qwen-vl-max）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,6 +66,7 @@ fun OcrSettingsScreen(onBack: () -> Unit) {
 
     var showKey by remember { mutableStateOf(false) }
     var showAdvanced by remember { mutableStateOf(false) }
+    val providerLabel = OcrProviders.ALL.getOrNull(state.providerIndex)?.keyLabel ?: "API Key"
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -92,6 +95,15 @@ fun OcrSettingsScreen(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(4.dp))
 
+            SectionTitle("服务商")
+            SegmentedTabs(
+                options = OcrProviders.ALL.map { it.name },
+                selectedIndex = state.providerIndex,
+                onSelect = viewModel::onProviderSelect,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+
             SectionTitle("API Key")
             CocCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -99,7 +111,7 @@ fun OcrSettingsScreen(onBack: () -> Unit) {
                         value = state.apiKey,
                         onValueChange = viewModel::onApiKeyChange,
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("千问（DashScope）API Key") },
+                        label = { Text(providerLabel) },
                         placeholder = { Text("sk-...") },
                         singleLine = true,
                         shape = CocShape.field,
@@ -192,7 +204,7 @@ fun OcrSettingsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(24.dp))
             Text(
-                "说明：识图功能在导入页「截图识别」入口使用，识别结果以 CSV 填入并复用现有导入校验链路。API Key 经 AndroidKeyStore 加密存储，不会明文落盘。",
+                "说明：识图功能在导入页「单屏识图 / 批量识图」入口使用，识别结果以 CSV 填入并复用现有导入校验链路。API Key 经 AndroidKeyStore 加密存储，不会明文落盘。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

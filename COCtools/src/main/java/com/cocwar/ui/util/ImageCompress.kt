@@ -62,4 +62,40 @@ object ImageCompress {
             null
         }
     }
+
+    /**
+     * 从文件路径读取并压缩为 base64（供后台识图服务使用，与 [readAndCompressToBase64] 同口径：
+     * 最长边 [MAX_EDGE]、JPEG [JPEG_QUALITY]）。读取/解码失败返回 null。
+     */
+    fun readAndCompressToBase64FromPath(path: String): String? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            val maxEdge = maxOf(bounds.outWidth, bounds.outHeight)
+            var sample = 1
+            while (maxEdge / (sample * 2) > MAX_EDGE) sample *= 2
+
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = BitmapFactory.decodeFile(path, opts) ?: return null
+
+            val scaled = if (maxOf(bitmap.width, bitmap.height) > MAX_EDGE) {
+                val scale = MAX_EDGE.toFloat() / maxOf(bitmap.width, bitmap.height)
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true
+                ).also { if (it != bitmap) bitmap.recycle() }
+            } else bitmap
+
+            val out = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+            if (scaled != bitmap) scaled.recycle()
+            Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        } catch (e: Exception) {
+            null
+        }
+    }
 }

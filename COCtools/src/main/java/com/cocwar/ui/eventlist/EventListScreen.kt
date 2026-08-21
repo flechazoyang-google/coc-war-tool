@@ -64,12 +64,15 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
+import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.di.warViewModel
 import com.cocwar.service.FloatingBallService
+import com.cocwar.service.OcrBatchService
 import com.cocwar.service.ScreenCaptureService
 import com.cocwar.ui.ClipboardImportDialog
+import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
 import com.cocwar.ui.components.RefreshableBox
@@ -92,10 +95,12 @@ fun EventListScreen(
     onOpen: (String) -> Unit,
     onImport: () -> Unit = {},
     onOpenSeason: (Int, Int, Int) -> Unit = { _, _, _ -> },
+    onOpenPendingImport: (String) -> Unit = {},
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val pending by viewModel.pending.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -111,6 +116,11 @@ fun EventListScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 进程被杀兜底：启动无服务运行却残留 processing 草稿时，置为 failed 便于重试/删除
+    LaunchedEffect(Unit) {
+        if (!OcrBatchService.isRunning()) viewModel.markStaleProcessingFailed()
     }
 
     // 一键开关截图悬浮球；权限缺失时弹窗引导（与设置-截图工具页口径一致）
@@ -283,6 +293,47 @@ fun EventListScreen(
                 }
             )
     
+            // 待确认识图（后台批量识图结果）
+            if (pending.isNotEmpty()) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "待确认识图",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.cocColors.accent,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    pending.forEach { item ->
+                        PendingImportRow(
+                            item = item,
+                            onOpen = { onOpenPendingImport(item.id) },
+                            onDelete = { viewModel.deletePending(item.id) },
+                            onRetry = {
+                                scope.launch {
+                                    val paths = viewModel.pendingImagePaths(item.id)
+                                    if (paths.isEmpty()) {
+                                        Toast.makeText(context, "重试失败：截图路径已失效", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        OcrBatchService.start(context, paths, replaceId = item.id)
+                                        Toast.makeText(context, "已重新开始后台识图", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            onCancel = {
+                                context.sendBroadcast(
+                                    Intent(OcrBatchService.ACTION_CANCEL).setPackage(context.packageName)
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
             // 筛选栏 —— 细线胶囊下拉
             Row(
                 modifier = Modifier
@@ -498,6 +549,66 @@ fun EventListScreen(
                 }) { Text("取消") }
             }
         )
+    }
+}
+
+/**
+ * 待确认识图草稿行：processing / ready / failed 三态。
+ */
+@Composable
+private fun PendingImportRow(
+    item: PendingImportEntity,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit
+) {
+    CocCard(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                when (item.status) {
+                    "processing" -> Text(
+                        "识图中 (" + item.processedImages + "/" + item.totalImages + ")",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    "ready" -> {
+                        Text("待确认 · 战报", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "识图完成，点击进入导入确认",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    else -> {
+                        Text(
+                            "识图失败",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.cocColors.danger
+                        )
+                        Text(
+                            item.errorMessage.ifBlank { "识别失败" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            when (item.status) {
+                "processing" -> TextButton(onClick = onCancel) { Text("取消") }
+                "ready" -> TextButton(onClick = onOpen) { Text("去确认", fontWeight = FontWeight.SemiBold) }
+                else -> {
+                    TextButton(onClick = onRetry) { Text("重试") }
+                    TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.cocColors.danger) }
+                }
+            }
+        }
     }
 }
 

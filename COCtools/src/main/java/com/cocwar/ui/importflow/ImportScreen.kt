@@ -65,7 +65,12 @@ import com.cocwar.ui.util.parseEventRoundFromName
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
+fun ImportScreen(
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+    onOpenBatchOcr: () -> Unit = {},
+    pendingImportId: String? = null
+) {
     val context = LocalContext.current
     val ocrConfig = remember { OcrConfig(context) }
     val viewModel: ImportViewModel = warViewModel { ImportViewModel(it, ocrConfig) }
@@ -120,6 +125,20 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
             when (result) {
                 is WarJsonParser.ParseResult.Success -> { parsedEvent = result.data; errorMsg = null }
                 is WarJsonParser.ParseResult.Error -> { parsedEvent = null; errorMsg = result.message }
+            }
+        }
+    }
+
+    // 待确认识图草稿：进入时自动填充 CSV 并解析（复用正常 CSV 导入链路）
+    LaunchedEffect(pendingImportId) {
+        pendingImportId?.let { id ->
+            val pending = viewModel.loadPendingImport(id)
+            if (pending != null) {
+                sourceMode = 1
+                csvText = pending.csvText
+                doParseCsv(pending.csvText)
+            } else {
+                errorMsg = "该待确认识图已不存在"
             }
         }
     }
@@ -338,7 +357,7 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                             Icon(Icons.Filled.ImageSearch, null, Modifier.size(17.dp))
                         }
                         Spacer(Modifier.width(6.dp))
-                        Text(if (recognizing) "识别中…" else "截图识别")
+                        Text(if (recognizing) "识别中…" else "单屏识图")
                     }
                     Button(
                         onClick = { doParseCsv(csvText) },
@@ -353,6 +372,14 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = onOpenBatchOcr,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = CocShape.field,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
+                ) {
+                    Text("批量识图（多屏截图）", fontWeight = FontWeight.SemiBold)
+                }
                 Text(
                     "格式：成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率（联赛只有 1 列进攻）。\n" +
                         "摧毁率可带 %，缺失列按 0；首行若为表头会自动跳过。",
@@ -489,8 +516,8 @@ fun ImportScreen(onBack: () -> Unit, onSaved: () -> Unit) {
                             // 同步更新成员的 eventId 外键
                             members = finalMembers.map { it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#")) }
                         )
-                        // save 内部串行完成「新成员入名单 → 导入事件」，避免页面退出后名单丢失
-                        viewModel.save(adjusted) { onSaved() }
+                        // save 内部串行完成「新成员入名单 → 导入事件 → 删除待确认草稿」，避免页面退出后名单丢失
+                        viewModel.save(adjusted, pendingImportId) { onSaved() }
                     },
                     modifier = Modifier
                         .fillMaxWidth()

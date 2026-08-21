@@ -67,6 +67,16 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!-- 后台批量识图前台服务 -->
+        <service
+            android:name=".service.OcrBatchService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="ocr_batch_processing" />
+        </service>
+
         <!-- FileProvider（用于自动更新 APK 安装） -->
         <provider
             android:name="androidx.core.content.FileProvider"

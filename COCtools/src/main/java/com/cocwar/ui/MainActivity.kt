@@ -49,6 +49,7 @@ import com.cocwar.ui.components.UpdateDialog
 import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
 import com.cocwar.ui.importflow.ImportScreen
+import com.cocwar.ui.importflow.OcrBatchScreen
 import com.cocwar.ui.members.DepartedMembersScreen
 import com.cocwar.ui.members.MemberManageScreen
 import com.cocwar.ui.members.MemberSearchScreen
@@ -200,6 +201,7 @@ private fun CocWarNavHost(
                     onOpenSeason = { year, month, match ->
                         nav.navigate("league_season/$year/$month/$match")
                     },
+                    onOpenPendingImport = { id -> nav.navigate("import_pending/$id") },
                 )
             }
             composable("league_season/{year}/{month}/{match}") {
@@ -213,7 +215,22 @@ private fun CocWarNavHost(
                 EventDetailScreen(eventId = eventId, onBack = { nav.popBackStack() })
             }
             composable("import") {
-                ImportScreen(onBack = { nav.popBackStack() }, onSaved = { nav.popBackStack() })
+                ImportScreen(
+                    onBack = { nav.popBackStack() },
+                    onSaved = { nav.popBackStack() },
+                    onOpenBatchOcr = { nav.navigate("ocr_batch") }
+                )
+            }
+            composable("ocr_batch") {
+                OcrBatchScreen(onBack = { nav.popBackStack() })
+            }
+            composable("import_pending/{pendingId}") {
+                val pendingId = it.arguments?.getString("pendingId") ?: ""
+                ImportScreen(
+                    onBack = { nav.popBackStack() },
+                    onSaved = { nav.popBackStack() },
+                    pendingImportId = pendingId
+                )
             }
             composable("stats") {
                 StatsScreen(

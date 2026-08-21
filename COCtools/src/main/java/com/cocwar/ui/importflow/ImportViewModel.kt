@@ -2,6 +2,7 @@ package com.cocwar.ui.importflow
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.ocr.OcrClient
 import com.cocwar.data.ocr.OcrConfig
 import com.cocwar.data.ocr.OcrCsvExtractor
@@ -64,12 +65,15 @@ class ImportViewModel(
      * 同一个 viewModelScope 协程中完成。避免 onSaved→popBackStack 后
      * 名单写入协程被取消导致新成员丢失。
      */
-    fun save(parsed: WarJsonParser.ParsedEvent, onSaved: () -> Unit) {
+    suspend fun loadPendingImport(id: String): PendingImportEntity? = repo.getPendingImport(id)
+
+    fun save(parsed: WarJsonParser.ParsedEvent, pendingImportId: String? = null, onSaved: () -> Unit) {
         viewModelScope.launch {
             val roster = repo.getRoster()
             val newNames = parsed.members.map { it.playerName }.filter { it !in roster }.distinct()
             if (newNames.isNotEmpty()) repo.addToRoster(newNames)
             repo.importEvent(parsed)
+            if (pendingImportId != null) repo.deletePendingImport(pendingImportId)
             onSaved()
         }
     }

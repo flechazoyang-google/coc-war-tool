@@ -2,6 +2,7 @@ package com.cocwar.ui.settings
 
 import androidx.lifecycle.ViewModel
 import com.cocwar.data.ocr.OcrConfig
+import com.cocwar.data.ocr.OcrProviders
 import com.cocwar.data.repository.WarRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +20,9 @@ class OcrSettingsViewModel(
         val baseUrl: String = "",
         val model: String = "",
         val isSecureAvailable: Boolean = true,
-        val isConfigured: Boolean = false
+        val isConfigured: Boolean = false,
+        /** 当前选中的服务商预设索引（见 OcrProviders.ALL）。 */
+        val providerIndex: Int = 0
     )
 
     private val _state = MutableStateFlow(OcrUiState())
@@ -30,12 +33,15 @@ class OcrSettingsViewModel(
     }
 
     private fun loadConfig() {
+        val baseUrl = config.baseUrl
+        val model = config.model
         _state.value = OcrUiState(
             apiKey = config.apiKey,
-            baseUrl = config.baseUrl,
-            model = config.model,
+            baseUrl = baseUrl,
+            model = model,
             isSecureAvailable = config.isSecureStorageAvailable,
-            isConfigured = config.isConfigured
+            isConfigured = config.isConfigured,
+            providerIndex = OcrProviders.indexOf(OcrProviders.match(baseUrl, model))
         )
     }
 
@@ -49,6 +55,16 @@ class OcrSettingsViewModel(
 
     fun onModelChange(value: String) {
         _state.value = _state.value.copy(model = value)
+    }
+
+    /** 选择服务商预设：一键填充 BaseURL + 模型（自定义则清空由用户手填）。 */
+    fun onProviderSelect(index: Int) {
+        val preset = OcrProviders.ALL.getOrNull(index) ?: return
+        _state.value = _state.value.copy(
+            baseUrl = preset.baseUrl,
+            model = preset.model,
+            providerIndex = index
+        )
     }
 
     /**

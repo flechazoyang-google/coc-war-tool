@@ -6,11 +6,15 @@ import com.cocwar.data.db.WarDatabase
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.MemberRosterEntity
+import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.model.isUsed
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.samples.SampleDataProvider
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
 import java.util.Calendar
+import java.util.UUID
 
 /**
  * 事件/成员/名单的统一数据入口。按职责拆分为三部分：
@@ -24,6 +28,8 @@ class WarRepository(
 ) {
     private val dao = database.warDao()
     private val rosterDao = database.rosterDao()
+    private val pendingImportDao = database.pendingImportDao()
+    private val gson = Gson()
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences("coc_war_prefs", Context.MODE_PRIVATE)
 
@@ -180,6 +186,50 @@ class WarRepository(
             clanTotalStars = totalStars,
             clanTotalDestruction = totalDestruction
         ))
+    }
+
+    // === 待确认识图（后台批量识图的草稿，不入备份/同步） ===
+
+    fun observePendingImports(): Flow<List<PendingImportEntity>> = pendingImportDao.observeAll()
+
+    suspend fun getPendingImport(id: String): PendingImportEntity? = pendingImportDao.getById(id)
+
+    /** 新建待确认草稿（status=processing），返回草稿 id。 */
+    suspend fun createPendingImport(imagePaths: List<String>): String {
+        val id = UUID.randomUUID().toString()
+        pendingImportDao.insert(
+            PendingImportEntity(
+                id = id,
+                status = "processing",
+                csvText = "",
+                errorMessage = "",
+                imagePaths = gson.toJson(imagePaths),
+                totalImages = imagePaths.size,
+                processedImages = 0,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        return id
+    }
+
+    suspend fun updatePendingProgress(id: String, processed: Int) = pendingImportDao.updateProgress(id, processed)
+
+    suspend fun completePendingImport(id: String, csv: String) = pendingImportDao.complete(id, csv)
+
+    suspend fun failPendingImport(id: String, msg: String) = pendingImportDao.fail(id, msg)
+
+    suspend fun deletePendingImport(id: String) = pendingImportDao.delete(id)
+
+    /** 进程重启兜底：把残留的 processing 草稿置为 failed（无服务运行意味着已中断）。 */
+    suspend fun failStaleProcessing() = pendingImportDao.failAllProcessing()
+
+    /** 取回草稿对应的原始截图路径（用于 failed 重试）。 */
+    suspend fun pendingImagePaths(id: String): List<String> {
+        val entity = pendingImportDao.getById(id) ?: return emptyList()
+        return runCatching {
+            gson.fromJson<List<String>>(entity.imagePaths, object : TypeToken<List<String>>() {}.type)
+                ?: emptyList()
+        }.getOrDefault(emptyList())
     }
 
     // === 导出 ===

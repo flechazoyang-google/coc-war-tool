@@ -3,6 +3,7 @@ package com.cocwar.ui.eventlist
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cocwar.data.db.MemberEntity
+import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.repository.WarRepository
@@ -23,6 +24,18 @@ class EventListViewModel(private val repo: WarRepository) : ViewModel() {
 
     val events: StateFlow<List<WarEventEntity>> = repo.events
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** 待确认识图草稿（后台批量识图结果）。 */
+    val pending: StateFlow<List<PendingImportEntity>> = repo.observePendingImports()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun deletePending(id: String) {
+        viewModelScope.launch { repo.deletePendingImport(id) }
+    }
+
+    suspend fun pendingImagePaths(id: String): List<String> = repo.pendingImagePaths(id)
+
+    suspend fun markStaleProcessingFailed() = repo.failStaleProcessing()
 
     // 下拉刷新进度：列表本身由 Room Flow 自动保持最新，下拉仅提供手动重读与反馈
     private val _refreshing = MutableStateFlow(false)

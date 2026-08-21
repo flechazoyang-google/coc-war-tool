@@ -39,20 +39,20 @@ Clash of Clans war/league data-management Android app (Kotlin 2.1.21, JVM 21, Je
 
 | Package | Role |
 |---------|------|
-| `data/db/WarDatabase.kt` | Room DB (**v7**), `WarDao`, `RosterDao`, entities, `Converters`, migrations |
+| `data/db/WarDatabase.kt` | Room DB (**v8**), `WarDao`, `RosterDao`, `PendingImportDao`, entities (incl. `PendingImportEntity`), `Converters`, migrations |
 | `data/model/WarModels.kt` | DTOs (nullable fields, lenient) + domain models |
 | `data/parser/WarJsonParser.kt` | Gson JSON → `ParseResult.Success(ParsedEvent)` / `.Error(msg)`; never throws on missing keys; fills unused-attack placeholders |
 | `data/repository/WarRepository.kt` | CRUD, samples, JSON export/import, SAABBCC event-name generation, roster management |
 | `data/migrate/DataMigrator.kt` | League event-name migration fix (旧编码 → 新编码) |
 | `data/csv/` | CSV codec/export/import (`CsvCodec`, `CsvExporter`, `CsvImporter`) |
-| `data/ocr/` | Screenshot OCR import (OpenAI-compatible; default agnes-ai (agnes-2.5-pro), switchable to Qianwen/Doubao/SiliconFlow) — `OcrClient`, `OcrConfig`, `OcrPrompts`, `OcrCsvExtractor`, `OcrValidation` |
+| `data/ocr/` | Screenshot OCR import (OpenAI-compatible; provider presets: 百炼 qwen-vl-max / agnes-ai agnes-2.5-pro / custom) — `OcrClient`, `OcrConfig`, `OcrProvider`, `OcrPrompts`, `OcrCsvExtractor`, `OcrValidation`, `ScreenshotGrouper`, `OcrCsvAggregator` |
 | `data/samples/SampleDataProvider.kt` | Built-in sample war + league data |
 | `data/sync/` | WebDAV sync (`WebDavClient`, `SyncConfig`, `SyncDecider`) |
 | `data/update/UpdateChecker.kt` | Version update check |
 | `domain/StatsCalculator.kt` | Pure stat functions (`compute`, `computeMonthly`, `computeTopMembers`, `computeRecentMissed`, …) — 口径 defined in `docs/RULES.md` |
 | `di/WarViewModel.kt` | `@Composable warViewModel { repo -> ViewModel(repo) }` factory scoped to NavBackStackEntry |
-| `service/` | `FloatingBallService` (foreground service + overlay ball) + `ScreenCaptureService` (accessibility service) |
-| `ui/MainActivity.kt` | Bottom nav (`event_list` / `stats` / `member_manage` / `settings`) + routes: `event_list`, `league_season/{year}/{month}/{match}`, `detail/{eventId}`, `import`, `stats`, `member_manage`, `settings`, `settings/appearance`, `settings/data`, `settings/capture`, `settings/general`, `settings/about`, `member_search`, `sync`, `update_settings` |
+| `service/` | `FloatingBallService` (foreground service + overlay ball) + `ScreenCaptureService` (accessibility service) + `OcrBatchService` (批量识图前台服务: 逐屏 OCR → CSV 聚合 → 待确认草稿) |
+| `ui/MainActivity.kt` | Bottom nav (`event_list` / `stats` / `member_manage` / `settings`) + routes: `event_list`, `league_season/{year}/{month}/{match}`, `detail/{eventId}`, `import`, `stats`, `member_manage`, `settings`, `settings/appearance`, `settings/data`, `settings/capture`, `settings/general`, `settings/about`, `member_search`, `sync`, `update_settings`, `ocr_batch`, `import_pending/{pendingId}` |
 | `ui/eventlist/` `ui/detail/` `ui/importflow/` `ui/stats/` `ui/members/` `ui/season/` `ui/sync/` `ui/settings/` | Feature screens + ViewModels (season = CWL 7-round aggregate view; settings = 目录式多级: 外观/数据管理/截图工具/通用/关于 + 更新子页) |
 | `ui/components/Components.kt` | Reusable composables (`SectionTitle`, `InfoRow`, `StatTile`, badges, …) |
 | `ui/util/Labels.kt` `StringMatcher.kt` | Chinese label helpers; fuzzy roster name matching |
@@ -72,7 +72,7 @@ Clash of Clans war/league data-management Android app (Kotlin 2.1.21, JVM 21, Je
 - ViewModels: plain classes taking `WarRepository`; use `warViewModel { repo -> … }` instead of `ViewModelProvider.Factory`.
 - Navigation: `rememberNavController()` + string routes; bottom bar uses `popUpTo` + `saveState/restoreState`.
 - Dependency repos: Aliyun mirrors first (`settings.gradle.kts`); `gradle.properties` clears proxy settings. WebDAV password encrypted via `data/sync/SecurePrefs.kt` (AndroidKeyStore + AES/GCM; replaces deprecated security-crypto).
-- Tests: plain JUnit (no Android framework), pure logic only — `StatsCalculatorTest`, `WarJsonParserTest`, `CsvTest`, `SyncDeciderTest`, `LabelsTest`, `DataMigratorTest`, `WebDavClientTest`, `BackupCodecTest`, `EventNamingRulesTest`, `StringMatcherTest`, `LeagueSeasonCalculatorTest`, `UpdateCheckerTest`, `UpdateCheckerVersionTest`, `RosterMaintenanceTest`, `MemberRosterSortTest`, `OcrClientTest`, `OcrCsvExtractorTest`, `OcrValidationTest`, `DoubaoOcrCsvValidationTest` under `COCtools/src/test/` (194 cases).
+- Tests: plain JUnit (no Android framework), pure logic only — `StatsCalculatorTest`, `WarJsonParserTest`, `CsvTest`, `SyncDeciderTest`, `LabelsTest`, `DataMigratorTest`, `WebDavClientTest`, `BackupCodecTest`, `EventNamingRulesTest`, `StringMatcherTest`, `LeagueSeasonCalculatorTest`, `UpdateCheckerTest`, `UpdateCheckerVersionTest`, `RosterMaintenanceTest`, `MemberRosterSortTest`, `OcrClientTest`, `OcrCsvExtractorTest`, `OcrValidationTest`, `DoubaoOcrCsvValidationTest`, `ScreenshotGrouperTest`, `OcrCsvAggregatorTest`, `OcrProvidersTest` under `COCtools/src/test/` (212 cases).
 
 ## Notes
 

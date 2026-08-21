@@ -48,6 +48,19 @@ data class MemberRosterEntity(
     val active: Boolean = true
 )
 
+/** 后台批量识图的「待确认」草稿：识图完成后待用户在导入页确认，不入战报与备份。 */
+@Entity(tableName = "pending_imports")
+data class PendingImportEntity(
+    @PrimaryKey val id: String,
+    val status: String,            // "processing" | "ready" | "failed"
+    val csvText: String,           // 聚合后的 CSV（ready 时非空）
+    val errorMessage: String,      // failed 时的错误说明
+    val imagePaths: String,        // Gson JSON 字符串数组（截图文件路径，供重试）
+    val totalImages: Int,
+    val processedImages: Int,
+    val createdAt: Long
+)
+
 class Converters {
     private val gson = Gson()
 
@@ -170,6 +183,33 @@ interface RosterDao {
     suspend fun clearAll()
 }
 
+@Dao
+interface PendingImportDao {
+    @Query("SELECT * FROM pending_imports ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<PendingImportEntity>>
+
+    @Query("SELECT * FROM pending_imports WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): PendingImportEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: PendingImportEntity)
+
+    @Query("UPDATE pending_imports SET processedImages = :processed WHERE id = :id")
+    suspend fun updateProgress(id: String, processed: Int)
+
+    @Query("UPDATE pending_imports SET status = 'ready', csvText = :csv, errorMessage = '', processedImages = totalImages WHERE id = :id")
+    suspend fun complete(id: String, csv: String)
+
+    @Query("UPDATE pending_imports SET status = 'failed', errorMessage = :msg WHERE id = :id")
+    suspend fun fail(id: String, msg: String)
+
+    @Query("DELETE FROM pending_imports WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("UPDATE pending_imports SET status = 'failed', errorMessage = '识图中断（应用被清理或重启）' WHERE status = 'processing'")
+    suspend fun failAllProcessing()
+}
+
 // v1→v2: 移除 war_events 中的敌方部落字段。
 // 重建 war_events 前先关闭外键约束，避免 DROP TABLE 触发器联级删除 members 表数据。
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -275,10 +315,20 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
-private const val DB_VERSION = 7
+// v7→v8: 新增 pending_imports（后台批量识图的待确认草稿，不入备份）
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS pending_imports (" +
+            "id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, csvText TEXT NOT NULL, " +
+            "errorMessage TEXT NOT NULL, imagePaths TEXT NOT NULL, totalImages INTEGER NOT NULL, " +
+            "processedImages INTEGER NOT NULL, createdAt INTEGER NOT NULL)")
+    }
+}
+
+private const val DB_VERSION = 8
 
 @Database(
-    entities = [WarEventEntity::class, MemberEntity::class, MemberRosterEntity::class],
+    entities = [WarEventEntity::class, MemberEntity::class, MemberRosterEntity::class, PendingImportEntity::class],
     version = DB_VERSION,
     exportSchema = false
 )
@@ -286,6 +336,7 @@ private const val DB_VERSION = 7
 abstract class WarDatabase : RoomDatabase() {
     abstract fun warDao(): WarDao
     abstract fun rosterDao(): RosterDao
+    abstract fun pendingImportDao(): PendingImportDao
 
     companion object {
         const val NAME = "coc_war.db"
@@ -294,7 +345,7 @@ abstract class WarDatabase : RoomDatabase() {
             Room.databaseBuilder(context.applicationContext, WarDatabase::class.java, NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                 )
                 .build()
     }
