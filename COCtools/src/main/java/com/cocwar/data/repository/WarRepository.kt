@@ -315,8 +315,8 @@ class WarRepository(
      * 自动生成 SAABBCC 事件名：S(类型) + AA(年) + BB(月) + CC(序号/轮次编码)。
      * CC 段计算与规则见 [EventNamingRules]。
      */
-    suspend fun generateEventName(eventType: String, eventRound: Int): String {
-        val cal = Calendar.getInstance()
+    suspend fun generateEventName(eventType: String, eventRound: Int, calendar: Calendar? = null): String {
+        val cal = calendar ?: Calendar.getInstance()
         val year = cal.get(Calendar.YEAR) % 100
         val month = cal.get(Calendar.MONTH) + 1
         cal.set(Calendar.DAY_OF_MONTH, 1); cal.set(Calendar.HOUR_OF_DAY, 0)

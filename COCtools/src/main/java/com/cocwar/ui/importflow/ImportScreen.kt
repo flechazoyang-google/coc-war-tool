@@ -4,6 +4,8 @@ import android.net.Uri
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.widget.Toast
+import java.util.Calendar
+import java.util.TimeZone
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -22,12 +24,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -94,15 +100,36 @@ fun ImportScreen(
     // 截图识别：进行中 / 识别数值警告
     var recognizing by remember { mutableStateOf(false) }
     var ocrWarning by remember { mutableStateOf<String?>(null) }
+    // 战报日期：影响 SAABBCC 名称的年月段与 createdAt 时间戳
+    val todayMillis = remember {
+        Calendar.getInstance(TimeZone.getDefault()).run {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            timeInMillis
+        }
+    }
+    var selectedDateMillis by remember { mutableStateOf<Long?>(todayMillis) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var adjustedParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
 
     LaunchedEffect(parsedEvent) {
         parsedEvent?.let { parsed ->
             eventType = parsed.event.eventType
-            name = viewModel.generateName(parsed.event.eventType, parsed.event.eventRound)
+            val dateMs = selectedDateMillis ?: todayMillis
+            name = viewModel.generateNameForDate(parsed.event.eventType, parsed.event.eventRound, dateMs)
             nameError = false
             val loadedRoster = viewModel.loadRoster()
             roster = loadedRoster
             matchStates = buildMatchStates(parsed, loadedRoster)
+            adjustedParsed = adjustParsedDate(parsed, dateMs)
+        }
+    }
+
+    fun onDateSelected(dateMs: Long) {
+        selectedDateMillis = dateMs
+        adjustedParsed = parsedEvent?.let { adjustParsedDate(it, dateMs) }
+        scope.launch {
+            name = viewModel.generateNameForDate(eventType, 0, dateMs)
         }
     }
 
@@ -433,11 +460,23 @@ fun ImportScreen(
                         )
                         WarTypeRoundSection(eventType = eventType, onTypeChange = { newType ->
                             eventType = newType
-                            // 切换类型时重新生成完整名称（前缀 + 年月 + 自增序号）
+                            val dateMs = selectedDateMillis ?: todayMillis
                             scope.launch {
-                                name = viewModel.generateName(newType, 0)
+                                name = viewModel.generateNameForDate(newType, 0, dateMs)
                             }
+                            adjustedParsed = parsedEvent?.let { adjustParsedDate(it, dateMs) }
                         })
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = { showDatePicker = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = CocShape.field,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
+                        ) {
+                            Icon(Icons.Filled.DateRange, null, Modifier.size(17.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(formatWarDate(selectedDateMillis ?: todayMillis), fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
 
@@ -487,8 +526,9 @@ fun ImportScreen(
                 Button(
                     onClick = {
                         if (name.trim().isBlank()) { nameError = true; return@Button }
+                        val base = adjustedParsed ?: parsed
                         // 应用匹配结果到 members
-                        val editedMembers = parsed.members.mapIndexed { i, m ->
+                        val editedMembers = base.members.mapIndexed { i, m ->
                             val state = matchStates.getOrNull(i)
                             if (state != null) {
                                 val finalName = when (state.matchOption) {
@@ -509,11 +549,11 @@ fun ImportScreen(
                             m.copy(attacks = padded)
                         }
                         // 若最终 eventType 与解析时不同，重新生成 eventId（及成员外键），确保类型一致
-                        val newEventId = if (eventType != parsed.event.eventType) {
-                            "${eventType}_${parsed.event.createdAt}_${System.nanoTime()}"
-                        } else parsed.event.eventId
-                        val adjusted = parsed.copy(
-                            event = parsed.event.copy(
+                        val newEventId = if (eventType != base.event.eventType) {
+                            "${eventType}_${base.event.createdAt}_${System.nanoTime()}"
+                        } else base.event.eventId
+                        val adjusted = base.copy(
+                            event = base.event.copy(
                                 eventId = newEventId,
                                 eventName = name.trim(),
                                 eventType = eventType,
@@ -539,6 +579,29 @@ fun ImportScreen(
                     Text("保存到本地", fontWeight = FontWeight.SemiBold)
                 }
             }
+
+            if (showDatePicker) {
+                val pickerState = rememberDatePickerState(
+                    initialSelectedDateMillis = selectedDateMillis ?: todayMillis
+                )
+                DatePickerDialog(
+                    onDismissRequest = { showDatePicker = false },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            pickerState.selectedDateMillis?.let { onDateSelected(it) }
+                            showDatePicker = false
+                        }) { Text("确定") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { showDatePicker = false }) {
+                            Text("取消")
+                        }
+                    }
+                ) {
+                    DatePicker(state = pickerState)
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -616,4 +679,25 @@ private fun CopyPromptRow() {
             }
         }
     }
+}
+
+private val WEEKDAY_LABELS = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+
+private fun formatWarDate(dateMillis: Long): String {
+    val cal = Calendar.getInstance(TimeZone.getDefault()).apply { this.timeInMillis = dateMillis }
+    val weekday = WEEKDAY_LABELS[cal.get(Calendar.DAY_OF_WEEK) - 1]
+    return "${cal.get(Calendar.YEAR)}年${cal.get(Calendar.MONTH) + 1}月${cal.get(Calendar.DAY_OF_MONTH)}日 $weekday"
+}
+
+private fun adjustParsedDate(
+    parsed: WarJsonParser.ParsedEvent,
+    dateMillis: Long
+): WarJsonParser.ParsedEvent {
+    val newId = "${parsed.event.eventType}_${dateMillis}_${System.nanoTime()}"
+    return parsed.copy(
+        event = parsed.event.copy(createdAt = dateMillis, eventId = newId),
+        members = parsed.members.map {
+            it.copy(eventId = newId, id = "$newId#${it.id.substringAfter("#")}")
+        }
+    )
 }

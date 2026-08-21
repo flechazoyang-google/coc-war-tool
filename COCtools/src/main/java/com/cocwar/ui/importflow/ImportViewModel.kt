@@ -43,6 +43,11 @@ class ImportViewModel(
     suspend fun generateName(eventType: String, eventRound: Int): String =
         repo.generateEventName(eventType, eventRound)
 
+    suspend fun generateNameForDate(eventType: String, eventRound: Int, dateMillis: Long): String {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = dateMillis }
+        return repo.generateEventName(eventType, eventRound, cal)
+    }
+
     /**
      * 识图：调用已配置的视觉模型（默认千问），返回提取后的纯 CSV。
      * @throws OcrClient.OcrException 未配置 Key / 网络 / 超时 / API 错误 / 响应解析失败
