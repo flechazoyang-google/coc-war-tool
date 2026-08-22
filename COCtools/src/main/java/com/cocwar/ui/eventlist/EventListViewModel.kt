@@ -79,4 +79,15 @@ class EventListViewModel(private val repo: WarRepository) : ViewModel() {
             rosterRoles = roleMap
         )
     }
+
+    /** 解析剪切板战报 CSV。 */
+    suspend fun parseCsv(text: String, eventType: String, slotCount: Int): WarJsonParser.ParseResult {
+        val roleMap = repo.rosterRoleMap()
+        return com.cocwar.data.csv.CsvImporter.parse(
+            text = text,
+            slotCount = slotCount,
+            eventType = eventType,
+            rosterRoles = roleMap
+        )
+    }
 }

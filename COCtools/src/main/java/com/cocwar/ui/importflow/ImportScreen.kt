@@ -8,6 +8,7 @@ import java.util.Calendar
 import java.util.TimeZone
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.Button
@@ -41,6 +43,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -111,6 +115,7 @@ fun ImportScreen(
     var selectedDateMillis by remember { mutableStateOf<Long?>(todayMillis) }
     var showDatePicker by remember { mutableStateOf(false) }
     var adjustedParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
+    var showPromptDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(parsedEvent) {
         parsedEvent?.let { parsed ->
@@ -257,6 +262,11 @@ fun ImportScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showPromptDialog = true }) {
+                        Icon(Icons.AutoMirrored.Filled.HelpOutline, "AI 识别提示词")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -418,8 +428,6 @@ fun ImportScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-
-            CopyPromptRow()
 
             errorMsg?.let {
                 Spacer(Modifier.height(12.dp))
@@ -602,81 +610,50 @@ fun ImportScreen(
                 }
             }
 
+            if (showPromptDialog) {
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val isJson = sourceMode == 0
+                val prompt = if (isJson) CopyPrompts.JSON_PROMPT else CopyPrompts.CSV_PROMPT
+                val formatLabel = if (isJson) "JSON" else "CSV"
+
+                AlertDialog(
+                    onDismissRequest = { showPromptDialog = false },
+                    title = { Text("AI 识别提示词（$formatLabel）") },
+                    text = {
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    CocShape.field
+                                )
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                prompt,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = {
+                                clipboard.setPrimaryClip(ClipData.newPlainText("$formatLabel 识别提示词", prompt))
+                                Toast.makeText(context, "$formatLabel 提示词已复制", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(Icons.Filled.ContentCopy, "复制提示词",
+                                    tint = MaterialTheme.colorScheme.primary)
+                            }
+                            TextButton(onClick = { showPromptDialog = false }) {
+                                Text("关闭")
+                            }
+                        }
+                    }
+                )
+            }
+
             Spacer(Modifier.height(24.dp))
-        }
-    }
-}
-
-@Composable
-private fun CopyPromptRow() {
-    val context = LocalContext.current
-    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-
-    Spacer(Modifier.height(20.dp))
-    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.cocColors.hairline)
-    Spacer(Modifier.height(14.dp))
-    SectionTitle("AI 识别提示词")
-    Text(
-        "复制提示词后粘贴到任意 AI 工具（ChatGPT / 通义千问 / 豆包等），再附上战报截图即可转换数据",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 10.dp)
-    )
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // JSON 提示词
-        OutlinedButton(
-            onClick = {
-                clipboard.setPrimaryClip(ClipData.newPlainText("JSON 识别提示词", CopyPrompts.JSON_PROMPT))
-                Toast.makeText(context, "JSON 提示词已复制", Toast.LENGTH_SHORT).show()
-            },
-            modifier = Modifier.weight(1f).height(72.dp),
-            shape = CocShape.field,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("复制 JSON 提示词", fontWeight = FontWeight.SemiBold)
-                }
-                Text(
-                    "截图 → JSON 格式",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        // CSV 提示词
-        OutlinedButton(
-            onClick = {
-                clipboard.setPrimaryClip(ClipData.newPlainText("CSV 识别提示词", CopyPrompts.CSV_PROMPT))
-                Toast.makeText(context, "CSV 提示词已复制", Toast.LENGTH_SHORT).show()
-            },
-            modifier = Modifier.weight(1f).height(72.dp),
-            shape = CocShape.field,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("复制 CSV 提示词", fontWeight = FontWeight.SemiBold)
-                }
-                Text(
-                    "截图 → CSV 格式",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,17 +13,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,11 +52,15 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class ScreenshotItem(
     val id: Long,
@@ -56,15 +68,26 @@ data class ScreenshotItem(
     val dateAdded: Long
 )
 
+data class ScreenshotGroup(
+    val dateLabel: String,
+    val dateKey: String,
+    val items: List<ScreenshotItem>
+)
+
 @Composable
 fun ScreenshotGalleryDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val screenshots = remember { mutableStateListOf<ScreenshotItem>() }
     var loading by remember { mutableStateOf(true) }
+    var expandedGroups by remember { mutableStateOf(setOf<String>()) }
 
     LaunchedEffect(Unit) {
         loadScreenshots(context, screenshots)
         loading = false
+    }
+
+    val groups = remember(screenshots.toList()) {
+        groupScreenshotsByDate(screenshots.toList())
     }
 
     AlertDialog(
@@ -78,21 +101,26 @@ fun ScreenshotGalleryDialog(onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Column {
-                    Text("共 ${screenshots.size} 张截图",
+                    Text("共 ${screenshots.size} 张截图，${groups.size} 个日期分组",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        contentPadding = PaddingValues(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(
                         modifier = Modifier.height(400.dp)
                     ) {
-                        items(screenshots.toList(), key = { it.id }) { item ->
-                            ScreenshotThumb(
-                                item = item,
-                                onDelete = {
+                        items(groups, key = { it.dateKey }) { group ->
+                            val isExpanded = expandedGroups.contains(group.dateKey)
+                            ScreenshotGroupItem(
+                                group = group,
+                                isExpanded = isExpanded,
+                                onToggle = {
+                                    expandedGroups = if (isExpanded) {
+                                        expandedGroups - group.dateKey
+                                    } else {
+                                        expandedGroups + group.dateKey
+                                    }
+                                },
+                                onDeleteItem = { item ->
                                     deleteScreenshot(context, item)
                                     screenshots.remove(item)
                                 }
@@ -116,6 +144,79 @@ fun ScreenshotGalleryDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
+private fun ScreenshotGroupItem(
+    group: ScreenshotGroup,
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
+    onDeleteItem: (ScreenshotItem) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+    ) {
+        // Group header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(vertical = 12.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.Image,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    group.dateLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    "${group.items.size} 张截图",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = if (isExpanded) "收起" else "展开",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(24.dp)
+                    .then(
+                        if (isExpanded) Modifier else Modifier
+                    )
+            )
+        }
+
+        // Expanded content: thumbnail grid
+        if (isExpanded) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                contentPadding = PaddingValues(start = 28.dp, end = 4.dp, top = 4.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(((group.items.size / 3 + 1) * 120).dp)
+            ) {
+                items(group.items, key = { it.id }) { item ->
+                    ScreenshotThumb(
+                        item = item,
+                        onDelete = { onDeleteItem(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ScreenshotThumb(item: ScreenshotItem, onDelete: () -> Unit) {
     // 异步解码：避免 LazyVerticalGrid 滚动时在 Compose 主线程做磁盘 IO + 位图解码
     val bitmap by produceState<ImageBitmap?>(initialValue = null, item.path) {
@@ -130,7 +231,7 @@ private fun ScreenshotThumb(item: ScreenshotItem, onDelete: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(160.dp)
+            .height(100.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
     ) {
@@ -148,9 +249,26 @@ private fun ScreenshotThumb(item: ScreenshotItem, onDelete: () -> Unit) {
             modifier = Modifier.align(Alignment.TopEnd)
         ) {
             Icon(Icons.Filled.Delete, contentDescription = "删除",
-                tint = MaterialTheme.colorScheme.error)
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp))
         }
     }
+}
+
+private fun groupScreenshotsByDate(screenshots: List<ScreenshotItem>): List<ScreenshotGroup> {
+    val dateFormat = SimpleDateFormat("yyyy年M月d日", Locale.getDefault())
+    val keyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+
+    return screenshots
+        .groupBy { keyFormat.format(Date(it.dateAdded * 1000)) }
+        .map { (key, items) ->
+            ScreenshotGroup(
+                dateLabel = dateFormat.format(Date(items.first().dateAdded * 1000)),
+                dateKey = key,
+                items = items.sortedByDescending { it.dateAdded }
+            )
+        }
+        .sortedByDescending { it.dateKey }
 }
 
 private fun loadScreenshots(context: Context, list: MutableList<ScreenshotItem>) {
@@ -195,7 +313,7 @@ private fun loadScreenshots(context: Context, list: MutableList<ScreenshotItem>)
                         list.add(ScreenshotItem(
                             id = -(index + 1).toLong(),  // 负 ID：仅文件删除，不操作 MediaStore
                             path = file.absolutePath,
-                            dateAdded = file.lastModified()
+                            dateAdded = file.lastModified() / 1000 // 转为秒以匹配 MediaStore 格式
                         ))
                     }
             }

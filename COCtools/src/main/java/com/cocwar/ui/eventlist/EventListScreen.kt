@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -77,6 +78,7 @@ import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
 import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
+import com.cocwar.ui.settings.ScreenshotGalleryDialog
 import com.cocwar.ui.looksLikeWarJson
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.util.compareLeagueRound
@@ -168,6 +170,11 @@ fun EventListScreen(
     var clipboardParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
     val clipboardManager = LocalClipboardManager.current
 
+    // 更多菜单、截图列表、筛选弹窗
+    var moreMenuExpanded by remember { mutableStateOf(false) }
+    var showScreenshotGallery by remember { mutableStateOf(false) }
+    var showFilterDialog by remember { mutableStateOf(false) }
+
     // 筛选状态 —— rememberSaveable + SharedPreferences 双保险：
     // rememberSaveable 覆盖旋转屏幕/页面切换等进程内重建；用户从最近任务划掉应用
     // （删除后台）后系统会清除 SavedState，此时由 FilterPrefs 兜底恢复上次的选择。
@@ -251,7 +258,17 @@ fun EventListScreen(
                 title = "战报",
                 overline = "战报档案",
                 subtitle = if (events.isEmpty()) "尚无归档"
-                else "共 ${events.size} 份 · 部落战 $warCount · 联赛 $leagueCount",
+                else {
+                    val hasFilter = yearFilter != null || monthFilter != null
+                    if (hasFilter) {
+                        buildString {
+                            append(if (typeFilter == "1") "联赛" else "部落战")
+                            append(" · 筛选中 · ${filtered.size} 份")
+                        }
+                    } else {
+                        "共 ${events.size} 份 · 部落战 $warCount · 联赛 $leagueCount"
+                    }
+                },
                 actions = {
                     CocIconButton(
                         icon = Icons.Filled.CameraAlt,
@@ -259,37 +276,83 @@ fun EventListScreen(
                         onClick = { toggleCaptureHelper() },
                         filled = isBallRunning
                     )
-                    CocIconButton(
-                        icon = Icons.Filled.ContentPaste,
-                        contentDescription = "读取剪切板",
-                        onClick = {
-                            val text = clipboardManager.getText()?.text ?: ""
-                            if (text.isBlank()) {
-                                Toast.makeText(context, "剪切板为空，没有可读取的内容", Toast.LENGTH_SHORT).show()
-                                return@CocIconButton
-                            }
-                            if (!looksLikeWarJson(text)) {
-                                Toast.makeText(context, "剪切板中没有检测到战报数据", Toast.LENGTH_SHORT).show()
-                                return@CocIconButton
-                            }
-                            // 大 JSON 解析放到 IO 线程，避免阻塞主线程
-                            scope.launch {
-                                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    viewModel.parseWarJson(text)
+                    Box {
+                        CocIconButton(
+                            icon = Icons.Filled.MoreVert,
+                            contentDescription = "更多",
+                            onClick = { moreMenuExpanded = true }
+                        )
+                        DropdownMenu(
+                            expanded = moreMenuExpanded,
+                            onDismissRequest = { moreMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("导入战报", style = MaterialTheme.typography.bodySmall) },
+                                leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(16.dp)) },
+                                onClick = {
+                                    moreMenuExpanded = false
+                                    onImport()
                                 }
-                                when (result) {
-                                    is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
-                                    is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "战报解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                            )
+                            DropdownMenuItem(
+                                text = { Text("读取剪切板", style = MaterialTheme.typography.bodySmall) },
+                                leadingIcon = { Icon(Icons.Filled.ContentPaste, null, Modifier.size(16.dp)) },
+                                onClick = {
+                                    moreMenuExpanded = false
+                                    val text = clipboardManager.getText()?.text ?: ""
+                                    if (text.isBlank()) {
+                                        Toast.makeText(context, "剪切板为空", Toast.LENGTH_SHORT).show()
+                                        return@DropdownMenuItem
+                                    }
+                                    // 尝试 JSON 格式
+                                    if (looksLikeWarJson(text)) {
+                                        scope.launch {
+                                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                viewModel.parseWarJson(text)
+                                            }
+                                            when (result) {
+                                                is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
+                                                is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                        return@DropdownMenuItem
+                                    }
+                                    // 尝试 CSV 格式
+                                    if (looksLikeWarCsv(text)) {
+                                        val csvEventType = if (typeFilter == "1") "league" else "war"
+                                        val csvSlotCount = if (typeFilter == "1") 1 else 2
+                                        scope.launch {
+                                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                viewModel.parseCsv(text, csvEventType, csvSlotCount)
+                                            }
+                                            when (result) {
+                                                is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
+                                                is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "CSV 解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                        return@DropdownMenuItem
+                                    }
+                                    Toast.makeText(context, "剪切板中没有检测到战报数据", Toast.LENGTH_SHORT).show()
                                 }
-                            }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("截图列表", style = MaterialTheme.typography.bodySmall) },
+                                leadingIcon = { Icon(Icons.Filled.CameraAlt, null, Modifier.size(16.dp)) },
+                                onClick = {
+                                    moreMenuExpanded = false
+                                    showScreenshotGallery = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("战报筛选", style = MaterialTheme.typography.bodySmall) },
+                                leadingIcon = { Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(16.dp)) },
+                                onClick = {
+                                    moreMenuExpanded = false
+                                    showFilterDialog = true
+                                }
+                            )
                         }
-                    )
-                    CocIconButton(
-                        icon = Icons.Filled.Add,
-                        contentDescription = "导入战报",
-                        onClick = onImport,
-                        filled = true
-                    )
+                    }
                 }
             )
     
@@ -334,51 +397,6 @@ fun EventListScreen(
                 }
             }
 
-            // 筛选栏 —— 细线胶囊下拉
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterDropdown(
-                    label = if (typeFilter == "1") "联赛" else "部落战",
-                    // 类型筛选永远有选中值（部落战/联赛二选一），始终处于「已激活」态，
-                    // 避免把默认的「部落战」误显示成未选中（白底）
-                    isActive = true,
-                    expanded = typeExpanded,
-                    onToggle = { typeExpanded = true },
-                    onDismiss = { typeExpanded = false }
-                ) {
-                    DropdownMenuItem(text = { Text("部落战") }, onClick = { typeFilter = "0"; typeExpanded = false })
-                    DropdownMenuItem(text = { Text("联赛") }, onClick = { typeFilter = "1"; typeExpanded = false })
-                }
-                FilterDropdown(
-                    label = yearFilter?.let { "${it}年" } ?: "年份",
-                    isActive = yearFilter != null,
-                    expanded = yearExpanded,
-                    onToggle = { yearExpanded = true },
-                    onDismiss = { yearExpanded = false }
-                ) {
-                    DropdownMenuItem(text = { Text("全部") }, onClick = { yearFilter = null; yearExpanded = false })
-                    years.forEach { y ->
-                        DropdownMenuItem(text = { Text("${y}年") }, onClick = { yearFilter = y; yearExpanded = false })
-                    }
-                }
-                FilterDropdown(
-                    label = monthFilter?.let { "${it}月" } ?: "月份",
-                    isActive = monthFilter != null,
-                    expanded = monthExpanded,
-                    onToggle = { monthExpanded = true },
-                    onDismiss = { monthExpanded = false }
-                ) {
-                    DropdownMenuItem(text = { Text("全部") }, onClick = { monthFilter = null; monthExpanded = false })
-                    months.forEach { m ->
-                        DropdownMenuItem(text = { Text("${m}月") }, onClick = { monthFilter = m; monthExpanded = false })
-                    }
-                }
-            }
-    
             Spacer(Modifier.height(6.dp))
 
             // 下拉刷新：列表由 Room Flow 自动保持最新，下拉触发手动重读并提供状态反馈
@@ -394,13 +412,13 @@ fun EventListScreen(
                         if (events.isEmpty()) {
                             EmptyState(
                                 title = "还没有战报",
-                                body = "点击右上角 + 导入 JSON\n复制战报 JSON 后打开 App 会自动识别"
+                                body = "点击右上角更多按钮导入战报\n复制战报 JSON 后打开 App 会自动识别"
                             )
                         } else {
                             EmptyState(
                                 icon = Icons.Filled.SearchOff,
                                 title = "没有匹配的战报",
-                                body = "试试调整筛选条件\n或点击右上角 + 添加战报"
+                                body = "试试调整筛选条件\n或点击更多按钮添加战报"
                             )
                         }
                     }
@@ -547,6 +565,113 @@ fun EventListScreen(
                     }
                     showCapturePermissionDialog = false
                 }) { Text("取消") }
+            }
+        )
+    }
+
+    // 权限弹窗自动关闭：用户去系统设置授权后返回时，检测权限已齐备则自动关闭弹窗并启动悬浮球
+    if (showCapturePermissionDialog) {
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    if (Settings.canDrawOverlays(context) &&
+                        ScreenCaptureService.isAccessibilityServiceEnabled(context)
+                    ) {
+                        FloatingBallService.start(context)
+                        isBallRunning = true
+                        Toast.makeText(context, "截图悬浮球已开启", Toast.LENGTH_SHORT).show()
+                        showCapturePermissionDialog = false
+                    }
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+    }
+
+    // 截图列表弹窗
+    if (showScreenshotGallery) {
+        ScreenshotGalleryDialog(onDismiss = { showScreenshotGallery = false })
+    }
+
+    // 战报筛选弹窗
+    if (showFilterDialog) {
+        var fTypeExpanded by remember { mutableStateOf(false) }
+        var fYearExpanded by remember { mutableStateOf(false) }
+        var fMonthExpanded by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { showFilterDialog = false },
+            title = { Text("战报筛选") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // 类型
+                    Text("类型", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("0" to "部落战", "1" to "联赛").forEach { (value, label) ->
+                            androidx.compose.material3.FilterChip(
+                                selected = typeFilter == value,
+                                onClick = { typeFilter = value },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    // 年份
+                    Text("年份", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        androidx.compose.material3.FilterChip(
+                            selected = yearFilter == null,
+                            onClick = { yearFilter = null },
+                            label = { Text("全部") }
+                        )
+                        years.forEach { y ->
+                            androidx.compose.material3.FilterChip(
+                                selected = yearFilter == y,
+                                onClick = { yearFilter = y },
+                                label = { Text("${y}年") }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    // 月份
+                    Text("月份", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        androidx.compose.material3.FilterChip(
+                            selected = monthFilter == null,
+                            onClick = { monthFilter = null },
+                            label = { Text("全部") }
+                        )
+                        months.forEach { m ->
+                            androidx.compose.material3.FilterChip(
+                                selected = monthFilter == m,
+                                onClick = { monthFilter = m },
+                                label = { Text("${m}月") }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showFilterDialog = false }) {
+                    Text("完成", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    typeFilter = "0"
+                    yearFilter = null
+                    monthFilter = null
+                }) { Text("重置") }
             }
         )
     }
@@ -810,5 +935,24 @@ private fun EventRow(
                 }
             )
         }
+    }
+}
+
+/**
+ * 检测文本是否看起来像战报 CSV 格式。
+ * 检查是否包含表头或数据行的特征（逗号分隔，含中文列名或数字）。
+ */
+private fun looksLikeWarCsv(text: String): Boolean {
+    if (text.length > 200_000) return false
+    val lines = text.lines().filter { it.isNotBlank() }
+    if (lines.isEmpty()) return false
+    // 检查表头
+    val header = lines.first()
+    if (header.contains("成员名") && header.contains("总星数")) return true
+    // 检查数据行特征：至少3列，含数字
+    val dataLines = if (header.contains("成员名")) lines.drop(1) else lines
+    return dataLines.any { line ->
+        val cols = line.split(",")
+        cols.size >= 3 && cols.any { it.trim().matches(Regex("\\d+%?")) }
     }
 }
