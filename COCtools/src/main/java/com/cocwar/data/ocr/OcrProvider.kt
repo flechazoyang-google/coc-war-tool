@@ -11,9 +11,12 @@ data class OcrProviderPreset(
     /** 中文展示名（设置页分段选择器）。 */
     val name: String,
     val baseUrl: String,
+    /** 默认模型（= models 第一项）。 */
     val model: String,
     /** API Key 输入框的 label 文案。 */
-    val keyLabel: String
+    val keyLabel: String,
+    /** 可选模型列表（空 = 自定义，需手填）。 */
+    val models: List<String> = emptyList()
 )
 
 object OcrProviders {
@@ -23,7 +26,8 @@ object OcrProviders {
         name = "agnes-ai（默认）",
         baseUrl = OcrConfig.DEFAULT_BASE_URL,
         model = OcrConfig.DEFAULT_MODEL,
-        keyLabel = "agnes-ai API Key"
+        keyLabel = "agnes-ai API Key",
+        models = listOf("agnes-2.5-pro")
     )
 
     val BAILIAN = OcrProviderPreset(
@@ -31,7 +35,23 @@ object OcrProviders {
         name = "百炼（阿里云）",
         baseUrl = OcrConfig.BAILIAN_BASE_URL,
         model = OcrConfig.BAILIAN_MODEL,
-        keyLabel = "百炼 / DashScope API Key"
+        keyLabel = "百炼 / DashScope API Key",
+        models = listOf("qwen-vl-max", "qwen-vl-plus", "qwen-vl-ocr")
+    )
+
+    val DOUBAO = OcrProviderPreset(
+        id = "doubao",
+        name = "豆包（火山引擎）",
+        baseUrl = OcrConfig.DOUBAO_BASE_URL,
+        model = OcrConfig.DOUBAO_MODEL,
+        keyLabel = "豆包 / ARK API Key",
+        models = listOf(
+            "doubao-seed-2-1-pro-260628",
+            "doubao-seed-2-1-turbo-260628",
+            "doubao-seed-2-0-mini-260428",
+            "doubao-seed-2-0-lite-260428",
+            "doubao-seed-evolving"
+        )
     )
 
     val CUSTOM = OcrProviderPreset(
@@ -42,7 +62,7 @@ object OcrProviders {
         keyLabel = "OpenAI 兼容 API Key"
     )
 
-    val ALL: List<OcrProviderPreset> = listOf(AGNES, BAILIAN, CUSTOM)
+    val ALL: List<OcrProviderPreset> = listOf(AGNES, BAILIAN, DOUBAO, CUSTOM)
 
     /** 根据当前 baseUrl+model 反推选中的预设；不匹配返回 [CUSTOM]。 */
     fun match(baseUrl: String, model: String): OcrProviderPreset =

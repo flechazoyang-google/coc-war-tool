@@ -152,6 +152,108 @@ class OcrClient(
         }
     }
 
+    /**
+     * 获取可用模型列表（调用 OpenAI 兼容 /models 端点）。
+     * @return 模型 ID 列表（按字母排序）
+     */
+    suspend fun fetchModels(): List<String> = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) throw OcrException.NotConfigured()
+
+        val url = baseUrl.trimEnd('/') + "/models"
+        try {
+            val conn = connectionFactory(url).apply {
+                requestMethod = "GET"
+                setRequestProperty("Authorization", "Bearer $apiKey")
+                connectTimeout = 15_000
+                readTimeout = 15_000
+            }
+            try {
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    val errBody = runCatching {
+                        conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText().orEmpty()
+                    }.getOrDefault("")
+                    throw OcrException.ApiError(code, extractApiErrorMessage(errBody))
+                }
+                val text = InputStreamReader(conn.inputStream, Charsets.UTF_8).use { it.readText() }
+                return@withContext parseModelsList(text)
+            } finally {
+                conn.disconnect()
+            }
+        } catch (e: OcrException) {
+            throw e
+        } catch (e: SocketTimeoutException) {
+            throw OcrException.Network("连接超时", e)
+        } catch (e: IOException) {
+            throw OcrException.Network(e.message ?: "连接失败", e)
+        }
+    }
+
+    /**
+     * 测试连接：发送一个极简 chat 请求验证 API Key 和模型是否可用。
+     * @return 模型回复的文本（截断到 100 字符）
+     */
+    suspend fun testConnection(): String = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) throw OcrException.NotConfigured()
+        if (model.isBlank()) throw OcrException.BadResponse("未选择模型")
+
+        val url = baseUrl.trimEnd('/') + "/chat/completions"
+        val payload = JsonObject().apply {
+            addProperty("model", model)
+            add("messages", com.google.gson.JsonArray().apply {
+                add(JsonObject().apply {
+                    addProperty("role", "user")
+                    addProperty("content", "Hi")
+                })
+            })
+            addProperty("max_tokens", 10)
+        }
+        val body = payload.toString().toByteArray(Charsets.UTF_8)
+
+        try {
+            val conn = connectionFactory(url).apply {
+                requestMethod = "POST"
+                setRequestProperty("Authorization", "Bearer $apiKey")
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setFixedLengthStreamingMode(body.size)
+                doOutput = true
+                connectTimeout = 15_000
+                readTimeout = 30_000
+            }
+            try {
+                conn.outputStream.use { it.write(body); it.flush() }
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    val errBody = runCatching {
+                        conn.errorStream?.bufferedReader(Charsets.UTF_8)?.readText().orEmpty()
+                    }.getOrDefault("")
+                    throw OcrException.ApiError(code, extractApiErrorMessage(errBody))
+                }
+                val text = InputStreamReader(conn.inputStream, Charsets.UTF_8).use { it.readText() }
+                return@withContext parseContent(text).take(100)
+            } finally {
+                conn.disconnect()
+            }
+        } catch (e: OcrException) {
+            throw e
+        } catch (e: SocketTimeoutException) {
+            throw OcrException.Network("连接超时", e)
+        } catch (e: IOException) {
+            throw OcrException.Network(e.message ?: "连接失败", e)
+        }
+    }
+
+    /** 解析 /models 响应中的模型 ID 列表。 */
+    private fun parseModelsList(body: String): List<String> {
+        return try {
+            val root = JsonParser.parseString(body).asJsonObject
+            root.getAsJsonArray("data")?.mapNotNull { it.asJsonObject.get("id")?.asString }
+                ?.sorted() ?: emptyList()
+        } catch (e: Exception) {
+            throw OcrException.BadResponse("无法解析模型列表：${body.take(200)}")
+        }
+    }
+
     companion object {
         /** 识别最大尝试次数（含首次；空返回自动重试）。 */
         private const val MAX_ATTEMPTS = 3

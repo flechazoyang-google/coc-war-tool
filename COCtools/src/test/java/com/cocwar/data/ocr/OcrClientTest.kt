@@ -187,6 +187,120 @@ class OcrClientTest {
             requests.last().reqUrl.toString()
         )
     }
+
+    // ─── fetchModels ───
+
+    @Test
+    fun `fetchModels parses model list from response`() {
+        val client = OcrClient(
+            apiKey = "sk-test",
+            baseUrl = "https://api.example.com/v1",
+            model = "m",
+            connectionFactory = { url ->
+                val u = URL(url)
+                val body = """{"data":[{"id":"model-b"},{"id":"model-a"},{"id":"model-c"}]}"""
+                FakeHttp(u, 200, body, "").also { requests.add(it) }
+            }
+        )
+        val models = runBlocking { client.fetchModels() }
+        assertEquals(listOf("model-a", "model-b", "model-c"), models)
+        assertEquals("GET", requests.last().reqMethod)
+        assertEquals("https://api.example.com/v1/models", requests.last().reqUrl.toString())
+        assertEquals("Bearer sk-test", requests.last().headers["Authorization"])
+    }
+
+    @Test
+    fun `fetchModels blank key throws NotConfigured`() {
+        val client = OcrClient(
+            apiKey = "",
+            baseUrl = "https://api.example.com/v1",
+            model = "m",
+            connectionFactory = { url -> FakeHttp(URL(url), 200, "", "") }
+        )
+        try {
+            runBlocking { client.fetchModels() }
+            fail("应抛出 NotConfigured")
+        } catch (e: OcrClient.OcrException.NotConfigured) {
+            assertTrue(requests.isEmpty())
+        }
+    }
+
+    @Test
+    fun `fetchModels http error maps to ApiError`() {
+        val client = OcrClient(
+            apiKey = "sk-test",
+            baseUrl = "https://api.example.com/v1",
+            model = "m",
+            connectionFactory = { url ->
+                FakeHttp(URL(url), 401, "", "Unauthorized").also { requests.add(it) }
+            }
+        )
+        try {
+            runBlocking { client.fetchModels() }
+            fail("应抛出 ApiError")
+        } catch (e: OcrClient.OcrException.ApiError) {
+            assertEquals(401, e.code)
+        }
+    }
+
+    // ─── testConnection ───
+
+    @Test
+    fun `testConnection sends minimal chat request`() {
+        val client = OcrClient(
+            apiKey = "sk-test",
+            baseUrl = "https://api.example.com/v1",
+            model = "test-model",
+            connectionFactory = { url ->
+                val u = URL(url)
+                val body = """{"choices":[{"message":{"content":"Hello!"}}]}"""
+                FakeHttp(u, 200, body, "").also { requests.add(it) }
+            }
+        )
+        val result = runBlocking { client.testConnection() }
+        assertEquals("Hello!", result)
+        assertEquals("POST", requests.last().reqMethod)
+        assertEquals("https://api.example.com/v1/chat/completions", requests.last().reqUrl.toString())
+        val reqBody = requests.last().writtenBody()
+        assertTrue(reqBody.contains("\"model\":\"test-model\""))
+        assertTrue(reqBody.contains("\"content\":\"Hi\""))
+        assertTrue(reqBody.contains("\"max_tokens\":10"))
+    }
+
+    @Test
+    fun `testConnection blank model throws BadResponse`() {
+        val client = OcrClient(
+            apiKey = "sk-test",
+            baseUrl = "https://api.example.com/v1",
+            model = "",
+            connectionFactory = { url -> FakeHttp(URL(url), 200, "", "") }
+        )
+        try {
+            runBlocking { client.testConnection() }
+            fail("应抛出 BadResponse")
+        } catch (e: OcrClient.OcrException.BadResponse) {
+            assertTrue(e.message.orEmpty().contains("模型"))
+        }
+    }
+
+    @Test
+    fun `testConnection http 401 maps to ApiError`() {
+        val client = OcrClient(
+            apiKey = "sk-test",
+            baseUrl = "https://api.example.com/v1",
+            model = "test-model",
+            connectionFactory = { url ->
+                FakeHttp(URL(url), 401, "", """{"error":{"message":"invalid api key"}}""").also { requests.add(it) }
+            }
+        )
+        try {
+            runBlocking { client.testConnection() }
+            fail("应抛出 ApiError")
+        } catch (e: OcrClient.OcrException.ApiError) {
+            assertEquals(401, e.code)
+            assertTrue(e.detail.contains("invalid api key"))
+        }
+    }
 }
 
 /** 与 WebDavClientTest 同款 fake：记录请求并回放预设响应。 */
