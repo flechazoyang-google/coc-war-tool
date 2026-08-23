@@ -20,8 +20,8 @@ android {
         applicationId = "com.cocwar"
         minSdk = 30
         targetSdk = 35
-        versionCode = 31
-        versionName = "4.8.0-preview"
+        versionCode = 32
+        versionName = "4.8.0"
         // DB Migration 测试（androidTest）需要 instrumentation runner
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
