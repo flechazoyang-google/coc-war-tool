@@ -883,12 +883,13 @@ private fun EventRow(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    // 元信息行附带月份，区分同名战报（名称解析不出年月时不追加）
+                    // 元信息行附带日期，区分同名战报
                     buildString {
                         append(if (isWar) "部落战" else "联赛")
-                        val y = parseYearFromName(event.eventName)
-                        val m = parseMonthFromName(event.eventName)
-                        if (y != null && m != null) append(" · ${y}年${m}月")
+                        val cal = java.util.Calendar.getInstance().apply { timeInMillis = event.createdAt }
+                        val m = cal.get(java.util.Calendar.MONTH) + 1
+                        val d = cal.get(java.util.Calendar.DAY_OF_MONTH)
+                        append(" · ${m}月${d}日")
                     },
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,

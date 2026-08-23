@@ -2,14 +2,25 @@ package com.cocwar.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +43,8 @@ import com.cocwar.ui.importflow.WarPreviewCard
 import com.cocwar.ui.importflow.WarTypeRoundSection
 import com.cocwar.ui.importflow.buildMatchStates
 import kotlinx.coroutines.launch
+import java.util.Calendar
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,12 +58,34 @@ fun ClipboardImportDialog(
     var matchStates by remember { mutableStateOf<List<MemberMatchState>>(emptyList()) }
     var roster by remember { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
+    val todayMillis = remember {
+        Calendar.getInstance(TimeZone.getDefault()).run {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            timeInMillis
+        }
+    }
+    var selectedDateMillis by remember { mutableStateOf<Long?>(todayMillis) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var adjustedParsed by remember { mutableStateOf(parsed) }
 
     LaunchedEffect(parsed) {
-        name = repo.generateEventName(parsed.event.eventType, parsed.event.eventRound)
+        val dateMs = selectedDateMillis ?: todayMillis
+        val cal = Calendar.getInstance().apply { timeInMillis = dateMs }
+        name = repo.generateEventName(parsed.event.eventType, parsed.event.eventRound, cal)
         val loadedRoster = repo.getRoster()
         roster = loadedRoster
         matchStates = buildMatchStates(parsed, loadedRoster)
+        adjustedParsed = adjustParsedDate(parsed, dateMs)
+    }
+
+    fun onDateSelected(dateMs: Long) {
+        selectedDateMillis = dateMs
+        adjustedParsed = adjustParsedDate(parsed, dateMs)
+        scope.launch {
+            val cal = Calendar.getInstance().apply { timeInMillis = dateMs }
+            name = repo.generateEventName(eventType, 0, cal)
+        }
     }
 
     AlertDialog(
@@ -79,18 +114,18 @@ fun ClipboardImportDialog(
                     m.copy(attacks = padded)
                 }
                 // 若最终 eventType 与解析时不同，重新生成 eventId（及成员外键），确保类型一致
-                val newEventId = if (eventType != parsed.event.eventType) {
-                    "${eventType}_${parsed.event.createdAt}_${System.nanoTime()}"
-                } else parsed.event.eventId
-                val adjusted = parsed.copy(
-                    event = parsed.event.copy(
+                val newEventId = if (eventType != adjustedParsed.event.eventType) {
+                    "${eventType}_${adjustedParsed.event.createdAt}_${System.nanoTime()}"
+                } else adjustedParsed.event.eventId
+                val adjusted = adjustedParsed.copy(
+                    event = adjustedParsed.event.copy(
                         eventId = newEventId,
                         eventName = name.trim(),
                         eventType = eventType,
                         eventRound = parseEventRoundFromName(name.trim())
                     ),
                     // 同步更新成员的 eventId 外键
-                    members = finalMembers.map { it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#")) }
+                    members = adjustedParsed.members.map { it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#")) }
                 )
                 scope.launch {
                     val roster = repo.getRoster()
@@ -130,12 +165,64 @@ fun ClipboardImportDialog(
                 )
                 WarTypeRoundSection(eventType = eventType, onTypeChange = {
                     eventType = it
-                    // RULES §4.9：类型切换必须重生成事件名——部落战 CC=当月场次序号、
-                    // 联赛 CC=C1C2（场次+轮次）语义不同，只改前缀会把旧类型序号沿用过来，
-                    // 导致跳号/重名/非法 CC（如 1260899）。生成时以旧名称解析出的轮次作提示。
-                    scope.launch { name = repo.generateEventName(it, parseEventRoundFromName(name)) }
+                    val dateMs = selectedDateMillis ?: todayMillis
+                    scope.launch {
+                        val cal = Calendar.getInstance().apply { timeInMillis = dateMs }
+                        name = repo.generateEventName(it, parseEventRoundFromName(name), cal)
+                    }
+                    adjustedParsed = adjustParsedDate(parsed, dateMs)
                 })
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.DateRange, null, Modifier.size(17.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(formatClipboardWarDate(selectedDateMillis ?: todayMillis), fontWeight = FontWeight.SemiBold)
+                }
             }
+        }
+    )
+
+    if (showDatePicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDateMillis ?: todayMillis
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { onDateSelected(it) }
+                    showDatePicker = false
+                }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("取消") }
+            }
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+}
+
+private val WEEKDAY_LABELS = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+
+private fun formatClipboardWarDate(dateMillis: Long): String {
+    val cal = Calendar.getInstance(TimeZone.getDefault()).apply { this.timeInMillis = dateMillis }
+    val weekday = WEEKDAY_LABELS[cal.get(Calendar.DAY_OF_WEEK) - 1]
+    return "${cal.get(Calendar.YEAR)}年${cal.get(Calendar.MONTH) + 1}月${cal.get(Calendar.DAY_OF_MONTH)}日 $weekday"
+}
+
+private fun adjustParsedDate(
+    parsed: WarJsonParser.ParsedEvent,
+    dateMillis: Long
+): WarJsonParser.ParsedEvent {
+    val newId = "${parsed.event.eventType}_${dateMillis}_${System.nanoTime()}"
+    return parsed.copy(
+        event = parsed.event.copy(createdAt = dateMillis, eventId = newId),
+        members = parsed.members.map {
+            it.copy(eventId = newId, id = "$newId#${it.id.substringAfter("#")}")
         }
     )
 }
