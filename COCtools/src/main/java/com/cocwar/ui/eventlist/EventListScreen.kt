@@ -72,14 +72,15 @@ import com.cocwar.di.warViewModel
 import com.cocwar.service.FloatingBallService
 import com.cocwar.service.OcrBatchService
 import com.cocwar.service.ScreenCaptureService
-import com.cocwar.ui.ClipboardImportDialog
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
 import com.cocwar.ui.components.EmptyState
 import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
+import com.cocwar.ui.importflow.ImportPreviewDialog
+import com.cocwar.ui.importflow.ImportViewModel
+import com.cocwar.ui.importflow.looksLikeWarJson
 import com.cocwar.ui.settings.ScreenshotGalleryDialog
-import com.cocwar.ui.looksLikeWarJson
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.util.compareLeagueRound
 import com.cocwar.ui.util.compareWarEventsBySeq
@@ -100,6 +101,7 @@ fun EventListScreen(
     onOpenPendingImport: (String) -> Unit = {},
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
+    val importViewModel: ImportViewModel = warViewModel { ImportViewModel(it, null) }
     val events by viewModel.events.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
@@ -504,10 +506,9 @@ fun EventListScreen(
 
     // 剪切板战报导入对话框
     clipboardParsed?.let { parsed ->
-        val app = context.applicationContext as CocWarApplication
-        ClipboardImportDialog(
+        ImportPreviewDialog(
             parsed = parsed,
-            repo = app.repository,
+            viewModel = importViewModel,
             onSaved = { eventId ->
                 clipboardParsed = null
                 onOpen(eventId)

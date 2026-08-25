@@ -2,7 +2,6 @@ package com.cocwar.data.update
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -11,8 +10,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
 import com.cocwar.BuildConfig
-import com.google.gson.Gson
-import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
@@ -22,21 +19,13 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Gitee 仓库信息（硬编码，发布时无需改动）。
- */
-private const val GITEE_OWNER = "yang-genhao"
-private const val GITEE_REPO = "coc-war-tool"
-// 拉取 release 列表（含 prerelease 字段，供「加入测试计划」筛选），而非 /latest（该端点天然排除预览版）
-private const val GITEE_API = "https://gitee.com/api/v5/repos/$GITEE_OWNER/$GITEE_REPO/releases?per_page=100"
+private const val RELEASE_JSON_URL = "https://cdn.flechazo.icu/release.json"
 
 data class UpdateInfo(
-    val version: String,       // 如 "1.2"
-    val tagName: String,       // 如 "v1.2"
-    val body: String,          // 更新说明
-    val apkUrl: String,        // APK 下载地址
-    val fileSize: Long = 0,    // 文件大小（字节）
-    val isPrerelease: Boolean = false   // 是否为预览版（prerelease）
+    val version: String,
+    val body: String,
+    val apkUrl: String,
+    val isPrerelease: Boolean = false
 )
 
 object UpdateChecker {
@@ -45,16 +34,13 @@ object UpdateChecker {
     private const val CHANNEL_ID = "update_download"
     private const val USER_AGENT = "COCWarTool-UpdateChecker"
 
-    private val gson = Gson()
-
     /**
-     * 检查 Gitee releases 是否有更新。
-     * @param includePrerelease 是否纳入预览版（加入测试计划）：true 时预览版也参与「最新」判定。
-     * @return UpdateInfo 如果有新版本，null 表示已是最新或检查失败。
+     * 从七牛云 CDN 的 release.json 检查更新。
+     * @param includePrerelease true 时优先检查 preview 通道，false 时只检查 stable 通道。
      */
     suspend fun check(context: Context, includePrerelease: Boolean = false): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         try {
-            val connection = URL(GITEE_API).openConnection() as HttpURLConnection
+            val connection = URL(RELEASE_JSON_URL).openConnection() as HttpURLConnection
             connection.apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
@@ -66,24 +52,20 @@ object UpdateChecker {
             try {
                 val code = connection.responseCode
                 if (code != HttpURLConnection.HTTP_OK) {
-                    return@withContext Result.failure(Exception("API 返回 $code"))
+                    return@withContext Result.failure(Exception("CDN 返回 $code"))
                 }
 
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val releases = JsonParser.parseString(body).asJsonArray
-
-                val target = selectTargetRelease(releases, includePrerelease)
-                    ?: return@withContext Result.success(null)  // 无可选 release（如全是预览版且未加入计划）
-                val info = releaseToUpdateInfo(target)
-                    ?: return@withContext Result.failure(Exception("未找到 APK 下载地址"))
+                val info = parseReleaseJson(body, includePrerelease)
+                    ?: return@withContext Result.success(null)
 
                 val currentVersion = BuildConfig.VERSION_NAME
-                Log.d(TAG, "当前: $currentVersion, 最新: ${info.version}${if (info.isPrerelease) " (预览版)" else ""}")
+                Log.d(TAG, "当前: $currentVersion, 最新: ${info.version}${prereleaseLabel(info.version)}")
 
                 if (compareVersion(info.version, currentVersion) > 0) {
                     Result.success(info)
                 } else {
-                    Result.success(null) // 已是最新
+                    Result.success(null)
                 }
             } finally {
                 connection.disconnect()
@@ -95,52 +77,40 @@ object UpdateChecker {
     }
 
     /**
-     * 从 gitee releases 列表选出目标 release（纯函数，可单测）：
-     * - includePrerelease=true：取版本号最新（含预览版）；
-     * - includePrerelease=false：过滤掉 prerelease=true 后取最新正式版；
-     * 无任何候选（列表为空 / 全是预览版且未加入计划）返回 null。
-     * 版本号按 [compareVersion] 语义比较（正式版 > 预览版）。
+     * 解析 release.json 并选出目标通道的 UpdateInfo（纯函数，可单测）。
+     *
+     * 选择策略：
+     * - includePrerelease=true：优先 preview 通道，若 preview 为空则回退到 stable；
+     * - includePrerelease=false：只看 stable 通道。
+     * - 两个通道都无效时返回 null。
      */
-    fun selectTargetRelease(releases: JsonArray, includePrerelease: Boolean): JsonObject? {
-        val candidates = releases.asSequence()
-            .filter { it.isJsonObject }
-            .map { it.asJsonObject }
-            .filter { obj ->
-                val pre = obj.get("prerelease")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
-                includePrerelease || !pre
-            }
-            .filter { obj ->
-                obj.get("tag_name")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true
-            }
-            .toList()
-        return candidates.maxWithOrNull { a, b ->
-            compareVersion(a.get("tag_name").asString, b.get("tag_name").asString)
+    fun parseReleaseJson(json: String, includePrerelease: Boolean): UpdateInfo? {
+        val root = try {
+            JsonParser.parseString(json).asJsonObject
+        } catch (_: Exception) {
+            return null
         }
-    }
 
-    /**
-     * 将单个 gitee release JSON 转换为 [UpdateInfo]（纯函数，可单测）。
-     * 找不到 .apk 附件返回 null。
-     */
-    fun releaseToUpdateInfo(obj: JsonObject): UpdateInfo? {
-        val tagName = obj.get("tag_name")?.takeIf { it.isJsonPrimitive }?.asString ?: return null
-        val version = tagName.removePrefix("v").removePrefix("V")
-        val desc = obj.get("body")?.takeIf { it.isJsonPrimitive }?.asString?.take(500) ?: ""
-        val isPrerelease = obj.get("prerelease")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
-
-        val assets = obj.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
-        var apkUrl = ""
-        for (asset in assets) {
-            if (!asset.isJsonObject) continue
-            val assetObj = asset.asJsonObject
-            val name = assetObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
-            if (name.endsWith(".apk")) {
-                apkUrl = assetObj.get("browser_download_url")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
-                break
-            }
+        fun channelInfo(key: String): UpdateInfo? {
+            val obj = root.get(key)?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
+            val version = obj.get("version")?.takeIf { it.isJsonPrimitive }?.asString ?: return null
+            val url = obj.get("url")?.takeIf { it.isJsonPrimitive }?.asString ?: return null
+            if (version.isBlank() || url.isBlank()) return null
+            val body = obj.get("body")?.takeIf { it.isJsonPrimitive }?.asString?.take(500) ?: ""
+            val cleanVersion = version.removePrefix("v").removePrefix("V")
+            return UpdateInfo(
+                version = cleanVersion,
+                body = body,
+                apkUrl = url,
+                isPrerelease = isPrereleaseVersion(cleanVersion)
+            )
         }
-        if (apkUrl.isEmpty()) return null
-        return UpdateInfo(version, tagName, desc, apkUrl, isPrerelease = isPrerelease)
+
+        return if (includePrerelease) {
+            channelInfo("preview") ?: channelInfo("stable")
+        } else {
+            channelInfo("stable")
+        }
     }
 
     /**
@@ -152,7 +122,6 @@ object UpdateChecker {
             val channel = NotificationChannel(CHANNEL_ID, "更新下载", NotificationManager.IMPORTANCE_LOW)
             nm.createNotificationChannel(channel)
 
-            // 清理历史更新下载残留的 APK（安装完成后不会自动删除，会累积占满缓存）
             runCatching {
                 context.cacheDir.listFiles()
                     ?.filter { it.name.startsWith("update_") && it.name.endsWith(".apk") }
@@ -191,7 +160,6 @@ object UpdateChecker {
                             if (bytesRead == -1) break
                             output.write(buffer, 0, bytesRead)
                             downloaded += bytesRead
-                            // 每秒更新一次通知
                             val now = System.currentTimeMillis()
                             if (now - lastNotifyTime > 1000 && total > 0) {
                                 lastNotifyTime = now
@@ -205,7 +173,6 @@ object UpdateChecker {
                 connection.disconnect()
             }
 
-            // 校验下载内容是否为有效的 APK（ZIP 格式以 "PK" 开头）。
             val magic = ByteArray(2)
             downloadFile.inputStream().use { it.read(magic) }
             if (!(magic[0] == 'P'.code.toByte() && magic[1] == 'K'.code.toByte())) {
@@ -216,7 +183,6 @@ object UpdateChecker {
             nm.cancel(100)
             Log.i(TAG, "下载完成: ${downloadFile.absolutePath}")
 
-            // 触发安装
             installApk(context, downloadFile)
             Result.success(Unit)
         } catch (e: Exception) {
@@ -248,30 +214,64 @@ object UpdateChecker {
             .setOngoing(true)
             .build()
 
-    /** 版本号比较：按 "." 分割后逐段比较。返回 >0 表示 v1 > v2。 */
+    /** 版本号比较（SemVer）：数字段逐段比较，数字相同则按 prerelease 阶段排序。
+     *  alpha < beta < rc < 正式版。同阶段按序号比较（alpha.1 < alpha.2）。
+     *  返回 >0 表示 v1 > v2。 */
     internal fun compareVersion(v1: String, v2: String): Int {
-        val (nums1, pre1) = parseVersion(v1)
-        val (nums2, pre2) = parseVersion(v2)
-        val maxLen = maxOf(nums1.size, nums2.size)
+        val p1 = parseSemVer(v1)
+        val p2 = parseSemVer(v2)
+        val maxLen = maxOf(p1.nums.size, p2.nums.size)
         for (i in 0 until maxLen) {
-            val a = nums1.getOrElse(i) { 0 }
-            val b = nums2.getOrElse(i) { 0 }
+            val a = p1.nums.getOrElse(i) { 0 }
+            val b = p2.nums.getOrElse(i) { 0 }
             if (a != b) return a - b
         }
-        // 数值段相等时：正式版 > 预发布版（"1.2" > "1.2-beta"）
-        if (pre1 != pre2) return if (pre1) -1 else 1
-        return 0
+        return comparePrerelease(p1, p2)
     }
 
-    /**
-     * 解析版本号为数字段列表 + 是否预发布（带 -alpha/-beta 等后缀）。
-     * 如 "v1.2.3-beta" → ([1,2,3], true)；"3.2" → ([3,2], false)。
-     */
-    private fun parseVersion(v: String): Pair<List<Int>, Boolean> {
+    private fun comparePrerelease(v1: SemVer, v2: SemVer): Int {
+        if (v1.stage == null && v2.stage == null) return 0
+        if (v1.stage == null) return 1
+        if (v2.stage == null) return -1
+        val stageDiff = stageOrder(v1.stage) - stageOrder(v2.stage)
+        if (stageDiff != 0) return stageDiff
+        return v1.stageNum - v2.stageNum
+    }
+
+    private data class SemVer(val nums: List<Int>, val stage: String?, val stageNum: Int)
+
+    private fun parseSemVer(v: String): SemVer {
         val cleaned = v.trim().removePrefix("v").removePrefix("V")
-        val match = Regex("""^(\d+(?:\.\d+)*)(.*)$""").find(cleaned) ?: return emptyList<Int>() to false
+        val match = Regex("""^(\d+(?:\.\d+)*)(?:-(alpha|beta|rc)\.(\d+))?$""").find(cleaned)
+            ?: return SemVer(emptyList(), null, 0)
         val nums = match.groupValues[1].split(".").mapNotNull { it.toIntOrNull() }
-        val isPreRelease = match.groupValues[2].isNotBlank()
-        return nums to isPreRelease
+        val stage = match.groupValues[2].ifEmpty { null }
+        val stageNum = match.groupValues[3].toIntOrNull() ?: 0
+        return SemVer(nums, stage, stageNum)
+    }
+
+    private fun stageOrder(stage: String): Int = when (stage) {
+        "alpha" -> 0
+        "beta" -> 1
+        "rc" -> 2
+        else -> 3
+    }
+
+    /** 从版本号自动判断是否为预发布版本（含 -alpha / -beta / -rc 后缀）。 */
+    fun isPrereleaseVersion(version: String): Boolean {
+        val cleaned = version.trim().removePrefix("v").removePrefix("V")
+        return Regex("""-(alpha|beta|rc)\.\d+$""").containsMatchIn(cleaned)
+    }
+
+    /** 返回 prerelease 阶段的中文标签，正式版返回空字符串。 */
+    fun prereleaseLabel(version: String): String {
+        val cleaned = version.trim().removePrefix("v").removePrefix("V")
+        val match = Regex("""-(alpha|beta|rc)\.\d+$""").find(cleaned) ?: return ""
+        return when (match.groupValues[1]) {
+            "alpha" -> "（内部测试版）"
+            "beta" -> "（公开测试版）"
+            "rc" -> "（候选版）"
+            else -> ""
+        }
     }
 }

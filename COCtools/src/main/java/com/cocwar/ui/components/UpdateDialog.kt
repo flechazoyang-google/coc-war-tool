@@ -24,7 +24,7 @@ import com.cocwar.data.update.UpdateInfo
 import kotlinx.coroutines.launch
 
 /**
- * 更新提示弹窗：版本 / 更新说明（预览版带「（预览版）」标识）/ 立即更新（下载并安装）/ 以后再说。
+ * 更新提示弹窗：版本 / 更新说明（prerelease 自动显示阶段标签）/ 立即更新（下载并安装）/ 以后再说。
  * 工具页、更新设置页、启动自动检查共用。
  */
 @Composable
@@ -43,7 +43,7 @@ fun UpdateDialog(
             Column {
                 Text("当前版本：${BuildConfig.VERSION_NAME}")
                 Text(
-                    "最新版本：${info.version}${if (info.isPrerelease) "（预览版）" else ""}",
+                    "最新版本：${info.version}${UpdateChecker.prereleaseLabel(info.version)}",
                     fontWeight = FontWeight.Bold
                 )
                 if (info.body.isNotBlank()) {

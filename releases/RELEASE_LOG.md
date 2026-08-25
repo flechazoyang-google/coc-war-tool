@@ -1,5 +1,20 @@
 # COC War Tool 发行版日志
 
+## v4.9.0-alpha.1 (2026-08-25)
+
+内部测试版：SemVer 版本号体系迁移 + 导入预览统一 + APK 体积优化
+
+- **SemVer 版本号**：采用 `MAJOR.MINOR.PATCH-STAGE.N` 格式，支持 alpha/beta/rc 阶段
+- **导入预览统一**：剪切板和手动导入共用 `ImportPreviewDialog`，删除旧 `ClipboardImportDialog`
+- **APK 体积优化**：启用 R8 代码缩减 + 资源压缩（61MB → 13MB）
+- **版本更新**：`UpdateChecker` 支持 SemVer prerelease 解析，自动显示阶段标签
+- **ProGuard 规则**：完善 Gson DTO / Room Entity / Backup 类 keep 规则
+
+- **APK 下载**: [https://cdn.flechazo.icu/COCtools-alpha.apk](https://cdn.flechazo.icu/COCtools-alpha.apk)
+- **Version Code**: 33
+
+---
+
 ## v4.8.0 (2026-08-24)
 
 正式版：OCR 设置重构 + 战报页重构 + 截图列表分组 + 导入页优化 + 剪切板导入日期选择

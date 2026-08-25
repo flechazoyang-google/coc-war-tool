@@ -11,7 +11,7 @@
 - **数据管理** — 单场导出 / CSV / 全量备份 JSON，WebDAV 云端同步（支持坚果云）
 - **成员进攻编辑** — 详情页修改每位成员的进攻状态与摧毁率
 - **辅助工具** — 悬浮球 + 无障碍录屏截屏，截图本地图库浏览
-- **版本更新检查** — 内置更新检测（Gitee Release）
+- **版本更新检查** — 内置更新检测（七牛云 CDN release.json）
 
 ## 技术栈
 
@@ -19,7 +19,7 @@
 |------|------|
 | 语言 | Kotlin 2.1.21，JVM 21（minSdk 30 / targetSdk 35） |
 | UI | Jetpack Compose + Material 3（BOM 2025.06.01）+ Navigation Compose |
-| 数据库 | Room 2.7.2 + KSP（DB v6，5 个手写 Migration） |
+| 数据库 | Room 2.7.2 + KSP（DB v8，7 个手写 Migration） |
 | JSON | Gson 2.11.0（宽松解析，DTO 可空兜底） |
 | 架构 | MVVM + Repository（无 DI 框架，`di/warViewModel` 工厂） |
 | 安全 | SecurePrefs：AndroidKeyStore + AES/GCM 加密存储 WebDAV 密码 |
@@ -47,7 +47,7 @@ COCtools/build/outputs/apk/debug/COCtools-debug.apk
 COCtools/src/main/java/com/cocwar/
 ├── CocWarApplication.kt          # Application 入口（lazy DB + Repository 单例）
 ├── data/
-│   ├── db/WarDatabase.kt         # Room DB v6 + DAO + 5 个 Migration
+│   ├── db/WarDatabase.kt         # Room DB v8 + DAO + 7 个 Migration
 │   ├── model/WarModels.kt        # DTO（宽松可空）+ 领域模型
 │   ├── parser/WarJsonParser.kt   # JSON → ParseResult（永不抛异常）
 │   ├── repository/               # WarRepository + BackupCodec + EventNamingRules

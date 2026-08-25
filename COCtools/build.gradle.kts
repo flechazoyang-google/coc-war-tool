@@ -20,20 +20,23 @@ android {
         applicationId = "com.cocwar"
         minSdk = 30
         targetSdk = 35
-        versionCode = 32
-        versionName = "4.8.0"
+        versionCode = 33
+        versionName = "4.9.0-alpha.1"
         // DB Migration 测试（androidTest）需要 instrumentation runner
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         debug {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             isDebuggable = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             isDebuggable = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -62,7 +65,7 @@ android {
     }
 
     lint {
-        // CI 门禁：lint 错误即失败；release 构建不强制（发布走 Gitee Release）
+        // CI 门禁：lint 错误即失败；release 构建不强制（发布走七牛云 CDN）
         abortOnError = true
         checkReleaseBuilds = false
     }

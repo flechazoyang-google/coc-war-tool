@@ -42,6 +42,8 @@ import com.cocwar.ui.components.FilterPill
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.StringMatcher
+import java.util.Calendar
+import java.util.TimeZone
 
 /** 未匹配成员的处理方式 */
 enum class MatchOption(val label: String) {
@@ -468,4 +470,30 @@ fun buildDiffSummary(
         inRoster = inRoster,
         newNames = finalNames.size - inRoster
     )
+}
+
+internal val WEEKDAY_LABELS = arrayOf("周日", "周一", "周二", "周三", "周四", "周五", "周六")
+
+internal fun formatWarDate(dateMillis: Long): String {
+    val cal = Calendar.getInstance(TimeZone.getDefault()).apply { this.timeInMillis = dateMillis }
+    val weekday = WEEKDAY_LABELS[cal.get(Calendar.DAY_OF_WEEK) - 1]
+    return "${cal.get(Calendar.YEAR)}年${cal.get(Calendar.MONTH) + 1}月${cal.get(Calendar.DAY_OF_MONTH)}日 $weekday"
+}
+
+internal fun adjustParsedDate(
+    parsed: WarJsonParser.ParsedEvent,
+    dateMillis: Long
+): WarJsonParser.ParsedEvent {
+    val newId = "${parsed.event.eventType}_${dateMillis}_${System.nanoTime()}"
+    return parsed.copy(
+        event = parsed.event.copy(createdAt = dateMillis, eventId = newId),
+        members = parsed.members.map {
+            it.copy(eventId = newId, id = "$newId#${it.id.substringAfter("#")}")
+        }
+    )
+}
+
+fun looksLikeWarJson(text: String): Boolean {
+    if (text.length > 200_000) return false
+    return text.contains("\"members\"") && text.contains("player_name")
 }
