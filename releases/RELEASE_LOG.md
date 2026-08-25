@@ -1,5 +1,16 @@
 # COC War Tool 发行版日志
 
+## v4.9.0-beta.1 (2026-08-25)
+
+公开测试版：功能冻结，进入公开测试阶段
+
+- 同 v4.9.0-alpha.1 内容，进入 beta 公开测试阶段
+
+- **APK 下载**: [https://cdn.flechazo.icu/COCtools-beta.apk](https://cdn.flechazo.icu/COCtools-beta.apk)
+- **Version Code**: 34
+
+---
+
 ## v4.9.0-alpha.1 (2026-08-25)
 
 内部测试版：SemVer 版本号体系迁移 + 导入预览统一 + APK 体积优化
