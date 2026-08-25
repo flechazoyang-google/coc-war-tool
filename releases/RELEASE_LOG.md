@@ -1,5 +1,16 @@
 # COC War Tool 发行版日志
 
+## v4.9.0-rc.1 (2026-08-25)
+
+候选版：无已知 blocker，准备发布正式版
+
+- 同 v4.9.0-alpha.1 内容，进入 rc 候选阶段
+
+- **APK 下载**: [https://cdn.flechazo.icu/COCtools-rc.apk](https://cdn.flechazo.icu/COCtools-rc.apk)
+- **Version Code**: 35
+
+---
+
 ## v4.9.0-beta.1 (2026-08-25)
 
 公开测试版：功能冻结，进入公开测试阶段
