@@ -95,12 +95,16 @@ function generateUploadToken(accessKey, secretKey, bucket, key) {
 
 function fetchExistingReleaseJson(domain) {
   return new Promise((resolve) => {
-    const url = `${domain.replace(/\/$/, '')}/release.json`;
+    const baseUrl = `${domain.replace(/\/$/, '')}/release.json`;
+    const url = `${baseUrl}?_t=${Date.now()}`;
     const parsedUrl = new URL(url);
     const options = {
       hostname: parsedUrl.hostname,
-      path: parsedUrl.pathname,
-      headers: { 'User-Agent': 'COCWarTool-ReleaseScript' },
+      path: parsedUrl.pathname + parsedUrl.search,
+      headers: {
+        'User-Agent': 'COCWarTool-ReleaseScript',
+        'Cache-Control': 'no-cache'
+      },
       rejectUnauthorized: false
     };
     https.get(options, (res) => {
