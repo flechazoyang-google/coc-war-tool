@@ -71,19 +71,41 @@ Both must succeed. If tests fail, stop and report.
 
 ### 4. Copy APK locally
 
+同一正式版的各阶段 APK 放在以正式版版本号命名的子文件夹中：
+
 ```bash
-cp COCtools/build/outputs/apk/debug/COCtools-debug.apk releases/COCtools-{stage}.apk
+mkdir -p releases/{baseVersion}
+cp COCtools/build/outputs/apk/debug/COCtools-debug.apk releases/{baseVersion}/COCtools-{stage}.apk
+```
+
+`{baseVersion}` 从 versionName 提取（去掉 `-alpha.N`/`-beta.N`/`-rc.N` 后缀），例如：
+- `4.9.0-alpha.1` → `releases/4.9.0/COCtools-alpha.apk`
+- `4.9.0-beta.1` → `releases/4.9.0/COCtools-beta.apk`
+- `4.9.0-rc.1` → `releases/4.9.0/COCtools-rc.apk`
+- `4.9.0` → `releases/4.9.0/COCtools-stable.apk`
+
+目录结构示例：
+```
+releases/
+├── 4.9.0/
+│   ├── COCtools-alpha.apk
+│   ├── COCtools-beta.apk
+│   ├── COCtools-rc.apk
+│   └── COCtools-stable.apk
+├── 4.10.0/
+│   └── ...
+└── RELEASE_LOG.md
 ```
 
 ### 5. Upload APK to Qiniu Cloud
 
 ```bash
 node .qoder/skills/release/scripts/qiniu-upload.cjs \
-  --file "releases/COCtools-{stage}.apk" \
+  --file "releases/{baseVersion}/COCtools-{stage}.apk" \
   --key "COCtools-{stage}.apk"
 ```
 
-**APK 命名规则**：每个阶段只保留最新一个 APK，新上传覆盖旧文件。
+**CDN 命名规则**：每个阶段只保留最新一个 APK，新上传覆盖旧文件。
 - alpha → `COCtools-alpha.apk`
 - beta → `COCtools-beta.apk`
 - rc → `COCtools-rc.apk`
