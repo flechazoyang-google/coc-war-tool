@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Generate and upload release.json to Qiniu Cloud
-// Usage: node release-json-upload.cjs --version v4.9.0-alpha.1 --url https://cdn... [--channel alpha|beta|rc|stable] [--body "changelog"]
-// --channel is optional: auto-detected from version (alpha/beta/rc suffix → that stage, otherwise → stable).
+// Usage: node release-json-upload.cjs --version v4.9.0-alpha.1 [--url https://cdn...] [--channel alpha|beta|rc|stable] [--body "changelog"]
+// --channel and --url are optional: auto-detected from version.
+//   channel: alpha/beta/rc suffix → that stage, otherwise → stable
+//   url: {QINIU_DOMAIN}/COCtools-{stage}.apk
 // Reads QINIU_* from .env in project root or environment.
 
 const https = require('https');
@@ -18,8 +20,8 @@ function parseArgs() {
     else if (args[i] === '--url') opts.url = args[++i];
     else if (args[i] === '--body') opts.body = args[++i];
   }
-  if (!opts.version || !opts.url) {
-    console.error('Error: --version and --url are required');
+  if (!opts.version) {
+    console.error('Error: --version is required');
     process.exit(1);
   }
   if (!opts.channel) {
@@ -190,6 +192,11 @@ async function main() {
   }
 
   try {
+    if (!opts.url) {
+      const domain = config.domain.replace(/\/$/, '');
+      opts.url = `${domain}/COCtools-${opts.channel}.apk`;
+    }
+
     console.log('Fetching existing release.json...');
     const existing = await fetchExistingReleaseJson(config.domain);
     const releaseJson = existing || {};

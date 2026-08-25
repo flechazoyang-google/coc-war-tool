@@ -111,8 +111,6 @@ node .qoder/skills/release/scripts/qiniu-upload.cjs \
 - rc → `COCtools-rc.apk`
 - stable → `COCtools-stable.apk`
 
-Save the printed download URL for step 6.
-
 ### 6. Update release.json on Qiniu Cloud
 
 Derive the changelog from `git log --oneline <last_tag>..HEAD`, then run:
@@ -120,15 +118,12 @@ Derive the changelog from `git log --oneline <last_tag>..HEAD`, then run:
 ```bash
 node .qoder/skills/release/scripts/release-json-upload.cjs \
   --version "v{version}" \
-  --url "{qiniu_apk_url}" \
   --body "{changelog}"
 ```
 
-`--channel` is optional — the script auto-detects from version:
-- `-alpha.N` → `alpha` channel
-- `-beta.N` → `beta` channel
-- `-rc.N` → `rc` channel
-- No suffix → `stable` channel
+`--channel` 和 `--url` 均可省略，脚本自动推断：
+- `--channel`：从版本号提取阶段（`-alpha.N` → alpha，`-beta.N` → beta，`-rc.N` → rc，无后缀 → stable）
+- `--url`：`{QINIU_DOMAIN}/COCtools-{stage}.apk`
 
 **release.json 格式**：包含所有阶段的最新版本，每个阶段独立一个通道。
 ```json
