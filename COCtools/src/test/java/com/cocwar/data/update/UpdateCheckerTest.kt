@@ -13,17 +13,35 @@ import org.junit.Test
 class UpdateCheckerTest {
 
     private fun releaseJson(
-        stableVersion: String? = "v4.8.0",
-        stableUrl: String? = "https://cdn.flechazo.icu/COCtools-v4.8.0.apk",
+        stableVersion: String? = "v4.9.0",
+        stableUrl: String? = "https://cdn.flechazo.icu/COCtools-stable.apk",
         stableBody: String? = "正式版更新日志",
-        previewVersion: String? = "v4.9.0-alpha.1",
-        previewUrl: String? = "https://cdn.flechazo.icu/COCtools-v4.9.0-alpha.1.apk",
-        previewBody: String? = "测试版更新日志"
+        alphaVersion: String? = null,
+        alphaUrl: String? = null,
+        alphaBody: String? = null,
+        betaVersion: String? = null,
+        betaUrl: String? = null,
+        betaBody: String? = null,
+        rcVersion: String? = "v4.9.0-rc.1",
+        rcUrl: String? = "https://cdn.flechazo.icu/COCtools-rc.apk",
+        rcBody: String? = "候选版更新日志",
+        previewVersion: String? = null,
+        previewUrl: String? = null,
+        previewBody: String? = null
     ): String {
         val sb = StringBuilder("{")
         val channels = mutableListOf<String>()
         if (stableVersion != null) {
             channels.add("\"stable\":{\"version\":\"$stableVersion\",\"url\":\"$stableUrl\",\"body\":\"$stableBody\"}")
+        }
+        if (alphaVersion != null) {
+            channels.add("\"alpha\":{\"version\":\"$alphaVersion\",\"url\":\"$alphaUrl\",\"body\":\"$alphaBody\"}")
+        }
+        if (betaVersion != null) {
+            channels.add("\"beta\":{\"version\":\"$betaVersion\",\"url\":\"$betaUrl\",\"body\":\"$betaBody\"}")
+        }
+        if (rcVersion != null) {
+            channels.add("\"rc\":{\"version\":\"$rcVersion\",\"url\":\"$rcUrl\",\"body\":\"$rcBody\"}")
         }
         if (previewVersion != null) {
             channels.add("\"preview\":{\"version\":\"$previewVersion\",\"url\":\"$previewUrl\",\"body\":\"$previewBody\"}")
@@ -39,48 +57,81 @@ class UpdateCheckerTest {
     fun `stable channel returned when prerelease disabled`() {
         val info = UpdateChecker.parseReleaseJson(releaseJson(), includePrerelease = false)
         assertNotNull(info)
-        assertEquals("4.8.0", info!!.version)
-        assertEquals("https://cdn.flechazo.icu/COCtools-v4.8.0.apk", info.apkUrl)
-        assertEquals("正式版更新日志", info.body)
+        assertEquals("4.9.0", info!!.version)
         assertFalse(info.isPrerelease)
     }
 
     @Test
-    fun `preview ignored when prerelease disabled`() {
-        val json = releaseJson(stableVersion = "v4.8.0", previewVersion = "v4.9.0-beta.1")
+    fun `prerelease channels ignored when prerelease disabled`() {
+        val json = releaseJson(alphaVersion = "v4.10.0-alpha.1", alphaUrl = "https://cdn/a.apk")
         val info = UpdateChecker.parseReleaseJson(json, includePrerelease = false)
-        assertEquals("4.8.0", info!!.version)
-        assertFalse(info.isPrerelease)
+        assertEquals("4.9.0", info!!.version)
     }
 
     @Test
     fun `null when stable missing and prerelease disabled`() {
-        val json = releaseJson(stableVersion = null, previewVersion = "v4.9.0-alpha.1")
+        val json = releaseJson(stableVersion = null, rcVersion = "v4.9.0-rc.1")
         assertNull(UpdateChecker.parseReleaseJson(json, includePrerelease = false))
     }
 
-    // === includePrerelease = true → 优先 preview，回退 stable ===
+    // === includePrerelease = true → 选最高版本 ===
 
     @Test
-    fun `preview channel returned when prerelease enabled`() {
-        val info = UpdateChecker.parseReleaseJson(releaseJson(), includePrerelease = true)
-        assertNotNull(info)
-        assertEquals("4.9.0-alpha.1", info!!.version)
+    fun `picks highest version across all channels`() {
+        val json = releaseJson(
+            alphaVersion = "v4.10.0-alpha.1", alphaUrl = "https://cdn/a.apk",
+            rcVersion = "v4.9.0-rc.1"
+        )
+        val info = UpdateChecker.parseReleaseJson(json, includePrerelease = true)
+        assertEquals("4.10.0-alpha.1", info!!.version)
         assertTrue(info.isPrerelease)
     }
 
     @Test
-    fun `falls back to stable when preview missing`() {
-        val json = releaseJson(previewVersion = null)
+    fun `picks stable when it is highest`() {
+        val json = releaseJson(
+            stableVersion = "v4.9.0",
+            alphaVersion = "v4.9.0-alpha.1", alphaUrl = "https://cdn/a.apk"
+        )
         val info = UpdateChecker.parseReleaseJson(json, includePrerelease = true)
-        assertEquals("4.8.0", info!!.version)
+        assertEquals("4.9.0", info!!.version)
         assertFalse(info.isPrerelease)
     }
 
     @Test
-    fun `null when both channels missing`() {
-        val json = releaseJson(stableVersion = null, previewVersion = null)
+    fun `rc beats beta beats alpha`() {
+        val json = releaseJson(
+            stableVersion = null,
+            alphaVersion = "v4.9.0-alpha.1", alphaUrl = "https://cdn/a.apk",
+            betaVersion = "v4.9.0-beta.1", betaUrl = "https://cdn/b.apk",
+            rcVersion = "v4.9.0-rc.1"
+        )
+        val info = UpdateChecker.parseReleaseJson(json, includePrerelease = true)
+        assertEquals("4.9.0-rc.1", info!!.version)
+    }
+
+    @Test
+    fun `falls back to stable when no prerelease channels`() {
+        val json = releaseJson(rcVersion = null)
+        val info = UpdateChecker.parseReleaseJson(json, includePrerelease = true)
+        assertEquals("4.9.0", info!!.version)
+    }
+
+    @Test
+    fun `null when all channels missing`() {
+        val json = releaseJson(stableVersion = null, rcVersion = null)
         assertNull(UpdateChecker.parseReleaseJson(json, includePrerelease = true))
+    }
+
+    // === 旧格式兼容 ===
+
+    @Test
+    fun `old format preview channel works`() {
+        val json = releaseJson(stableVersion = null, rcVersion = null,
+            previewVersion = "v4.8.0-preview", previewUrl = "https://cdn/p.apk")
+        val info = UpdateChecker.parseReleaseJson(json, includePrerelease = true)
+        assertEquals("4.8.0-preview", info!!.version)
+        assertTrue(info.isPrerelease)
     }
 
     // === 边界情况 ===
@@ -97,7 +148,7 @@ class UpdateCheckerTest {
 
     @Test
     fun `channel missing url returns null for that channel`() {
-        val json = """{"stable":{"version":"v4.8.0","body":"no url"}}"""
+        val json = """{"stable":{"version":"v4.9.0","body":"no url"}}"""
         assertNull(UpdateChecker.parseReleaseJson(json, includePrerelease = false))
     }
 
@@ -117,9 +168,9 @@ class UpdateCheckerTest {
 
     @Test
     fun `version prefix v stripped`() {
-        val json = """{"stable":{"version":"v4.8.0","url":"https://cdn.flechazo.icu/app.apk","body":""}}"""
+        val json = """{"stable":{"version":"v4.9.0","url":"https://cdn.flechazo.icu/app.apk","body":""}}"""
         val info = UpdateChecker.parseReleaseJson(json, includePrerelease = false)
-        assertEquals("4.8.0", info!!.version)
+        assertEquals("4.9.0", info!!.version)
     }
 
     @Test
@@ -127,13 +178,7 @@ class UpdateCheckerTest {
         val jsonAlpha = """{"stable":{"version":"v4.9.0-alpha.1","url":"https://cdn.flechazo.icu/app.apk","body":""}}"""
         assertTrue(UpdateChecker.parseReleaseJson(jsonAlpha, includePrerelease = false)!!.isPrerelease)
 
-        val jsonBeta = """{"stable":{"version":"v4.9.0-beta.2","url":"https://cdn.flechazo.icu/app.apk","body":""}}"""
-        assertTrue(UpdateChecker.parseReleaseJson(jsonBeta, includePrerelease = false)!!.isPrerelease)
-
-        val jsonRc = """{"stable":{"version":"v4.9.0-rc.1","url":"https://cdn.flechazo.icu/app.apk","body":""}}"""
-        assertTrue(UpdateChecker.parseReleaseJson(jsonRc, includePrerelease = false)!!.isPrerelease)
-
-        val jsonStable = """{"stable":{"version":"v4.8.0","url":"https://cdn.flechazo.icu/app.apk","body":""}}"""
+        val jsonStable = """{"stable":{"version":"v4.9.0","url":"https://cdn.flechazo.icu/app.apk","body":""}}"""
         assertFalse(UpdateChecker.parseReleaseJson(jsonStable, includePrerelease = false)!!.isPrerelease)
     }
 }

@@ -102,9 +102,22 @@ node .qoder/skills/release/scripts/release-json-upload.cjs \
   --body "{changelog}"
 ```
 
-`--channel` is optional — the script auto-detects:
-- Version with `-alpha`/`-beta`/`-rc` → `preview` channel
-- Version without suffix → `stable` channel
+`--channel` is optional — the script auto-detects from version:
+- `-alpha.N` → `alpha` channel
+- `-beta.N` → `beta` channel
+- `-rc.N` → `rc` channel
+- No suffix → `stable` channel
+
+**release.json 格式**：包含所有阶段的最新版本，每个阶段独立一个通道。
+```json
+{
+  "alpha": { "version": "v4.9.0-alpha.1", "url": "...", "body": "..." },
+  "beta":  { "version": "v4.9.0-beta.1",  "url": "...", "body": "..." },
+  "rc":    { "version": "v4.9.0-rc.1",    "url": "...", "body": "..." },
+  "stable":{ "version": "v4.9.0",         "url": "...", "body": "..." }
+}
+```
+客户端检查更新时：`includePrerelease=false` 只看 stable；`includePrerelease=true` 从所有通道中选出版本号最高的。
 
 ### 7. Update release log
 

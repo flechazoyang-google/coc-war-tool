@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Generate and upload release.json to Qiniu Cloud
-// Usage: node release-json-upload.cjs --version v4.9.0-alpha.1 --url https://cdn... [--channel stable|preview] [--body "changelog"]
-// --channel is optional: auto-detected from version (prerelease → preview, otherwise → stable).
+// Usage: node release-json-upload.cjs --version v4.9.0-alpha.1 --url https://cdn... [--channel alpha|beta|rc|stable] [--body "changelog"]
+// --channel is optional: auto-detected from version (alpha/beta/rc suffix → that stage, otherwise → stable).
 // Reads QINIU_* from .env in project root or environment.
 
 const https = require('https');
@@ -23,11 +23,11 @@ function parseArgs() {
     process.exit(1);
   }
   if (!opts.channel) {
-    const isPrerelease = /-(alpha|beta|rc)\.\d+$/i.test(opts.version);
-    opts.channel = isPrerelease ? 'preview' : 'stable';
+    const match = /-(alpha|beta|rc)\.\d+$/i.exec(opts.version);
+    opts.channel = match ? match[1].toLowerCase() : 'stable';
   }
-  if (!['stable', 'preview'].includes(opts.channel)) {
-    console.error('Error: --channel must be "stable" or "preview"');
+  if (!['alpha', 'beta', 'rc', 'stable'].includes(opts.channel)) {
+    console.error('Error: --channel must be "alpha", "beta", "rc", or "stable"');
     process.exit(1);
   }
   return opts;

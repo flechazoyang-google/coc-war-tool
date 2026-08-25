@@ -77,12 +77,15 @@ object UpdateChecker {
     }
 
     /**
-     * 解析 release.json 并选出目标通道的 UpdateInfo（纯函数，可单测）。
+     * 解析 release.json 并选出最新版本（纯函数，可单测）。
+     *
+     * 支持两种格式：
+     * - 新格式：{ "alpha": {...}, "beta": {...}, "rc": {...}, "stable": {...} }
+     * - 旧格式：{ "stable": {...}, "preview": {...} }
      *
      * 选择策略：
-     * - includePrerelease=true：优先 preview 通道，若 preview 为空则回退到 stable；
+     * - includePrerelease=true：从所有通道中选出版本号最高的；
      * - includePrerelease=false：只看 stable 通道。
-     * - 两个通道都无效时返回 null。
      */
     fun parseReleaseJson(json: String, includePrerelease: Boolean): UpdateInfo? {
         val root = try {
@@ -106,11 +109,16 @@ object UpdateChecker {
             )
         }
 
-        return if (includePrerelease) {
-            channelInfo("preview") ?: channelInfo("stable")
-        } else {
-            channelInfo("stable")
+        val stableOnly = channelInfo("stable")
+        if (!includePrerelease) return stableOnly
+
+        val channels = listOf("alpha", "beta", "rc", "stable")
+        val candidates = channels.mapNotNull { channelInfo(it) }
+        if (candidates.isEmpty()) {
+            // 旧格式兼容：preview 通道
+            return channelInfo("preview") ?: stableOnly
         }
+        return candidates.maxWithOrNull { a, b -> compareVersion(a.version, b.version) }
     }
 
     /**
@@ -257,21 +265,26 @@ object UpdateChecker {
         else -> 3
     }
 
-    /** 从版本号自动判断是否为预发布版本（含 -alpha / -beta / -rc 后缀）。 */
+    /** 从版本号自动判断是否为预发布版本（含 -alpha / -beta / -rc / -preview 后缀）。 */
     fun isPrereleaseVersion(version: String): Boolean {
         val cleaned = version.trim().removePrefix("v").removePrefix("V")
         return Regex("""-(alpha|beta|rc)\.\d+$""").containsMatchIn(cleaned)
+            || Regex("""-preview$""").containsMatchIn(cleaned)
     }
 
-    /** 返回 prerelease 阶段的中文标签，正式版返回空字符串。 */
+    /** 返回 prerelease 阶段的中文标签，正式版返回空字符串。兼容旧 -preview 后缀。 */
     fun prereleaseLabel(version: String): String {
         val cleaned = version.trim().removePrefix("v").removePrefix("V")
-        val match = Regex("""-(alpha|beta|rc)\.\d+$""").find(cleaned) ?: return ""
-        return when (match.groupValues[1]) {
-            "alpha" -> "（内部测试版）"
-            "beta" -> "（公开测试版）"
-            "rc" -> "（候选版）"
-            else -> ""
+        val match = Regex("""-(alpha|beta|rc)\.\d+$""").find(cleaned)
+        if (match != null) {
+            return when (match.groupValues[1]) {
+                "alpha" -> "（内部测试版）"
+                "beta" -> "（公开测试版）"
+                "rc" -> "（候选版）"
+                else -> ""
+            }
         }
+        if (cleaned.endsWith("-preview")) return "（预览版）"
+        return ""
     }
 }

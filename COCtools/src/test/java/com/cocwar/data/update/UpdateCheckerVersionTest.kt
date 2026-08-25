@@ -58,6 +58,7 @@ class UpdateCheckerVersionTest {
         assertTrue(UpdateChecker.isPrereleaseVersion("4.9.0-alpha.1"))
         assertTrue(UpdateChecker.isPrereleaseVersion("v4.9.0-beta.2"))
         assertTrue(UpdateChecker.isPrereleaseVersion("4.9.0-rc.1"))
+        assertTrue(UpdateChecker.isPrereleaseVersion("4.8.0-preview"))
         assertFalse(UpdateChecker.isPrereleaseVersion("4.8.0"))
         assertFalse(UpdateChecker.isPrereleaseVersion("v4.8.0"))
     }
@@ -67,6 +68,7 @@ class UpdateCheckerVersionTest {
         assertEquals("（内部测试版）", UpdateChecker.prereleaseLabel("4.9.0-alpha.1"))
         assertEquals("（公开测试版）", UpdateChecker.prereleaseLabel("4.9.0-beta.1"))
         assertEquals("（候选版）", UpdateChecker.prereleaseLabel("4.9.0-rc.1"))
+        assertEquals("（预览版）", UpdateChecker.prereleaseLabel("4.8.0-preview"))
         assertEquals("", UpdateChecker.prereleaseLabel("4.8.0"))
     }
 }
