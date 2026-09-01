@@ -94,6 +94,18 @@ class BackupCodecTest {
             entries.replaceAll { if (it.name in names) it.copy(active = active) else it }
         }
         override suspend fun clearAll() { entries.clear() }
+        override suspend fun upsertAll(entries: List<MemberRosterEntity>) {
+            entries.forEach { n ->
+                val idx = this.entries.indexOfFirst { it.name == n.name }
+                if (idx >= 0) this.entries[idx] = n else this.entries.add(n)
+            }
+        }
+        override suspend fun deactivateNotIn(names: List<String>) {
+            entries.replaceAll { if (it.active && it.name !in names) it.copy(active = false) else it }
+        }
+        override suspend fun deactivateAll() {
+            entries.replaceAll { if (it.active) it.copy(active = false) else it }
+        }
         override fun observeAll(): Flow<List<MemberRosterEntity>> = flowOf(entries.toList())
     }
 

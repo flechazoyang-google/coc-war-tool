@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -87,8 +88,10 @@ fun MemberManageScreen(
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
-    // 右上角「更多」菜单开关（导入新成员 / 疑似离队确认 / 已离队成员）
+    // 右上角「更多」菜单开关（导入新成员 / 更新花名册 / 疑似离队确认 / 已离队成员）
     var showMoreMenu by remember { mutableStateOf(false) }
+    // 「更新花名册」全屏弹窗（软替换：新增/恢复/改职/标记离队）
+    var showUpdateRoster by remember { mutableStateOf(false) }
     var showSuspectDialog by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
     // 点击成员行后弹窗展示「连续缺席场次」的目标成员
@@ -141,7 +144,7 @@ fun MemberManageScreen(
                         contentDescription = "搜索成员",
                         onClick = onSearch
                     )
-                    // 右上角「更多」：导入新成员 / 疑似离队确认 / 已离队成员
+                    // 右上角「更多」：导入新成员 / 更新花名册 / 疑似离队确认 / 已离队成员
                     Box {
                         CocIconButton(
                             icon = Icons.Filled.MoreVert,
@@ -161,6 +164,16 @@ fun MemberManageScreen(
                                 onClick = {
                                     showMoreMenu = false
                                     showImport = !showImport
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("更新花名册") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showUpdateRoster = true
                                 }
                             )
                             DropdownMenuItem(
@@ -341,6 +354,19 @@ fun MemberManageScreen(
             onThresholdChange = viewModel::setSuspectThreshold,
             onMarkDeparted = viewModel::markDeparted,
             onDismiss = { showSuspectDialog = false }
+        )
+    }
+
+    // 更新花名册（软替换）：预览确认后落库，Snackbar 汇报变更摘要
+    if (showUpdateRoster) {
+        UpdateRosterDialog(
+            roster = roster,
+            onReplace = { entries, summary ->
+                viewModel.replaceRoster(entries)
+                showUpdateRoster = false
+                scope.launch { snackbarHostState.showSnackbar(summary) }
+            },
+            onDismiss = { showUpdateRoster = false }
         )
     }
 }

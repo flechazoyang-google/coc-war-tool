@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cocwar.data.db.MemberRosterEntity
 import com.cocwar.data.repository.WarRepository
+import com.cocwar.domain.RosterEntry
 import com.cocwar.domain.RosterMaintenance
 import com.cocwar.domain.SuspectMember
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -84,6 +85,11 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
 
     fun addNames(names: List<String>) {
         viewModelScope.launch { repo.addToRoster(names) }
+    }
+
+    /** 更新花名册（软替换）：新名单 upsert，在册但不在新名单的标记离队；列表经 observeRoster 自动刷新。 */
+    fun replaceRoster(entries: List<RosterEntry>) {
+        viewModelScope.launch { repo.replaceRoster(entries) }
     }
 
     fun removeName(name: String) {

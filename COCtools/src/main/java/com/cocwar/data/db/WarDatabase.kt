@@ -181,6 +181,31 @@ interface RosterDao {
 
     @Query("DELETE FROM member_roster")
     suspend fun clearAll()
+
+    /** upsert：主键冲突时整体更新（role/active 以传入为准）。软替换核心写入，不能复用 insertAll（IGNORE 不更新旧行）。 */
+    @Upsert
+    suspend fun upsertAll(entries: List<MemberRosterEntity>)
+
+    @Query("UPDATE member_roster SET active = 0 WHERE active = 1 AND name NOT IN (:names)")
+    suspend fun deactivateNotIn(names: List<String>)
+
+    @Query("UPDATE member_roster SET active = 0 WHERE active = 1")
+    suspend fun deactivateAll()
+
+    /**
+     * 软替换花名册（事务）：新名单 upsert（active=true、职位以新名单为准，含恢复离队成员）；
+     * 在册但不在新名单的标记离队（职位保留）。@Transaction 保证 observeAll 不发射
+     * 「已 upsert 未 deactivate」的中间态。空名单走 deactivateAll——NOT IN () 是非法 SQL 会崩溃。
+     */
+    @Transaction
+    suspend fun softReplace(entries: List<MemberRosterEntity>) {
+        if (entries.isEmpty()) {
+            deactivateAll()
+            return
+        }
+        upsertAll(entries)
+        deactivateNotIn(entries.map { it.name })
+    }
 }
 
 @Dao

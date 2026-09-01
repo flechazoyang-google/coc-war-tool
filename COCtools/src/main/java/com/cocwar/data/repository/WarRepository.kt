@@ -10,6 +10,7 @@ import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.model.isUsed
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.samples.SampleDataProvider
+import com.cocwar.domain.RosterEntry
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
@@ -154,6 +155,15 @@ class WarRepository(
     /** 从名单中删除。 */
     suspend fun removeFromRoster(name: String) {
         rosterDao.delete(name)
+    }
+
+    /**
+     * 更新花名册（软替换）：新名单 upsert（在册、职位以新名单为准），在册但不在新名单的标记离队。
+     * 空名单直接返回——避免误粘贴把全员标记离队。
+     */
+    suspend fun replaceRoster(entries: List<RosterEntry>) {
+        if (entries.isEmpty()) return
+        rosterDao.softReplace(entries.map { MemberRosterEntity(name = it.name, role = it.role, active = true) })
     }
 
     // === 更新操作 ===
