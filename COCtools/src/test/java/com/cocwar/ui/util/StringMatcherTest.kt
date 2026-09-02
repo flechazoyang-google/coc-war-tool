@@ -65,4 +65,41 @@ class StringMatcherTest {
     fun `bestMatch 空候选返回 null`() {
         assertNull(StringMatcher.bestMatch("x", emptyList()))
     }
+
+    @Test
+    fun `isLikelySameName 相似度达标判定`() {
+        // 张叁 vs 张三：编辑距离 1 / 长度 2 = 0.5 恰好达标
+        assertTrue(StringMatcher.isLikelySameName("张叁", "张三"))
+        // 王小明 vs 赵小刚：2/3 编辑距离 → 0.33 不达标
+        assertEquals(false, StringMatcher.isLikelySameName("王小明", "赵小刚"))
+    }
+
+    @Test
+    fun `isLikelySameName 单字名互不匹配`() {
+        // 单字名不适用一字之差兜底：任意两个不同单字名距离都是 1，兜底会全部误判
+        assertEquals(false, StringMatcher.isLikelySameName("明", "朋"))
+        assertEquals(false, StringMatcher.isLikelySameName("明", "昭"))
+    }
+
+    @Test
+    fun `isLikelySameName 相同与空串`() {
+        assertTrue(StringMatcher.isLikelySameName("张三", "张三"))
+        assertEquals(false, StringMatcher.isLikelySameName("", "张三"))
+        // 与 similarity 口径一致：两空串相似度 1
+        assertTrue(StringMatcher.isLikelySameName("", ""))
+    }
+
+    @Test
+    fun `bestLikelyMatch 取相似度最高的合格候选`() {
+        // 张叁 vs 张三 = 0.5；张叁 vs 张叁叁 = 编辑距离 1 / 长度 3 → 0.67，取后者
+        val match = StringMatcher.bestLikelyMatch("张叁", listOf("张三", "张叁叁"))
+        assertEquals("张叁叁", match?.first)
+        assertEquals(1f - 1f / 3f, match?.second!!, 0.0001f)
+    }
+
+    @Test
+    fun `bestLikelyMatch 无合格候选或空候选返回 null`() {
+        assertNull(StringMatcher.bestLikelyMatch("王小明", listOf("赵小刚")))
+        assertNull(StringMatcher.bestLikelyMatch("张三", emptyList()))
+    }
 }

@@ -94,6 +94,9 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
     var editingAttack by remember { mutableStateOf<EditAttackInfo?>(null) }
     var editDestructionText by remember { mutableStateOf("") }
 
+    // 成员改名弹窗状态（修正 OCR 错名；新名与本场已有成员同名时保存后自动合并）
+    var renamingMember by remember { mutableStateOf<MemberEntity?>(null) }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -188,11 +191,14 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
             when (tab) {
                 0 -> OverviewTab(ev, stats, Modifier.weight(1f))
                 1 -> StatsTab(stats, Modifier.weight(1f))
-                2 -> MembersTab(members, Modifier.weight(1f)) { member, attackOrder ->
-                    val attack = member.attacks.find { it.attackOrder == attackOrder }
-                    editingAttack = EditAttackInfo(member, attackOrder)
-                    editDestructionText = attack?.destructionPercentage?.toString() ?: "0"
-                }
+                2 -> MembersTab(members, Modifier.weight(1f),
+                    onEditAttack = { member, attackOrder ->
+                        val attack = member.attacks.find { it.attackOrder == attackOrder }
+                        editingAttack = EditAttackInfo(member, attackOrder)
+                        editDestructionText = attack?.destructionPercentage?.toString() ?: "0"
+                    },
+                    onRename = { renamingMember = it }
+                )
             }
         }
     }
@@ -212,6 +218,72 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
             }
         )
     }
+
+    // 成员改名弹窗：修正 OCR 错名；新名与本场已有成员同名时保存后两行自动合并
+    renamingMember?.let { member ->
+        RenameMemberDialog(
+            member = member,
+            eventMemberNames = members.map { it.playerName },
+            onDismiss = { renamingMember = null },
+            onConfirm = { newName ->
+                viewModel.renameMember(member.id, newName) { merged ->
+                    if (merged) {
+                        android.widget.Toast.makeText(
+                            context, "「${member.playerName}」已并入「${newName.trim()}」，两行记录合并为一行",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                renamingMember = null
+            }
+        )
+    }
+}
+
+/** 成员改名弹窗：修正 OCR 错名。新名与本场已有成员同名时提示保存后两行合并为一行。 */
+@Composable
+private fun RenameMemberDialog(
+    member: MemberEntity,
+    eventMemberNames: List<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var text by remember(member.id) { mutableStateOf(member.playerName) }
+    val trimmed = text.trim()
+    val willMerge = trimmed.isNotBlank() && trimmed != member.playerName &&
+        eventMemberNames.any { it == trimmed }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("修改成员名") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("成员名") },
+                    singleLine = true,
+                    shape = CocShape.field,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    if (willMerge) "「$trimmed」已在本场名单中，保存后两行记录将合并为一人"
+                    else "仅修改本场战报中的名字。如需修正所有战报和花名册，请到「成员」页长按成员选择合并。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (willMerge) MaterialTheme.cocColors.danger
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = trimmed.isNotBlank() && trimmed != member.playerName,
+                onClick = { onConfirm(trimmed) }
+            ) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
 
 @Composable
@@ -481,13 +553,14 @@ private fun StatsTab(stats: WarStats, modifier: Modifier = Modifier) {
 private fun MembersTab(
     members: List<MemberEntity>,
     modifier: Modifier = Modifier,
-    onEditAttack: (MemberEntity, Int) -> Unit = { _, _ -> }
+    onEditAttack: (MemberEntity, Int) -> Unit = { _, _ -> },
+    onRename: (MemberEntity) -> Unit = {}
 ) {
     LazyColumn(
         modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(members, key = { it.id }) { member -> MemberCard(member, onEditAttack) }
+        items(members, key = { it.id }) { member -> MemberCard(member, onEditAttack, onRename) }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
@@ -495,7 +568,8 @@ private fun MembersTab(
 @Composable
 private fun MemberCard(
     member: MemberEntity,
-    onEditAttack: (MemberEntity, Int) -> Unit = { _, _ -> }
+    onEditAttack: (MemberEntity, Int) -> Unit = { _, _ -> },
+    onRename: (MemberEntity) -> Unit = {}
 ) {
     val hasAttack = member.attacks.any { it.isUsed() }
     val nameColor = roleColor(member.role)
@@ -507,16 +581,29 @@ private fun MemberCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // 名字区：点击改名（修正 OCR 错名）
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onRename(member) }
+                ) {
                     InitialAvatar(name = member.playerName, color = nameColor)
                     Spacer(Modifier.width(11.dp))
                     Column {
-                        Text(
-                            member.playerName,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = nameColor
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                member.playerName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = nameColor
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "改名",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
                         Spacer(Modifier.height(1.dp))
                         Text(
                             "#${member.rank} · ${roleLabel(member.role)}",

@@ -75,6 +75,45 @@ fun ImportPreviewDialog(
     var selectedDateMillis by remember { mutableStateOf<Long?>(todayMillis) }
     var showDatePicker by remember { mutableStateOf(false) }
     var adjustedParsed by remember { mutableStateOf(parsed) }
+    // 入册确认闸：疑似同名冲突 + 已构建的最终数据，待用户确认后保存
+    var conflictConfirm by remember { mutableStateOf<Pair<List<RosterConflict>, WarJsonParser.ParsedEvent>?>(null) }
+
+    /** 构建最终保存数据：应用成员匹配选择（使用建议/名单选择/新成员改名）、补齐进攻槽位、写入名称/类型/日期。 */
+    fun buildFinalParsed(): WarJsonParser.ParsedEvent {
+        val editedMembers = parsed.members.mapIndexed { i, m ->
+            val state = matchStates.getOrNull(i)
+            if (state != null) {
+                val finalName = when (state.matchOption) {
+                    MatchOption.USE_SUGGESTION -> state.suggestion ?: state.editedName
+                    MatchOption.PICK_FROM_ROSTER -> state.selectedRosterName ?: state.editedName
+                    MatchOption.AS_NEW_MEMBER -> state.editedName
+                }.trim().ifBlank { m.playerName }
+                if (finalName != m.playerName) m.copy(playerName = finalName) else m
+            } else m
+        }
+        val finalSlotCount = if (eventType == EVENT_TYPE_LEAGUE) 1 else 2
+        val finalMembers = editedMembers.map { m ->
+            val existing = m.attacks.filter { it.destructionPercentage > 0 }
+            val padded = existing + (1..finalSlotCount)
+                .filterNot { order -> existing.any { it.attackOrder == order } }
+                .map { Attack(attackOrder = it, destructionPercentage = 0) }
+            m.copy(attacks = padded)
+        }
+        val newEventId = if (eventType != adjustedParsed.event.eventType) {
+            "${eventType}_${adjustedParsed.event.createdAt}_${System.nanoTime()}"
+        } else adjustedParsed.event.eventId
+        return adjustedParsed.copy(
+            event = adjustedParsed.event.copy(
+                eventId = newEventId,
+                eventName = name.trim(),
+                eventType = eventType,
+                eventRound = parseEventRoundFromName(name.trim())
+            ),
+            members = finalMembers.map {
+                it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#"))
+            }
+        )
+    }
 
     LaunchedEffect(parsed) {
         val dateMs = selectedDateMillis ?: todayMillis
@@ -183,40 +222,18 @@ fun ImportPreviewDialog(
                 Button(
                     onClick = {
                         if (name.trim().isBlank()) { nameError = true; return@Button }
-                        val editedMembers = parsed.members.mapIndexed { i, m ->
-                            val state = matchStates.getOrNull(i)
-                            if (state != null) {
-                                val finalName = when (state.matchOption) {
-                                    MatchOption.USE_SUGGESTION -> state.suggestion ?: state.editedName
-                                    MatchOption.PICK_FROM_ROSTER -> state.selectedRosterName ?: state.editedName
-                                    MatchOption.AS_NEW_MEMBER -> state.editedName
-                                }
-                                if (finalName != m.playerName) m.copy(playerName = finalName) else m
-                            } else m
-                        }
-                        val finalSlotCount = if (eventType == EVENT_TYPE_LEAGUE) 1 else 2
-                        val finalMembers = editedMembers.map { m ->
-                            val existing = m.attacks.filter { it.destructionPercentage > 0 }
-                            val padded = existing + (1..finalSlotCount)
-                                .filterNot { order -> existing.any { it.attackOrder == order } }
-                                .map { Attack(attackOrder = it, destructionPercentage = 0) }
-                            m.copy(attacks = padded)
-                        }
-                        val newEventId = if (eventType != adjustedParsed.event.eventType) {
-                            "${eventType}_${adjustedParsed.event.createdAt}_${System.nanoTime()}"
-                        } else adjustedParsed.event.eventId
-                        val adjusted = adjustedParsed.copy(
-                            event = adjustedParsed.event.copy(
-                                eventId = newEventId,
-                                eventName = name.trim(),
-                                eventType = eventType,
-                                eventRound = parseEventRoundFromName(name.trim())
-                            ),
-                            members = adjustedParsed.members.map {
-                                it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#"))
+                        val finalParsed = buildFinalParsed()
+                        scope.launch {
+                            // 入册确认闸：新名字与在册成员疑似同名时先人工确认，避免 OCR 错名污染花名册
+                            val conflicts = viewModel.findRosterConflicts(
+                                finalParsed.members.map { it.playerName }
+                            )
+                            if (conflicts.isEmpty()) {
+                                viewModel.save(finalParsed, pendingImportId) { onSaved(finalParsed.event.eventId) }
+                            } else {
+                                conflictConfirm = conflicts to finalParsed
                             }
-                        )
-                        viewModel.save(adjusted, pendingImportId) { onSaved(adjusted.event.eventId) }
+                        }
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp)
                 ) {
@@ -227,6 +244,25 @@ fun ImportPreviewDialog(
                 Spacer(Modifier.height(20.dp))
             }
         }
+    }
+
+    // 入册确认闸弹窗：确认后按选择把错名并入在册成员（同名行由导入去重逻辑合并），再保存
+    conflictConfirm?.let { (conflicts, finalParsed) ->
+        RosterConflictDialog(
+            conflicts = conflicts,
+            onConfirm = { choices ->
+                val merges = conflicts.filter { choices[it.newName] == true }
+                    .associate { it.newName to it.suggestion }
+                val resolved = if (merges.isEmpty()) finalParsed else finalParsed.copy(
+                    members = finalParsed.members.map { m ->
+                        merges[m.playerName]?.let { m.copy(playerName = it) } ?: m
+                    }
+                )
+                conflictConfirm = null
+                viewModel.save(resolved, pendingImportId) { onSaved(resolved.event.eventId) }
+            },
+            onDismiss = { conflictConfirm = null }
+        )
     }
 
     if (showDatePicker) {

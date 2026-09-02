@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -86,6 +88,7 @@ fun MemberManageScreen(
     val suspects by viewModel.suspects.collectAsStateWithLifecycle()
     val suspectThreshold by viewModel.suspectThreshold.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val healthIssues by viewModel.healthIssues.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     // 右上角「更多」菜单开关（导入新成员 / 更新花名册 / 疑似离队确认 / 已离队成员）
@@ -98,6 +101,10 @@ fun MemberManageScreen(
     var detailName by remember { mutableStateOf<String?>(null) }
     // 长按菜单选择「删除」后待确认的成员名
     var pendingDeleteName by remember { mutableStateOf<String?>(null) }
+    // 长按菜单选择「合并到其他成员…」后待处理的名字（OCR 错名全局修正）
+    var mergingName by remember { mutableStateOf<String?>(null) }
+    // 数据体检弹窗（扫描识图错名残留与花名册重复条目）
+    var showHealthCheck by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -174,6 +181,17 @@ fun MemberManageScreen(
                                 onClick = {
                                     showMoreMenu = false
                                     showUpdateRoster = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("数据体检") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.HealthAndSafety, null, Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    viewModel.refreshHealthCheck()
+                                    showHealthCheck = true
                                 }
                             )
                             DropdownMenuItem(
@@ -283,7 +301,8 @@ fun MemberManageScreen(
                                 index = index,
                                 onClick = { detailName = entry.name },
                                 onRoleClick = { editingRoleName = entry.name },
-                                onDeleteRequest = { pendingDeleteName = entry.name }
+                                onDeleteRequest = { pendingDeleteName = entry.name },
+                                onMergeRequest = { mergingName = entry.name }
                             )
                             if (index < displayList.lastIndex) {
                                 Box(
@@ -369,6 +388,37 @@ fun MemberManageScreen(
             onDismiss = { showUpdateRoster = false }
         )
     }
+
+    // 数据体检：扫描识图错名残留与花名册重复条目，逐项合并/忽略
+    if (showHealthCheck) {
+        HealthCheckDialog(
+            issues = healthIssues,
+            onMerge = { viewModel.mergeHealthIssue(it.name, it.suggestion) },
+            onIgnore = { viewModel.ignoreHealthIssue(it.name) },
+            onDismiss = { showHealthCheck = false }
+        )
+    }
+
+    // 全局合并成员（OCR 错名修正）：选目标 → 确认影响面 → 执行，Snackbar 汇报结果
+    mergingName?.let { from ->
+        MergeMemberDialog(
+            fromName = from,
+            roster = roster,
+            loadAffectedCount = viewModel::countMemberRows,
+            onMerge = { to ->
+                viewModel.mergeMembers(from, to) { count ->
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            if (count > 0) "已将「$from」并入「$to」（修正 $count 行记录）"
+                            else "已处理花名册：「$from」→「$to」"
+                        )
+                    }
+                }
+                mergingName = null
+            },
+            onDismiss = { mergingName = null }
+        )
+    }
 }
 
 /** 职位等级：首领 > 副首领 > 长老 > 成员 */
@@ -402,7 +452,7 @@ internal fun sortRoster(
 
 /**
  * 成员行：序号 + 名字 + 职位（点击设置职位）。
- * 长按弹出删除菜单；删除前由页面层弹确认框（防误触）。
+ * 长按弹出操作菜单（删除 / 合并到其他成员）；删除前由页面层弹确认框（防误触）。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -411,7 +461,8 @@ internal fun MemberRow(
     index: Int,
     onClick: () -> Unit,
     onRoleClick: () -> Unit,
-    onDeleteRequest: () -> Unit
+    onDeleteRequest: () -> Unit,
+    onMergeRequest: (() -> Unit)? = null
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Box {
@@ -472,11 +523,28 @@ internal fun MemberRow(
             }
         }
 
-        // 长按操作菜单：删除入口（确认框由页面层负责）
+        // 长按操作菜单：合并到其他成员（OCR 错名修正）/ 删除（确认框由页面层负责）
         DropdownMenu(
             expanded = menuOpen,
             onDismissRequest = { menuOpen = false }
         ) {
+            if (onMergeRequest != null) {
+                DropdownMenuItem(
+                    text = { Text("合并到其他成员…") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.MergeType,
+                            contentDescription = null,
+                            tint = MaterialTheme.cocColors.accent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onMergeRequest()
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text("删除成员", color = MaterialTheme.cocColors.danger) },
                 leadingIcon = {

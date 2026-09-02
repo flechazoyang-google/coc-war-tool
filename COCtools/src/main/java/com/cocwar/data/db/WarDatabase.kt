@@ -78,6 +78,12 @@ class Converters {
     }
 }
 
+/** 名字 → 行数投影（数据体检用）。 */
+data class NameCount(
+    val name: String,
+    val cnt: Int
+)
+
 @Dao
 interface WarDao {
 
@@ -114,6 +120,18 @@ interface WarDao {
 
     @Update
     suspend fun updateMember(member: MemberEntity)
+
+    /** 删除单个成员行（同名两行合并为一行后移除多余行）。 */
+    @Query("DELETE FROM members WHERE id = :id")
+    suspend fun deleteMemberRow(id: String)
+
+    /** 某名字在全部战报中的成员行数（全局合并的影响面预估）。 */
+    @Query("SELECT COUNT(*) FROM members WHERE playerName = :name")
+    suspend fun countRowsByName(name: String): Int
+
+    /** 各名字在非示例战报中的成员行数（数据体检用，示例数据不参与）。 */
+    @Query("SELECT m.playerName AS name, COUNT(*) AS cnt FROM members m INNER JOIN war_events e ON m.eventId = e.eventId WHERE e.isSample = 0 GROUP BY m.playerName")
+    suspend fun getMemberRowCounts(): List<NameCount>
 
     @Query("DELETE FROM war_events WHERE eventId = :id")
     suspend fun deleteEvent(id: String)
@@ -174,6 +192,10 @@ interface RosterDao {
 
     @Query("UPDATE member_roster SET role = :role WHERE name = :name")
     suspend fun updateRole(name: String, role: String)
+
+    /** 花名册改名：合并目标不在册时沿用原条目（职位/在册状态保留）。调用方需保证 to 不存在，避免主键冲突。 */
+    @Query("UPDATE member_roster SET name = :to WHERE name = :from")
+    suspend fun rename(from: String, to: String)
 
     /** 批量设置成员在册状态（标记离队 / 恢复）。 */
     @Query("UPDATE member_roster SET active = :active WHERE name IN (:names)")

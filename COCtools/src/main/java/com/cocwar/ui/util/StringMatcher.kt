@@ -64,4 +64,34 @@ object StringMatcher {
         return if (best != null && bestScore >= threshold)
             best!! to bestScore else null
     }
+
+    /**
+     * 疑似同名判定：编辑距离相似度 >= [threshold]，或（多字名）等长且仅一字之差。
+     * 单字名不适用一字之差兜底——任意两个不同的单字名编辑距离都是 1，
+     * 兜底会把所有单字名互相判成同名。
+     */
+    fun isLikelySameName(a: String, b: String, threshold: Float = 0.5f): Boolean {
+        if (a == b) return true
+        if (a.isEmpty() || b.isEmpty()) return false
+        if (similarity(a, b) >= threshold) return true
+        return a.length == b.length && a.length >= 2 && levenshtein(a, b) == 1
+    }
+
+    /**
+     * 从候选中找最佳疑似同名项（相似度最高者），无合格候选返回 null。
+     * 与 [isLikelySameName] 同一判定口径，供入册确认闸/数据体检共用。
+     */
+    fun bestLikelyMatch(
+        target: String,
+        candidates: List<String>,
+        threshold: Float = 0.5f
+    ): Pair<String, Float>? {
+        var best: Pair<String, Float>? = null
+        for (c in candidates) {
+            if (!isLikelySameName(target, c, threshold)) continue
+            val score = similarity(target, c)
+            if (best == null || score > best!!.second) best = c to score
+        }
+        return best
+    }
 }

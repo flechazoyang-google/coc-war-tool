@@ -2,6 +2,7 @@ package com.cocwar.data.repository
 
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.MemberRosterEntity
+import com.cocwar.data.db.NameCount
 import com.cocwar.data.db.RosterDao
 import com.cocwar.data.db.WarDao
 import com.cocwar.data.db.WarEventEntity
@@ -50,6 +51,23 @@ class BackupCodecTest {
             membersByEvent[member.eventId]?.replaceAll { if (it.id == member.id) member else it }
         }
 
+        override suspend fun deleteMemberRow(id: String) {
+            membersByEvent.values.forEach { list -> list.removeAll { it.id == id } }
+        }
+
+        override suspend fun countRowsByName(name: String): Int =
+            membersByEvent.values.sumOf { list -> list.count { it.playerName == name } }
+
+        override suspend fun getMemberRowCounts(): List<NameCount> {
+            val counts = mutableMapOf<String, Int>()
+            membersByEvent.forEach { (eventId, list) ->
+                if (events[eventId]?.isSample != true) {
+                    list.forEach { counts[it.playerName] = (counts[it.playerName] ?: 0) + 1 }
+                }
+            }
+            return counts.map { NameCount(it.key, it.value) }
+        }
+
         override suspend fun deleteEvent(id: String) { events.remove(id); membersByEvent.remove(id) }
 
         override suspend fun deleteAllMembers() { membersByEvent.clear() }
@@ -87,6 +105,9 @@ class BackupCodecTest {
             names.forEach { n -> if (entries.none { it.name == n.name }) entries.add(n) }
         }
         override suspend fun delete(name: String) { entries.removeAll { it.name == name } }
+        override suspend fun rename(from: String, to: String) {
+            entries.replaceAll { if (it.name == from) it.copy(name = to) else it }
+        }
         override suspend fun updateRole(name: String, role: String) {
             entries.replaceAll { if (it.name == name) it.copy(role = role) else it }
         }

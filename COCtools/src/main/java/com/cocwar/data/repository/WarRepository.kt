@@ -2,14 +2,15 @@ package com.cocwar.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.room.withTransaction
 import com.cocwar.data.db.WarDatabase
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.MemberRosterEntity
 import com.cocwar.data.db.PendingImportEntity
-import com.cocwar.data.model.isUsed
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.samples.SampleDataProvider
+import com.cocwar.domain.MemberMerge
 import com.cocwar.domain.RosterEntry
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -46,14 +47,15 @@ class WarRepository(
     suspend fun getEventById(id: String): WarEventEntity? = dao.getEventById(id)
 
     suspend fun importEvent(parsed: WarJsonParser.ParsedEvent) {
-        // 职位一律以花名册为准：导入前按名字映射 role（解析阶段未传 rosterRoles 时在此兑底）
+        // 同名多行先合并为一行（OCR 错名映射到同一在册成员等场景），再按花名册映射职位
+        val deduped = MemberMerge.dedupeByName(parsed.members, parsed.event.eventType)
         val roleMap = rosterRoleMap()
-        val mapped = if (roleMap.isEmpty()) parsed else parsed.copy(
-            members = parsed.members.map {
-                it.copy(role = roleMap[it.playerName] ?: it.role)
-            }
-        )
-        dao.insertEvent(mapped.event, mapped.members)
+        val mapped = if (roleMap.isEmpty()) deduped else deduped.map {
+            it.copy(role = roleMap[it.playerName] ?: it.role)
+        }
+        val event = if (deduped.size == parsed.members.size) parsed.event
+        else MemberMerge.recomputeTotals(parsed.event, mapped)
+        dao.insertEvent(event, mapped)
     }
 
     suspend fun deleteEvent(id: String) {
@@ -185,17 +187,105 @@ class WarRepository(
     private suspend fun refreshEventStats(eventId: String) {
         val ev = dao.getEventById(eventId) ?: return
         val members = dao.getMembersByEventIds(listOf(eventId))
-        val totalStars = members.sumOf { it.totalStars }
-        val usedAttacks = members.flatMap { it.attacks }.filter { it.isUsed() }
-        val totalDestruction = if (usedAttacks.isEmpty()) "0%"
-        else {
-            val avg = usedAttacks.map { it.destructionPercentage }.average()
-            "%.1f%%".format(java.util.Locale.US, avg)
+        dao.updateEvent(MemberMerge.recomputeTotals(ev, members))
+    }
+
+    // === 成员名修正（OCR 错名善后） ===
+
+    /** 某名字在全部战报中的成员行数（全局合并前的影响面预估）。 */
+    suspend fun countMemberRows(name: String): Int = dao.countRowsByName(name)
+
+    /**
+     * 事件内成员改名；新名在本事件已存在时两行按同一人合并（保留已存在行的 id/排名）。
+     * 返回是否发生了合并，供 UI 提示。只影响本场战报，不触碰花名册与其他战报。
+     */
+    suspend fun renameMemberInEvent(eventId: String, memberId: String, newName: String): Boolean {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return false
+        val members = dao.getMembersByEventIds(listOf(eventId))
+        val target = members.find { it.id == memberId } ?: return false
+        if (trimmed == target.playerName) return false
+        val ev = dao.getEventById(eventId) ?: return false
+        val duplicate = members.find { it.id != memberId && it.playerName == trimmed }
+        return database.withTransaction {
+            if (duplicate != null) {
+                dao.updateMember(MemberMerge.mergeRows(duplicate, target, MemberMerge.maxStarsFor(ev.eventType)))
+                dao.deleteMemberRow(target.id)
+            } else {
+                dao.updateMember(target.copy(playerName = trimmed))
+            }
+            refreshEventStats(eventId)
+            duplicate != null
         }
-        dao.updateEvent(ev.copy(
-            clanTotalStars = totalStars,
-            clanTotalDestruction = totalDestruction
-        ))
+    }
+
+    /**
+     * 全局合并：把所有战报中 [fromName] 的成员行并入 [toName]——同场两者都有则两行合一，
+     * 只有 from 则直接改名；同名多行也一并合并。花名册同步处理：两者都在册时移除 from
+     * （职位以 to 为准），仅 from 在册时条目改名保留职位。返回受影响的成员行数。
+     */
+    suspend fun mergeMembersGlobally(fromName: String, toName: String): Int {
+        if (fromName == toName) return 0
+        val events = dao.getAllEvents()
+        val allMembers = if (events.isEmpty()) emptyList()
+        else dao.getMembersByEventIds(events.map { it.eventId })
+        val affectedEventIds = allMembers.filter { it.playerName == fromName }
+            .map { it.eventId }.toSet()
+        val byEvent = allMembers.filter { it.eventId in affectedEventIds }.groupBy { it.eventId }
+        return database.withTransaction {
+            var renamed = 0
+            for ((eventId, members) in byEvent) {
+                val ev = events.find { it.eventId == eventId } ?: continue
+                val maxStars = MemberMerge.maxStarsFor(ev.eventType)
+                val fromRows = members.filter { it.playerName == fromName }
+                val toRow = members.find { it.playerName == toName }
+                when {
+                    toRow != null -> {
+                        var merged: MemberEntity = toRow
+                        for (row in fromRows) merged = MemberMerge.mergeRows(merged, row, maxStars)
+                        dao.updateMember(merged)
+                        fromRows.forEach { dao.deleteMemberRow(it.id) }
+                    }
+                    fromRows.size == 1 -> dao.updateMember(fromRows.single().copy(playerName = toName))
+                    else -> {
+                        var merged = fromRows.first().copy(playerName = toName)
+                        for (row in fromRows.drop(1)) merged = MemberMerge.mergeRows(merged, row, maxStars)
+                        dao.updateMember(merged)
+                        fromRows.drop(1).forEach { dao.deleteMemberRow(it.id) }
+                    }
+                }
+                renamed += fromRows.size
+                refreshEventStats(eventId)
+            }
+            val roster = rosterDao.getAll()
+            val fromEntry = roster.find { it.name == fromName }
+            val toEntry = roster.find { it.name == toName }
+            when {
+                fromEntry != null && toEntry != null -> rosterDao.delete(fromName)
+                fromEntry != null -> rosterDao.rename(fromName, toName)
+            }
+            // 合并已解决该名字的体检问题；若曾被忽略则解除，同名再次出现时重新提示
+            val ignored = healthCheckIgnored()
+            if (fromName in ignored) {
+                prefs.edit().putStringSet(KEY_HEALTH_IGNORED, ignored - fromName).apply()
+            }
+            renamed
+        }
+    }
+
+    // === 数据体检 ===
+
+    /** 各名字在非示例战报中的成员行数（数据体检用）。 */
+    suspend fun getMemberRowCounts(): Map<String, Int> =
+        dao.getMemberRowCounts().associate { it.name to it.cnt }
+
+    /** 数据体检已忽略的可疑名字（不再提示）。 */
+    fun healthCheckIgnored(): Set<String> =
+        prefs.getStringSet(KEY_HEALTH_IGNORED, emptySet()) ?: emptySet()
+
+    /** 忽略数据体检中的某可疑名字。 */
+    fun ignoreHealthCheckName(name: String) {
+        prefs.edit().putStringSet(KEY_HEALTH_IGNORED, healthCheckIgnored() + name).apply()
     }
 
     // === 待确认识图（后台批量识图的草稿，不入备份/同步） ===
@@ -358,6 +448,7 @@ class WarRepository(
     companion object {
         private const val KEY_SAMPLES = "samples_inserted"
         private const val KEY_SUSPECT_THRESHOLD = "suspect_depart_threshold"
+        private const val KEY_HEALTH_IGNORED = "health_check_ignored"
         private const val DEFAULT_SUSPECT_THRESHOLD = 3
         private const val SUSPECT_THRESHOLD_MIN = 1
         private const val SUSPECT_THRESHOLD_MAX = 10

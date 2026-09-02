@@ -6,6 +6,7 @@ import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.ocr.OcrClient
 import com.cocwar.data.ocr.OcrConfig
 import com.cocwar.data.ocr.OcrCsvExtractor
+import com.cocwar.data.ocr.OcrPrompts
 import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.repository.WarRepository
 import kotlinx.coroutines.launch
@@ -50,6 +51,7 @@ class ImportViewModel(
 
     /**
      * 识图：调用已配置的视觉模型（默认千问），返回提取后的纯 CSV。
+     * 提示词注入在册成员名单，让模型在源头纠正名字错字。
      * @throws OcrClient.OcrException 未配置 Key / 网络 / 超时 / API 错误 / 响应解析失败
      */
     suspend fun recognize(imageBase64: String, mimeType: String = "image/jpeg"): String {
@@ -60,10 +62,18 @@ class ImportViewModel(
             baseUrl = config.baseUrl,
             model = config.model
         )
-        return OcrCsvExtractor.extract(client.recognize(imageBase64, mimeType))
+        val prompt = OcrPrompts.buildPrompt(repo.getActiveRoster())
+        return OcrCsvExtractor.extract(client.recognize(imageBase64, mimeType, prompt))
     }
 
     suspend fun loadRoster(): List<String> = repo.getRoster()
+
+    /**
+     * 入册确认闸：检测即将自动加入花名册的新名字中与在册成员疑似同名的项。
+     * 返回空列表表示无冲突，可直接保存。
+     */
+    suspend fun findRosterConflicts(names: List<String>): List<RosterConflict> =
+        detectRosterConflicts(names, repo.getRoster())
 
     /**
      * 保存事件：自动把名单外的成员加入花名册，再导入事件，全部串行在

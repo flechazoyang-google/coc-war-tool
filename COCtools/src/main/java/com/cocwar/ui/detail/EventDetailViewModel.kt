@@ -76,4 +76,14 @@ class EventDetailViewModel(private val repo: WarRepository, private val eventId:
             repo.updateMember(latest.copy(attacks = newAttacks, totalStars = latest.totalStars))
         }
     }
+
+    /**
+     * 事件内成员改名（OCR 错名修正）：新名在本场已存在时两行自动合并为同一人。
+     * 返回是否发生了合并，供 UI 提示。
+     */
+    fun renameMember(memberId: String, newName: String, onDone: (merged: Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            onDone(repo.renameMemberInEvent(eventId, memberId, newName))
+        }
+    }
 }

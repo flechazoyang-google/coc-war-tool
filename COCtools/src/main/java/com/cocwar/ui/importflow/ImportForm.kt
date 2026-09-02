@@ -442,6 +442,32 @@ fun buildMatchStates(parsed: WarJsonParser.ParsedEvent, roster: List<String>): L
         )
     }
 
+/** 入册确认闸检测出的疑似同名项：即将新增的名字 vs 在册最佳候选。 */
+data class RosterConflict(
+    val newName: String,
+    val suggestion: String,
+    val score: Float
+)
+
+/**
+ * 入册确认闸（第二道人工确认网）：检测即将自动加入花名册的新名字中
+ * 与在册成员疑似同名的项（判定口径见 [StringMatcher.isLikelySameName]，
+ * 阈值 0.5）。阈值低于导入预览建议匹配的 0.6——预览建议覆盖高置信区，
+ * 这里兜住低置信区与用户手动改判的情形，避免 OCR 错名静默污染花名册。
+ */
+fun detectRosterConflicts(newNames: List<String>, roster: List<String>): List<RosterConflict> {
+    if (roster.isEmpty()) return emptyList()
+    val seen = HashSet<String>()
+    val result = mutableListOf<RosterConflict>()
+    for (name in newNames) {
+        if (!seen.add(name) || name in roster) continue
+        StringMatcher.bestLikelyMatch(name, roster)?.let { (suggestion, score) ->
+            result.add(RosterConflict(name, suggestion, score))
+        }
+    }
+    return result
+}
+
 /** 导入 diff 摘要：总数 / 已在名单 / 名单外新成员（RULES §4.12）。 */
 data class MemberDiffSummary(
     val total: Int,

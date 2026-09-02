@@ -19,6 +19,7 @@ import com.cocwar.data.ocr.OcrClient
 import com.cocwar.data.ocr.OcrConfig
 import com.cocwar.data.ocr.OcrCsvAggregator
 import com.cocwar.data.ocr.OcrCsvExtractor
+import com.cocwar.data.ocr.OcrPrompts
 import com.cocwar.ui.util.ImageCompress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -104,6 +105,8 @@ class OcrBatchService : Service() {
         }
 
         val client = OcrClient(apiKey = config.apiKey, baseUrl = config.baseUrl, model = config.model)
+        // 提示词注入在册成员名单，让模型在源头纠正名字错字（与单屏识图一致）
+        val prompt = OcrPrompts.buildPrompt(repo.getActiveRoster())
         val csvs = mutableListOf<String>()
         var processed = 0
         try {
@@ -111,7 +114,7 @@ class OcrBatchService : Service() {
                 coroutineContext.ensureActive()
                 val base64 = ImageCompress.readAndCompressToBase64FromPath(path)
                 if (base64 != null) {
-                    val raw = client.recognize(base64)
+                    val raw = client.recognize(base64, prompt = prompt)
                     val csv = OcrCsvExtractor.extract(raw)
                     if (csv.isNotBlank()) csvs.add(csv)
                 }

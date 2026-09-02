@@ -128,4 +128,48 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
         val names = _departed.value.map { it.name }
         if (names.isNotEmpty()) viewModelScope.launch { repo.setRosterActive(names, true) }
     }
+
+    // === 成员名修正（OCR 错名善后） ===
+
+    /** 某名字在全部战报中的成员行数（全局合并前的影响面预估）。 */
+    suspend fun countMemberRows(name: String): Int = repo.countMemberRows(name)
+
+    /**
+     * 全局合并：把所有战报中 [fromName] 的记录并入 [toName]，并同步处理花名册。
+     * 返回受影响的成员行数，供 UI 汇报。
+     */
+    fun mergeMembers(fromName: String, toName: String, onDone: (Int) -> Unit = {}) {
+        viewModelScope.launch { onDone(repo.mergeMembersGlobally(fromName, toName)) }
+    }
+
+    // === 数据体检 ===
+
+    // 扫描结果：识图错名残留 + 花名册疑似重复条目（合并/忽略后即时重扫）
+    private val _healthIssues = MutableStateFlow<List<HealthIssue>>(emptyList())
+    val healthIssues: StateFlow<List<HealthIssue>> = _healthIssues
+
+    /** 重新扫描可疑数据（打开体检弹窗时调用）。 */
+    fun refreshHealthCheck() {
+        viewModelScope.launch {
+            _healthIssues.value = RosterHealthCheck.scan(
+                repo.getMemberRowCounts(),
+                repo.getRosterWithRoles(),
+                repo.healthCheckIgnored()
+            )
+        }
+    }
+
+    /** 忽略一条体检结果（持久化，不再提示）。 */
+    fun ignoreHealthIssue(name: String) {
+        repo.ignoreHealthCheckName(name)
+        refreshHealthCheck()
+    }
+
+    /** 合并体检结果（错名 → 建议目标），完成后重扫。 */
+    fun mergeHealthIssue(fromName: String, toName: String) {
+        viewModelScope.launch {
+            repo.mergeMembersGlobally(fromName, toName)
+            refreshHealthCheck()
+        }
+    }
 }
