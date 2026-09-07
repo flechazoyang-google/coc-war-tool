@@ -48,4 +48,4 @@
 回头看，最大的收获可能不是工具本身，而是跑通了一套 AI 结对开发的工作流：人负责口径、取舍和验收，AI 负责实现、重构和守护回归。分工清楚了，一个人也扛得动一个完整的产品。
 
 - 源码：https://gitee.com/yang-genhao/coc-war-tool
-- 下载：https://cdn.flechazo.icu/COCtools-stable.apk
+- 下载：https://cdn.flechazo.icu/COCtools-v4.10.0.apk

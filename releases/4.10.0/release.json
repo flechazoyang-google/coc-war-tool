@@ -1,0 +1,12 @@
+{
+  "beta": {
+    "version": "4.10.0-beta.1",
+    "url": "https://cdn.flechazo.icu/COCtools-v4.10.0-beta.1.apk",
+    "body": "公开测试版：花名册重构（离队即删除）+ 成员更新流程 + 解析容错加固"
+  },
+  "stable": {
+    "version": "4.10.0",
+    "url": "https://cdn.flechazo.icu/COCtools-v4.10.0.apk",
+    "body": "正式版：花名册重构（离队即删除）+ 成员更新流程 + 解析容错加固"
+  }
+}

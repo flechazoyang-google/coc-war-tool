@@ -14,7 +14,7 @@
 | 编译、命名、放本地目录 + 写版本说明 | AI | `releases/<版本>/{stable,beta/N}/*` + `RELEASE_NOTE.md` |
 | 生成 release.json 片段（供你粘贴） | AI | `releases/<版本>/release.json` |
 | Gitee 发行版 | 你（手动） | Gitee Release（tag + 更新说明，**无 APK 附件**） |
-| 上传 APK 到 CDN | 你（手动） | 覆盖 `COCtools-beta.apk` / `COCtools-stable.apk` |
+| 上传 APK 到 CDN | 你（手动） | 以**版本化文件名**上传（与本地包同名，如 `COCtools-v4.10.0.apk`） |
 | 合并 release.json 到 CDN | 你（手动） | `https://cdn.flechazo.icu/release.json` 生效 |
 
 > AI **不再**创建 Gitee 发行版、不再上传安装包。AI 把包打好、命名、归档到本地对应路径，
@@ -105,8 +105,8 @@ cp COCtools/build/outputs/apk/debug/COCtools-debug.apk releases/$V/beta/$N/COCto
 # 同时撰写 releases/$V/beta/$N/RELEASE_NOTE.md
 ```
 
-> AI 只把安装包放好、写好 `RELEASE_NOTE.md`，**不**生成 CDN 别名副本（`COCtools-stable.apk` /
-> `COCtools-beta.apk`）——那是你上传到 CDN 时使用的文件名，由你决定。
+> AI 只把安装包放好、写好 `RELEASE_NOTE.md`。安装包在**本地、CDN、release.json 三处使用同一版本化文件名**
+> （`COCtools-v<版本>[-beta.N].apk`），无需别名副本——你上传到 CDN 时保持文件名不变即可。
 
 ---
 
@@ -116,15 +116,15 @@ App 读取 `https://cdn.flechazo.icu/release.json`，结构：
 
 ```json
 {
-  "beta":   { "version": "4.10.0-beta.1", "url": "https://cdn.flechazo.icu/COCtools-beta.apk",   "body": "公开测试版：花名册重构…" },
-  "stable": { "version": "4.10.0",        "url": "https://cdn.flechazo.icu/COCtools-stable.apk", "body": "正式版：花名册重构…" }
+  "beta":   { "version": "4.10.0-beta.1", "url": "https://cdn.flechazo.icu/COCtools-v4.10.0-beta.1.apk", "body": "公开测试版：花名册重构…" },
+  "stable": { "version": "4.10.0",        "url": "https://cdn.flechazo.icu/COCtools-v4.10.0.apk",        "body": "正式版：花名册重构…" }
 }
 ```
 
-- AI 在 `releases/<版本>/release.json` 生成**对应通道片段**（含 `version` + `body`，`url` 用上面的固定别名）。
+- AI 在 `releases/<版本>/release.json` 生成**对应通道片段**（含 `version` + `body`，`url` 用**版本化文件名**，与本地安装包同名）。
 - 你上传 APK 后，把该片段**合并进 CDN 上的 `release.json`**：
   - 只保留 `beta` 与 `stable` 两个通道，删除旧的 `alpha` / `rc` / `preview` 键。
-  - `url` 保持固定别名不变。
+  - `url` 与本地安装包文件名保持一致（版本化命名）。
 - ⚠️ 不更新 `release.json`，App 内「检查更新」就不会提示新版本（即使 APK 已上传）。
 
 ---
@@ -134,9 +134,9 @@ App 读取 `https://cdn.flechazo.icu/release.json`，结构：
 1. **Gitee 发行版**：在 `https://gitee.com/yang-genhao/coc-war-tool/releases/new`
    手动创建，选择 tag（如 `v4.10.0`），填写更新说明（可取自 `RELEASE_NOTE.md`），
    **不附加 APK**（APK 走 CDN）；说明里附 CDN 下载链接。
-2. **上传 APK 到 CDN**（覆盖固定别名）：
-   - 正式版：把 `releases/<版本>/stable/COCtools-v<版本>.apk` 以 `COCtools-stable.apk` 上传覆盖 `https://cdn.flechazo.icu/COCtools-stable.apk`
-   - 测试版：把 `releases/<版本>/beta/<N>/COCtools-v<版本>-beta.N.apk` 以 `COCtools-beta.apk` 上传覆盖 `https://cdn.flechazo.icu/COCtools-beta.apk`
+2. **上传 APK 到 CDN**（保持版本化文件名不变）：
+   - 正式版：把 `releases/<版本>/stable/COCtools-v<版本>.apk` 上传到 `https://cdn.flechazo.icu/COCtools-v<版本>.apk`
+   - 测试版：把 `releases/<版本>/beta/<N>/COCtools-v<版本>-beta.N.apk` 上传到 `https://cdn.flechazo.icu/COCtools-v<版本>-beta.N.apk`
 3. **合并 release.json**：把 `releases/<版本>/release.json` 整体覆盖到 CDN 上的 `release.json`。
 
 ---

@@ -3,6 +3,7 @@
 - 发布日期：2026-09-07
 - Version Code：39
 - 安装包：`stable/COCtools-v4.10.0.apk`
+- CDN 下载：https://cdn.flechazo.icu/COCtools-v4.10.0.apk
 
 ## 更新内容
 

@@ -13,7 +13,7 @@
 - **职位归一化**：游戏内成员页「长者」与「长老」等价
 - **测试**：单测 258 用例 / 26 文件全绿
 
-- **APK 下载**: [https://cdn.flechazo.icu/COCtools-stable.apk](https://cdn.flechazo.icu/COCtools-stable.apk)
+- **APK 下载**: [https://cdn.flechazo.icu/COCtools-v4.10.0.apk](https://cdn.flechazo.icu/COCtools-v4.10.0.apk)
 - **Version Code**: 39
 
 ---
@@ -29,7 +29,7 @@
 - **职位归一化**：游戏内成员页「长者」与「长老」等价
 - **测试**：单测 258 用例 / 26 文件全绿（新增 RosterOcrPrompts 8、RosterLimit 4、解析器异常行用例）
 
-- **APK 下载**: [https://cdn.flechazo.icu/COCtools-beta.apk](https://cdn.flechazo.icu/COCtools-beta.apk)
+- **APK 下载**: [https://cdn.flechazo.icu/COCtools-v4.10.0-beta.1.apk](https://cdn.flechazo.icu/COCtools-v4.10.0-beta.1.apk)
 - **Version Code**: 38
 
 ---

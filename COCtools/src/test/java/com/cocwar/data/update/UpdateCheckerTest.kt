@@ -14,7 +14,7 @@ class UpdateCheckerTest {
 
     private fun releaseJson(
         stableVersion: String? = "v4.9.0",
-        stableUrl: String? = "https://cdn.flechazo.icu/COCtools-stable.apk",
+        stableUrl: String? = "https://cdn.flechazo.icu/COCtools-v4.10.0.apk",
         stableBody: String? = "正式版更新日志",
         alphaVersion: String? = null,
         alphaUrl: String? = null,
@@ -23,7 +23,7 @@ class UpdateCheckerTest {
         betaUrl: String? = null,
         betaBody: String? = null,
         rcVersion: String? = "v4.9.0-rc.1",
-        rcUrl: String? = "https://cdn.flechazo.icu/COCtools-rc.apk",
+        rcUrl: String? = "https://cdn.flechazo.icu/COCtools-v4.9.0-rc.1.apk",
         rcBody: String? = "候选版更新日志",
         previewVersion: String? = null,
         previewUrl: String? = null,
