@@ -70,28 +70,28 @@ fun DataScreen(
     val scope = rememberCoroutineScope()
 
     // 弹窗状态
-    var showJsonFormatDialog by remember { mutableStateOf(false) }
+    var showCsvFormatDialog by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
-    // 待写入文件的导出 JSON / CSV（SAF 选择保存位置后写入）
-    var pendingExportJson by remember { mutableStateOf<String?>(null) }
+    // 待写入文件的导出备份 ZIP / CSV（SAF 选择保存位置后写入）
+    var pendingExportZip by remember { mutableStateOf<ByteArray?>(null) }
     var pendingExportCsv by remember { mutableStateOf<String?>(null) }
     // 数据迁移修复：预览计划 / 执行结果 / 执行中标记
     var migrationPlan by remember { mutableStateOf<MigrationPlan?>(null) }
     var migrationResult by remember { mutableStateOf<MigrationResult?>(null) }
     var migrationBusy by remember { mutableStateOf(false) }
 
-    // 导出备份：SAF 选择保存位置后写入 JSON 文件
+    // 导出备份：SAF 选择保存位置后写入 ZIP 文件
     val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
+        ActivityResultContracts.CreateDocument("application/zip")
     ) { uri: Uri? ->
-        val json = pendingExportJson
-        pendingExportJson = null
-        if (uri != null && json != null) {
+        val zip = pendingExportZip
+        pendingExportZip = null
+        if (uri != null && zip != null) {
             scope.launch {
                 runCatching {
                     withContext(Dispatchers.IO) {
                         context.contentResolver.openOutputStream(uri)?.use { out ->
-                            out.write(json.toByteArray(Charsets.UTF_8))
+                            out.write(zip)
                         } ?: throw IllegalStateException("无法打开输出流")
                     }
                 }.onSuccess {
@@ -134,13 +134,13 @@ fun DataScreen(
             scope.launch {
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        val json = context.contentResolver.openInputStream(it)
-                            ?.bufferedReader()?.use { r -> r.readText() } ?: ""
+                        val bytes = context.contentResolver.openInputStream(it)
+                            ?.use { ins -> ins.readBytes() } ?: throw IllegalStateException("无法读取文件")
                         val app = context.applicationContext as CocWarApplication
-                        if (!app.repository.validateBackupJson(json)) {
-                            throw IllegalStateException("所选文件不是有效的备份 JSON")
+                        if (!app.repository.validateBackup(bytes)) {
+                            throw IllegalStateException("所选文件不是有效的备份")
                         }
-                        app.repository.restoreFromBackupJson(json)
+                        app.repository.restoreFromBackup(bytes)
                     }
                 }.onSuccess {
                     Toast.makeText(context, "备份导入成功", Toast.LENGTH_SHORT).show()
@@ -192,19 +192,19 @@ fun DataScreen(
                         icon = Icons.Filled.SaveAlt,
                         iconColor = MaterialTheme.cocColors.accent,
                         title = "导出所有数据",
-                        subtitle = "导出全量战报与名单为备份 JSON 文件",
+                        subtitle = "导出全量战报与名单为备份 ZIP 文件",
                         onClick = {
                             scope.launch {
                                 val app = context.applicationContext as CocWarApplication
-                                // JSON 拼接在 IO 线程执行，避免大数据量时卡主线程
-                                val json = withContext(Dispatchers.IO) {
-                                    app.repository.exportAllDataJson()
+                                // ZIP 拼接在 IO 线程执行，避免大数据量时卡主线程
+                                val zip = withContext(Dispatchers.IO) {
+                                    app.repository.exportAllData()
                                 }
-                                pendingExportJson = json
+                                pendingExportZip = zip
                                 val ts = java.text.SimpleDateFormat(
                                     "yyyyMMdd_HHmmss", java.util.Locale.US
                                 ).format(java.util.Date())
-                                exportLauncher.launch("coc_war_backup_$ts.json")
+                                exportLauncher.launch("coc_war_backup_$ts.zip")
                             }
                         }
                     )
@@ -231,7 +231,7 @@ fun DataScreen(
                         icon = Icons.Filled.FileOpen,
                         iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         title = "从备份导入",
-                        subtitle = "选择备份 JSON 文件完整还原（会覆盖当前数据）",
+                        subtitle = "选择备份 ZIP 文件完整还原（会覆盖当前数据）",
                         onClick = { showRestoreConfirm = true },
                         showDivider = false
                     )
@@ -272,9 +272,9 @@ fun DataScreen(
                     SettingsRow(
                         icon = Icons.Filled.Info,
                         iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        title = "JSON 格式示例",
-                        subtitle = "查看并复制标准战报 JSON 格式",
-                        onClick = { showJsonFormatDialog = true },
+                        title = "CSV 格式示例",
+                        subtitle = "查看并复制标准战报 CSV 格式",
+                        onClick = { showCsvFormatDialog = true },
                         showDivider = false
                     )
                 }
@@ -284,31 +284,24 @@ fun DataScreen(
         }
     }
 
-    // ── JSON 格式示例弹窗 ──
-    if (showJsonFormatDialog) {
-        val jsonSample = """{
-  "members": [
-    {
-      "player_name": "陈平安",
-      "total_stars": 6,
-      "attacks": [
-        { "attack_order": 1, "destruction_percentage": 100 },
-        { "attack_order": 2, "destruction_percentage": 0 }
-      ]
-    }
-  ]
-}"""
+    // ── CSV 格式示例弹窗 ──
+    if (showCsvFormatDialog) {
+        val csvSample = """成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率
+陈平安,1,6,100%,92%
+混子祭天,2,3,100%,0%
+妄司逸,3,0,0%,0%"""
         AlertDialog(
-            onDismissRequest = { showJsonFormatDialog = false },
-            title = { Text("JSON 数据格式") },
+            onDismissRequest = { showCsvFormatDialog = false },
+            title = { Text("CSV 数据格式") },
             text = {
                 Column {
-                    Text(jsonSample, style = MaterialTheme.typography.bodySmall,
+                    Text(csvSample, style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace)
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "说明：未进攻成员的攻击记录可省略，系统自动补占位；" +
-                        "摧毁率为 0 视为未进攻；职位在「成员」页花名册中设置，无需填写 rank/role/status。",
+                        "说明：部落战填 2 列进攻摧毁率，联赛只填第 1 列（第 2 列留空）；" +
+                        "摧毁率可带 %，缺失按 0；-1 表示看不清，导入时会提示确认；" +
+                        "职位在「成员」页花名册中设置，无需填写。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -317,13 +310,13 @@ fun DataScreen(
             dismissButton = {
                 TextButton(onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("json", jsonSample))
+                    cm.setPrimaryClip(ClipData.newPlainText("csv", csvSample))
                     Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
-                    showJsonFormatDialog = false
+                    showCsvFormatDialog = false
                 }) { Text("复制") }
             },
             confirmButton = {
-                TextButton(onClick = { showJsonFormatDialog = false }) { Text("关闭") }
+                TextButton(onClick = { showCsvFormatDialog = false }) { Text("关闭") }
             }
         )
     }
@@ -339,7 +332,7 @@ fun DataScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showRestoreConfirm = false
-                    restorePicker.launch("application/json")
+                    restorePicker.launch("application/zip")
                 }) { Text("选择文件") }
             },
             dismissButton = {

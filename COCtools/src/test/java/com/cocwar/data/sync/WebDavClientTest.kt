@@ -42,16 +42,16 @@ class WebDavClientTest {
     // ─── upload ───
 
     @Test
-    fun `upload 成功-PUT 主备份路径带 Basic Auth 与 JSON 内容`() {
+    fun `upload 成功-PUT 主备份路径带 Basic Auth 与 ZIP 内容`() {
         val client = fakeClient()
-        val result = client.upload("{\"data\":1}")
+        val result = client.upload("{\"data\":1}".toByteArray())
         assertTrue("上传应成功", result.isSuccess)
 
         val put = requests.last()
         assertEquals("PUT", put.reqMethod)
         assertEquals(basicAuth, put.headers["Authorization"])
-        assertEquals("application/json; charset=utf-8", put.headers["Content-Type"])
-        assertEquals("https://dav.example.com/coc_backup/coc_war_backup.json", put.reqUrl.toString())
+        assertEquals("application/zip", put.headers["Content-Type"])
+        assertEquals("https://dav.example.com/coc_backup/coc_war_backup.zip", put.reqUrl.toString())
         assertEquals("{\"data\":1}", put.writtenBody())
         // 目录创建(MKCOL)先于上传
         assertTrue("应包含目录创建请求", requests.any { it.reqMethod == "MKCOL" })
@@ -60,7 +60,7 @@ class WebDavClientTest {
     @Test
     fun `upload 失败-非2xx 返回错误正文`() {
         val client = fakeClient(responseCode = { _, _ -> 500 }, errorBody = "Internal Server Error")
-        val result = client.upload("{}")
+        val result = client.upload(byteArrayOf())
         assertTrue("上传应失败", result.isFailure)
         assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("500"))
         assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("Internal Server Error"))
@@ -69,7 +69,7 @@ class WebDavClientTest {
     @Test
     fun `upload 网络异常失败`() {
         val client = fakeClient(factory = { throw IOException("boom") })
-        assertTrue(client.upload("{}").isFailure)
+        assertTrue(client.upload(byteArrayOf()).isFailure)
     }
 
     // ─── download ───
@@ -79,7 +79,7 @@ class WebDavClientTest {
         val client = fakeClient(body = "{\"remote\":true}")
         val result = client.download()
         assertTrue(result.isSuccess)
-        assertEquals("{\"remote\":true}", result.getOrNull())
+        assertTrue(result.getOrNull()!!.contentEquals("{\"remote\":true}".toByteArray()))
         assertEquals("GET", requests.last().reqMethod)
         assertEquals(basicAuth, requests.last().headers["Authorization"])
     }
@@ -163,20 +163,20 @@ class WebDavClientTest {
 
     @Test
     fun `delete 2xx 成功`() {
-        assertTrue(fakeClient().delete("https://dav.example.com/coc_backup/archives/a.json").isSuccess)
+        assertTrue(fakeClient().delete("https://dav.example.com/coc_backup/archives/a.zip").isSuccess)
         assertEquals("DELETE", requests.last().reqMethod)
     }
 
     @Test
     fun `delete 404 视为已删除成功`() {
         assertTrue(fakeClient(responseCode = { _, _ -> 404 })
-            .delete("https://dav.example.com/coc_backup/archives/x.json").isSuccess)
+            .delete("https://dav.example.com/coc_backup/archives/x.zip").isSuccess)
     }
 
     @Test
     fun `delete 500 失败`() {
         assertTrue(fakeClient(responseCode = { _, _ -> 500 })
-            .delete("https://dav.example.com/coc_backup/archives/x.json").isFailure)
+            .delete("https://dav.example.com/coc_backup/archives/x.zip").isFailure)
     }
 
     // ─── testConnection ───
@@ -198,15 +198,15 @@ class WebDavClientTest {
         // 带斜杠与不带斜杠的 baseUrl 得到同一 fileUrl
         val withSlash = fakeClient(baseUrl = "https://dav.example.com/")
         withSlash.probe()
-        assertEquals("https://dav.example.com/coc_backup/coc_war_backup.json", requests.last().reqUrl.toString())
+        assertEquals("https://dav.example.com/coc_backup/coc_war_backup.zip", requests.last().reqUrl.toString())
     }
 
     @Test
     fun `archiveUrl 拼接归档路径`() {
         val client = fakeClient()
         assertEquals(
-            "https://dav.example.com/coc_backup/archives/sync_1.json",
-            client.archiveUrl("sync_1.json")
+            "https://dav.example.com/coc_backup/archives/sync_1.zip",
+            client.archiveUrl("sync_1.zip")
         )
     }
 }

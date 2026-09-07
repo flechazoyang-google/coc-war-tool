@@ -15,7 +15,7 @@ data class SuspectMember(
  * 花名册维护纯函数：疑似离队筛选。
  *
  * 判定口径（与 RULES.md 一致）：
- * - 仅在册（active=true）成员参与判定；
+ * - 花名册全部成员参与判定（离队即删除，花名册 = 当前成员全集）；
  * - 「连续缺席部落战场次」沿用 `WarRepository.getWarAbsentInfo` 的语义
  *   （只统计非联赛事件；参加但未进攻算参战；从未参战 = 全部场次）；
  * - 排除从未参战的成员（count == totalWarCount，多为新加入者，不误报）；
@@ -34,7 +34,6 @@ object RosterMaintenance {
         val n = threshold.coerceAtLeast(1)
         return roster
             .asSequence()
-            .filter { it.active }
             .mapNotNull { entry ->
                 val count = absentCounts[entry.name] ?: return@mapNotNull null
                 // count == totalWarCount 表示从未参战（新成员），不判疑似离队

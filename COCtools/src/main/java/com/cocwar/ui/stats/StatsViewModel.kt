@@ -228,8 +228,8 @@ class StatsViewModel(private val repo: WarRepository) : ViewModel() {
             currentMembers = if (currentRosterRoles.isEmpty()) members else members.map {
                 it.copy(role = currentRosterRoles[it.playerName] ?: it.role)
             }
-            // 评选只认在册（未离队）成员：已离队成员不参与未参战扣分（RULES §5）
-            currentRoster = repo.getActiveRoster()
+            // 评选只认花名册在册成员（离队即删除，花名册 = 当前成员全集）
+            currentRoster = repo.getRoster()
 
             // 应用当前类型筛选（loadMonth 完成后 currentEvents 与所选月份一致，允许场次回落）
             recomputeForFilter(allowFallback = true)

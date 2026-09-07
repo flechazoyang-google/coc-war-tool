@@ -25,11 +25,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -63,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.di.warViewModel
+import com.cocwar.domain.ROSTER_LIMIT
 import com.cocwar.domain.SuspectMember
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
@@ -80,7 +80,6 @@ import kotlinx.coroutines.launch
 fun MemberManageScreen(
     onBack: () -> Unit,
     onSearch: () -> Unit = {},
-    onOpenDeparted: () -> Unit = {},
 ) {
     val viewModel: MemberManageViewModel = warViewModel { MemberManageViewModel(it) }
     val roster by viewModel.roster.collectAsStateWithLifecycle()
@@ -91,9 +90,9 @@ fun MemberManageScreen(
     val healthIssues by viewModel.healthIssues.collectAsStateWithLifecycle()
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
-    // 右上角「更多」菜单开关（导入新成员 / 更新花名册 / 疑似离队确认 / 已离队成员）
+    // 右上角「更多」菜单开关（成员更新 / 导入新成员 / 数据体检 / 疑似离队清理）
     var showMoreMenu by remember { mutableStateOf(false) }
-    // 「更新花名册」全屏弹窗（软替换：新增/恢复/改职/标记离队）
+    // 「成员更新」全屏弹窗（截图识别 → 差异确认 → 硬替换）
     var showUpdateRoster by remember { mutableStateOf(false) }
     var showSuspectDialog by remember { mutableStateOf(false) }
     var editingRoleName by remember { mutableStateOf<String?>(null) }
@@ -103,33 +102,32 @@ fun MemberManageScreen(
     var pendingDeleteName by remember { mutableStateOf<String?>(null) }
     // 长按菜单选择「合并到其他成员…」后待处理的名字（OCR 错名全局修正）
     var mergingName by remember { mutableStateOf<String?>(null) }
-    // 数据体检弹窗（扫描识图错名残留与花名册重复条目）
+    // 数据体检弹窗（扫描识别错名残留与花名册重复条目）
     var showHealthCheck by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // 展示列表：主列表只显示在册成员；先按职位排序（首领 > 副首领 > 长老 > 成员），
+    // 展示列表：花名册全部成员（离队即删除，无离队态）；先按职位排序（首领 > 副首领 > 长老 > 成员），
     // 同职位按「距离上次参战已连续缺席的部落战场次」从少到多（最近参战过的在前）
     val displayList = remember(roster, absentCounts) {
-        sortRoster(roster.filter { it.active }, absentCounts)
+        sortRoster(roster, absentCounts)
     }
 
-    // 删除成员：立即落库删除 → Snackbar 提供撤销（含角色恢复），防误触
-    fun removeNameWithUndo(name: String) {
+    // 移出花名册：立即落库删除 → Snackbar 提供撤销（连同职位一并还原），防误触
+    fun removeNamesWithUndo(names: List<String>) {
+        if (names.isEmpty()) return
         scope.launch {
-            // 快照当前角色，撤销时恢复（否则角色降级为默认"member"）
-            val savedRole = roster.find { it.name == name }?.role ?: "member"
-            viewModel.removeName(name)
+            // 快照完整条目，撤销时整条写回（否则职位会降级为默认"member"）
+            val snapshot = roster.filter { it.name in names }
+            val label = if (names.size == 1) "「${names.first()}」" else "${names.size} 人"
+            snapshot.forEach { viewModel.removeName(it.name) }
             val result = snackbarHostState.showSnackbar(
-                message = "已删除成员「$name」",
+                message = "已移出花名册$label",
                 actionLabel = "撤销",
                 duration = SnackbarDuration.Short
             )
             if (result == SnackbarResult.ActionPerformed) {
-                viewModel.addNames(listOf(name))
-                if (savedRole != "member") {
-                    viewModel.updateRole(name, savedRole)
-                }
+                viewModel.restoreRemoved(snapshot)
             }
         }
     }
@@ -139,12 +137,7 @@ fun MemberManageScreen(
             ScreenHeader(
                 title = "成员",
                 overline = "花名册",
-                subtitle = if (roster.isEmpty()) "尚无成员" else {
-                    val activeCount = roster.count { it.active }
-                    val departedCount = roster.size - activeCount
-                    if (departedCount > 0) "共 $activeCount 人 · 已离队 $departedCount"
-                    else "共 $activeCount 人"
-                },
+                subtitle = if (roster.isEmpty()) "尚无成员" else "共 ${roster.size} / $ROSTER_LIMIT 人",
                 actions = {
                     CocIconButton(
                         icon = Icons.Filled.Search,
@@ -164,6 +157,16 @@ fun MemberManageScreen(
                             onDismissRequest = { showMoreMenu = false }
                         ) {
                             DropdownMenuItem(
+                                text = { Text("成员更新") },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Groups, null, Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showMoreMenu = false
+                                    showUpdateRoster = true
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("导入新成员") },
                                 leadingIcon = {
                                     Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
@@ -171,16 +174,6 @@ fun MemberManageScreen(
                                 onClick = {
                                     showMoreMenu = false
                                     showImport = !showImport
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("更新花名册") },
-                                leadingIcon = {
-                                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
-                                },
-                                onClick = {
-                                    showMoreMenu = false
-                                    showUpdateRoster = true
                                 }
                             )
                             DropdownMenuItem(
@@ -195,23 +188,13 @@ fun MemberManageScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("疑似离队确认") },
+                                text = { Text("疑似离队清理") },
                                 leadingIcon = {
                                     Icon(Icons.Filled.Warning, null, Modifier.size(18.dp))
                                 },
                                 onClick = {
                                     showMoreMenu = false
                                     showSuspectDialog = true
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("已离队成员") },
-                                leadingIcon = {
-                                    Icon(Icons.Filled.Person, null, Modifier.size(18.dp))
-                                },
-                                onClick = {
-                                    showMoreMenu = false
-                                    onOpenDeparted()
                                 }
                             )
                         }
@@ -334,7 +317,7 @@ fun MemberManageScreen(
             confirmButton = {
                 TextButton(onClick = {
                     pendingDeleteName = null
-                    removeNameWithUndo(name)
+                    removeNamesWithUndo(listOf(name))
                 }) { Text("删除", color = MaterialTheme.cocColors.danger) }
             },
             dismissButton = {
@@ -365,20 +348,20 @@ fun MemberManageScreen(
         )
     }
 
-    // 疑似离队确认弹窗：阈值步进 + 逐人确认标记离队
+    // 疑似离队清理弹窗：阈值步进 + 逐人确认后直接移出花名册（Snackbar 可撤销）
     if (showSuspectDialog) {
         SuspectDialog(
             suspects = suspects,
             threshold = suspectThreshold,
             onThresholdChange = viewModel::setSuspectThreshold,
-            onMarkDeparted = viewModel::markDeparted,
+            onRemove = { removeNamesWithUndo(listOf(it)) },
             onDismiss = { showSuspectDialog = false }
         )
     }
 
-    // 更新花名册（软替换）：预览确认后落库，Snackbar 汇报变更摘要
+    // 成员更新（截图识别 → 差异确认 → 硬替换）：确认后落库，Snackbar 汇报变更摘要
     if (showUpdateRoster) {
-        UpdateRosterDialog(
+        RosterUpdateDialog(
             roster = roster,
             onReplace = { entries, summary ->
                 viewModel.replaceRoster(entries)
@@ -389,7 +372,7 @@ fun MemberManageScreen(
         )
     }
 
-    // 数据体检：扫描识图错名残留与花名册重复条目，逐项合并/忽略
+    // 数据体检：扫描识别错名残留与花名册重复条目，逐项合并/忽略
     if (showHealthCheck) {
         HealthCheckDialog(
             issues = healthIssues,
@@ -654,15 +637,15 @@ internal fun MemberDetailDialog(
 }
 
 /**
- * 疑似离队确认弹窗：阈值步进（连续缺席 ≥ N 场，1..10）+ 疑似名单逐人「标记离队」。
- * 标记后名单即时刷新（flow 驱动）；阈值调整立即重算疑似名单。
+ * 疑似离队清理弹窗：阈值步进（连续缺席 ≥ N 场，1..10）+ 疑似名单逐人「移出花名册」。
+ * 删除后名单即时刷新（flow 驱动）；阈值调整立即重算疑似名单。
  */
 @Composable
 private fun SuspectDialog(
     suspects: List<SuspectMember>,
     threshold: Int,
     onThresholdChange: (Int) -> Unit,
-    onMarkDeparted: (String) -> Unit,
+    onRemove: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -673,13 +656,13 @@ private fun SuspectDialog(
                 SuspectThresholdStepper(threshold = threshold, onThresholdChange = onThresholdChange)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "自动识别连续缺席 ≥ $threshold 场部落战、且此前参战过的在册成员；" +
-                        "逐个确认后标记为已离队（职位保留，可在「已离队成员」页一键恢复）。",
+                    "自动识别连续缺席 ≥ $threshold 场部落战、且此前参战过的成员；" +
+                        "逐个确认后移出花名册（删除后可用 Snackbar 撤销）。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(10.dp))
-                SuspectMemberList(suspects = suspects, threshold = threshold, onMarkDeparted = onMarkDeparted)
+                SuspectMemberList(suspects = suspects, threshold = threshold, onRemove = onRemove)
             }
         },
         confirmButton = {
@@ -724,12 +707,12 @@ private fun SuspectThresholdStepper(
     }
 }
 
-/** 疑似离队名单：逐人「标记离队」；为空时显示提示。 */
+/** 疑似离队名单：逐人「移出花名册」；为空时显示提示。 */
 @Composable
 private fun SuspectMemberList(
     suspects: List<SuspectMember>,
     threshold: Int,
-    onMarkDeparted: (String) -> Unit
+    onRemove: (String) -> Unit
 ) {
     if (suspects.isEmpty()) {
         Text(
@@ -763,8 +746,8 @@ private fun SuspectMemberList(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                TextButton(onClick = { onMarkDeparted(suspect.name) }) {
-                    Text("标记离队", color = MaterialTheme.cocColors.danger)
+                TextButton(onClick = { onRemove(suspect.name) }) {
+                    Text("移出", color = MaterialTheme.cocColors.danger)
                 }
             }
         }

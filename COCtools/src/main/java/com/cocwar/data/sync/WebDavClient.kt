@@ -1,7 +1,5 @@
 package com.cocwar.data.sync
 
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Base64
@@ -26,7 +24,7 @@ class WebDavClient(
     /** 文件所在子目录名 */
     companion object {
         const val BACKUP_DIR = "coc_backup"
-        const val BACKUP_FILE = "coc_war_backup.json"
+        const val BACKUP_FILE = "coc_war_backup.zip"
         const val ARCHIVES_DIR = "coc_backup/archives"
     }
 
@@ -44,9 +42,9 @@ class WebDavClient(
     fun archiveUrl(name: String): String = "$normalizedUrl/$ARCHIVES_DIR/$name"
 
     /** 上传备份文件到 WebDAV 服务器。先确保子目录存在。 */
-    fun upload(content: String, path: String = fileUrl): Result<Unit> {
+    fun upload(content: ByteArray, path: String = fileUrl): Result<Unit> {
         return runCatching {
-            val data = content.toByteArray(Charsets.UTF_8)
+            val data = content
             // 先创建子目录（已存在则忽略）；归档目录独立创建
             mkcol("$normalizedUrl/$BACKUP_DIR/")
             mkcol("$normalizedUrl/$ARCHIVES_DIR/")
@@ -54,7 +52,7 @@ class WebDavClient(
             val conn = connectionFactory(path).apply {
                 requestMethod = "PUT"
                 setRequestProperty("Authorization", authHeader)
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Content-Type", "application/zip")
                 setFixedLengthStreamingMode(data.size)
                 doOutput = true
                 connectTimeout = 15_000
@@ -79,7 +77,7 @@ class WebDavClient(
     }
 
     /** 从 WebDAV 下载备份文件。 */
-    fun download(path: String = fileUrl): Result<String> {
+    fun download(path: String = fileUrl): Result<ByteArray> {
         return runCatching {
             val conn = connectionFactory(path).apply {
                 requestMethod = "GET"
@@ -92,7 +90,7 @@ class WebDavClient(
                 if (code !in 200..299) {
                     throw Exception("下载失败 — 目标: $path — 服务器返回 $code（文件可能不存在）")
                 }
-                BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+                conn.inputStream.use { it.readBytes() }
             } finally {
                 conn.disconnect()
             }

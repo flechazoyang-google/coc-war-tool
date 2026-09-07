@@ -7,13 +7,10 @@ import com.cocwar.data.db.WarDatabase
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.MemberRosterEntity
-import com.cocwar.data.db.PendingImportEntity
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParsedEvent
 import com.cocwar.data.samples.SampleDataProvider
 import com.cocwar.domain.MemberMerge
 import com.cocwar.domain.RosterEntry
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
 import java.util.Calendar
 import java.util.UUID
@@ -21,7 +18,7 @@ import java.util.UUID
 /**
  * 事件/成员/名单的统一数据入口。按职责拆分为三部分：
  * - 本类：CRUD、名单、更新、同步、示例数据（与 DAO 交互）；
- * - [BackupCodec]：备份 JSON 导出/校验/还原；
+ * - [BackupZipCodec]：备份 ZIP 导出/校验/还原；
  * - [EventNamingRules]：SAABBCC 命名规则纯函数。
  */
 class WarRepository(
@@ -30,13 +27,11 @@ class WarRepository(
 ) {
     private val dao = database.warDao()
     private val rosterDao = database.rosterDao()
-    private val pendingImportDao = database.pendingImportDao()
-    private val gson = Gson()
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences("coc_war_prefs", Context.MODE_PRIVATE)
 
-    /** 备份编解码：导出 / 校验 / 还原（复用本类的 importEvent 角色映射）。 */
-    private val backupCodec = BackupCodec(dao, rosterDao) { importEvent(it) }
+    /** 备份编解码：导出 / 校验 / 还原（ZIP 多 CSV 格式）。 */
+    private val backupCodec = BackupZipCodec(dao, rosterDao)
 
     val events: Flow<List<WarEventEntity>> = dao.observeEvents()
 
@@ -46,7 +41,7 @@ class WarRepository(
     /** 一次性获取单个事件（删除前快照/撤销等场景）。 */
     suspend fun getEventById(id: String): WarEventEntity? = dao.getEventById(id)
 
-    suspend fun importEvent(parsed: WarJsonParser.ParsedEvent) {
+    suspend fun importEvent(parsed: ParsedEvent) {
         // 同名多行先合并为一行（OCR 错名映射到同一在册成员等场景），再按花名册映射职位
         val deduped = MemberMerge.dedupeByName(parsed.members, parsed.event.eventType)
         val roleMap = rosterRoleMap()
@@ -119,18 +114,17 @@ class WarRepository(
     /** 一次性获取名单（含职位）。 */
     suspend fun getRosterWithRoles(): List<MemberRosterEntity> = rosterDao.getAll()
 
-    /** 一次性获取在册（未离队）成员名字列表（统计评选只认在册成员）。 */
-    suspend fun getActiveRoster(): List<String> =
-        rosterDao.getAll().filter { it.active }.map { it.name }
-
     /** 花名册职位映射：名字 → role（职位以花名册为准）。 */
     suspend fun rosterRoleMap(): Map<String, String> =
         rosterDao.getAll().associate { it.name to it.role }
 
-    /** 批量设置在册状态：active=false 标记离队，active=true 恢复（职位保留）。 */
-    suspend fun setRosterActive(names: Collection<String>, active: Boolean) {
-        if (names.isEmpty()) return
-        rosterDao.setActive(names.toList(), active)
+    /**
+     * 清除旧版本遗留的「已离队」行（active = 0）。
+     * 离队改为直接删除后，花名册里的每一行都是当前成员，这些历史行应当被真正删除。
+     * 幂等，可重复调用；每次启动执行一次。
+     */
+    suspend fun purgeDepartedRows() {
+        rosterDao.deleteInactive()
     }
 
     // === 花名册维护设置 ===
@@ -159,13 +153,19 @@ class WarRepository(
         rosterDao.delete(name)
     }
 
+    /** 撤销删除：把成员连同职位重新写回花名册（已存在的同名条目按新职位覆盖）。 */
+    suspend fun restoreRoster(entries: List<MemberRosterEntity>) {
+        if (entries.isEmpty()) return
+        rosterDao.upsertAll(entries)
+    }
+
     /**
-     * 更新花名册（软替换）：新名单 upsert（在册、职位以新名单为准），在册但不在新名单的标记离队。
-     * 空名单直接返回——避免误粘贴把全员标记离队。
+     * 更新花名册（硬替换）：新名单 upsert（职位以新名单为准），不在新名单的**直接删除**。
+     * 空名单直接返回——避免误粘贴把整份花名册清空。
      */
     suspend fun replaceRoster(entries: List<RosterEntry>) {
         if (entries.isEmpty()) return
-        rosterDao.softReplace(entries.map { MemberRosterEntity(name = it.name, role = it.role, active = true) })
+        rosterDao.hardReplace(entries.map { MemberRosterEntity(name = it.name, role = it.role, active = true) })
     }
 
     // === 更新操作 ===
@@ -288,57 +288,17 @@ class WarRepository(
         prefs.edit().putStringSet(KEY_HEALTH_IGNORED, healthCheckIgnored() + name).apply()
     }
 
-    // === 待确认识图（后台批量识图的草稿，不入备份/同步） ===
-
-    fun observePendingImports(): Flow<List<PendingImportEntity>> = pendingImportDao.observeAll()
-
-    suspend fun getPendingImport(id: String): PendingImportEntity? = pendingImportDao.getById(id)
-
-    /** 新建待确认草稿（status=processing），返回草稿 id。 */
-    suspend fun createPendingImport(imagePaths: List<String>): String {
-        val id = UUID.randomUUID().toString()
-        pendingImportDao.insert(
-            PendingImportEntity(
-                id = id,
-                status = "processing",
-                csvText = "",
-                errorMessage = "",
-                imagePaths = gson.toJson(imagePaths),
-                totalImages = imagePaths.size,
-                processedImages = 0,
-                createdAt = System.currentTimeMillis()
-            )
-        )
-        return id
-    }
-
-    suspend fun updatePendingProgress(id: String, processed: Int) = pendingImportDao.updateProgress(id, processed)
-
-    suspend fun completePendingImport(id: String, csv: String) = pendingImportDao.complete(id, csv)
-
-    suspend fun failPendingImport(id: String, msg: String) = pendingImportDao.fail(id, msg)
-
-    suspend fun deletePendingImport(id: String) = pendingImportDao.delete(id)
-
-    /** 进程重启兜底：把残留的 processing 草稿置为 failed（无服务运行意味着已中断）。 */
-    suspend fun failStaleProcessing() = pendingImportDao.failAllProcessing()
-
-    /** 取回草稿对应的原始截图路径（用于 failed 重试）。 */
-    suspend fun pendingImagePaths(id: String): List<String> {
-        val entity = pendingImportDao.getById(id) ?: return emptyList()
-        return runCatching {
-            gson.fromJson<List<String>>(entity.imagePaths, object : TypeToken<List<String>>() {}.type)
-                ?: emptyList()
-        }.getOrDefault(emptyList())
-    }
-
     // === 导出 ===
 
-    /** 导出所有数据（事件 + 成员 + 花名册）为 JSON 字符串，用于备份。 */
-    suspend fun exportAllDataJson(): String = backupCodec.exportAllDataJson()
+    /** 导出所有数据（事件 + 成员 + 花名册）为 ZIP 字节，用于备份。 */
+    suspend fun exportAllData(): ByteArray = backupCodec.exportAllData()
 
-    /** 导出事件为 JSON 字符串。 */
-    suspend fun exportEventJson(eventId: String): String = backupCodec.exportEventJson(eventId)
+    /** 导出单场事件为 CSV 文本（复用全量宽表格式）。 */
+    suspend fun exportEventCsv(eventId: String): String {
+        val ev = dao.getEventById(eventId) ?: throw IllegalStateException("事件不存在")
+        val members = dao.getMembersByEventIds(listOf(eventId))
+        return com.cocwar.data.csv.CsvExporter.exportEventsCsv(listOf(ev), mapOf(eventId to members))
+    }
 
     /** 导出全量 CSV 宽表（B2，RULES §4.14）：事件×成员，UTF-8 + BOM。 */
     suspend fun exportAllEventsCsv(): String {
@@ -354,11 +314,11 @@ class WarRepository(
 
     // === 同步（B3，RULES §6） ===
 
-    /** 数据指纹：导出 JSON 的 SHA-256，用于同步变更判定（两端算法一致）。 */
+    /** 数据指纹：导出 ZIP 的 SHA-256，用于同步变更判定（两端算法一致）。 */
     suspend fun dataFingerprint(): String {
-        val json = exportAllDataJson()
+        val bytes = exportAllData()
         val digest = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(json.toByteArray(Charsets.UTF_8))
+            .digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
 
@@ -367,13 +327,13 @@ class WarRepository(
         dao.countEvents() > 0 || rosterDao.getAll().isNotEmpty()
 
     /** 本地归档（冲突时采用云端前保存本地版本），返回归档文件路径。 */
-    suspend fun saveLocalSyncBackup(json: String): String {
+    suspend fun saveLocalSyncBackup(bytes: ByteArray): String {
         val dir = java.io.File(appContext.filesDir, "backups").apply { mkdirs() }
         val name = "sync_backup_" +
             java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US)
-                .format(java.util.Date()) + ".json"
+                .format(java.util.Date()) + ".zip"
         val file = java.io.File(dir, name)
-        file.writeText(json, Charsets.UTF_8)
+        file.writeBytes(bytes)
         return file.absolutePath
     }
 
@@ -432,17 +392,17 @@ class WarRepository(
         return "%s%02d%02d%02d".format(prefix, year, month, cc)
     }
 
-    // === 备份 JSON：校验与完整还原（导出文件/云端同步共用格式） ===
+    // === 备份 ZIP：校验与完整还原（导出文件/云端同步共用格式） ===
 
-    /** 校验备份 JSON 是否为合法的备份结构（必须含 events 数组）；非法返回 false。 */
-    fun validateBackupJson(json: String): Boolean = backupCodec.validateBackupJson(json)
+    /** 校验备份 ZIP 是否为合法的备份结构（必须含 events.csv 且至少一场事件）；非法返回 false。 */
+    fun validateBackup(bytes: ByteArray): Boolean = backupCodec.validateBackup(bytes)
 
     /**
-     * 解析备份 JSON 并完整还原（先全部解析成功，再清空本地事件/成员后写入，含花名册替换）。
+     * 解析备份 ZIP 并完整还原（先全部解析成功，再清空本地事件/成员后写入，含花名册替换）。
      * 任一事件损坏或备份无事件则抛异常且不触碰本地数据，避免「假成功」导致数据清空却未还原。
      */
-    suspend fun restoreFromBackupJson(json: String) {
-        backupCodec.restoreFromBackupJson(json)
+    suspend fun restoreFromBackup(bytes: ByteArray) {
+        backupCodec.restoreFromBackup(bytes)
     }
 
     companion object {

@@ -3,7 +3,7 @@ package com.cocwar.data.csv
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.db.WarEventEntity
 import com.cocwar.data.model.Attack
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParseResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -61,6 +61,13 @@ class CsvTest {
     }
 
     @Test
+    fun `parseDestruction keeps -1 as unknown sentinel`() {
+        assertEquals(-1, CsvImporter.parseDestruction("-1"))
+        assertEquals(-1, CsvImporter.parseDestruction("-1%"))
+        assertEquals(-1, CsvImporter.parseStars("-1"))
+    }
+
+    @Test
     fun `isHeaderRow detects our exported header`() {
         assertTrue(CsvImporter.isHeaderRow(listOf("成员名", "排名", "总星数")))
         assertFalse(CsvImporter.isHeaderRow(listOf("张三", "1", "6")))
@@ -74,8 +81,8 @@ class CsvTest {
             李四,2,3,50%,20%
         """.trimIndent()
         val result = CsvImporter.parse(csv, slotCount = 2, eventType = "war")
-        assertTrue(result is WarJsonParser.ParseResult.Success)
-        val members = (result as WarJsonParser.ParseResult.Success).data.members
+        assertTrue(result is ParseResult.Success)
+        val members = (result as ParseResult.Success).data.members
         assertEquals(2, members.size)
         val zhang = members.first { it.playerName == "张三" }
         assertEquals(listOf(1, 2), zhang.attacks.map { it.attackOrder })
@@ -89,8 +96,8 @@ class CsvTest {
     fun `parse league csv uses 1 slot`() {
         val csv = "王五,1,3,100%\n赵六,2,0,0"
         val result = CsvImporter.parse(csv, slotCount = 1, eventType = "league")
-        assertTrue(result is WarJsonParser.ParseResult.Success)
-        val members = (result as WarJsonParser.ParseResult.Success).data.members
+        assertTrue(result is ParseResult.Success)
+        val members = (result as ParseResult.Success).data.members
         assertEquals(2, members.size)
         members.forEach { assertEquals(1, it.attacks.size) }
     }
@@ -99,8 +106,8 @@ class CsvTest {
     fun `parse missing columns defaults to zero`() {
         val csv = "张三,1\n李四"
         val result = CsvImporter.parse(csv, slotCount = 2, eventType = "war")
-        assertTrue(result is WarJsonParser.ParseResult.Success)
-        val members = (result as WarJsonParser.ParseResult.Success).data.members
+        assertTrue(result is ParseResult.Success)
+        val members = (result as ParseResult.Success).data.members
         assertEquals(2, members.size)
         members.forEach { m ->
             assertEquals(0, m.totalStars)
@@ -110,17 +117,31 @@ class CsvTest {
     }
 
     @Test
+    fun `parse keeps -1 sentinel for stars and destruction`() {
+        val csv = "张三,1,-1,-1,100%\n李四,2,3,50%,-1"
+        val result = CsvImporter.parse(csv, slotCount = 2, eventType = "war")
+        assertTrue(result is ParseResult.Success)
+        val members = (result as ParseResult.Success).data.members
+        val zhang = members.first { it.playerName == "张三" }
+        assertEquals(-1, zhang.totalStars)
+        assertEquals(listOf(-1, 100), zhang.attacks.map { it.destructionPercentage })
+        val li = members.first { it.playerName == "李四" }
+        assertEquals(3, li.totalStars)
+        assertEquals(listOf(50, -1), li.attacks.map { it.destructionPercentage })
+    }
+
+    @Test
     fun `parse empty csv returns error`() {
         val result = CsvImporter.parse("", slotCount = 2, eventType = "war")
-        assertTrue(result is WarJsonParser.ParseResult.Error)
+        assertTrue(result is ParseResult.Error)
     }
 
     /** 导出文件带 BOM，回导时首格名字不能带 \uFEFF 前缀。 */
     @Test
     fun `parse strips BOM from first cell`() {
         val result = CsvImporter.parse("\uFEFF张三,1,6,100%,100%", slotCount = 2, eventType = "war")
-        assertTrue(result is WarJsonParser.ParseResult.Success)
-        val members = (result as WarJsonParser.ParseResult.Success).data.members
+        assertTrue(result is ParseResult.Success)
+        val members = (result as ParseResult.Success).data.members
         assertEquals("张三", members.first().playerName)
         assertEquals(100, members.first().attacks.first().destructionPercentage)
     }

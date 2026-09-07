@@ -5,9 +5,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,36 +55,45 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.cocwar.data.db.MemberRosterEntity
-import com.cocwar.domain.ParsedRoster
+import com.cocwar.data.ocr.RosterOcrPrompts
+import com.cocwar.domain.ROSTER_LIMIT
 import com.cocwar.domain.RosterDiff
 import com.cocwar.domain.RosterEntry
+import com.cocwar.domain.checkRosterLimit
 import com.cocwar.domain.RosterTextParser
 import com.cocwar.domain.computeRosterDiff
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
-import com.cocwar.ui.importflow.CopyPrompts
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.theme.roleColor
 import com.cocwar.ui.util.roleLabel
 
 /**
- * 更新花名册（软替换）全屏弹窗：
- * - 阶段一：使用引导（复制豆包提示词 / 粘贴剪贴板）+ 花名册文本输入；
- * - 阶段二：解析结果与差异预览（新增 / 恢复在册 / 职位变化 / 将标记离队），确认后落库。
- * 替换不影响战报数据；旧成员标记离队（可在「已离队成员」页恢复），职位以新名单为准。
+ * 成员更新（硬替换）全屏弹窗：
+ * - 阶段一：使用引导（复制识别提示词 / 粘贴结果）+ 花名册文本输入；
+ * - 阶段二：差异预览——**退出**与**新增**逐人勾选，确认后一次性替换花名册。
+ *
+ * 与「导入新成员」的区别：这里是**替换**，不在新名单的成员会被真正删除（旧版是标记离队）。
+ * 替换不影响任何战报数据。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun UpdateRosterDialog(
+internal fun RosterUpdateDialog(
     roster: List<MemberRosterEntity>,
     onReplace: (entries: List<RosterEntry>, summary: String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    // 提示词注入当前花名册（含易混名提醒），名单变化时自动重建
+    val prompt by remember(roster) {
+        mutableStateOf(RosterOcrPrompts.build(roster.map { it.name }))
+    }
     var input by remember { mutableStateOf("") }
-    var preview by remember { mutableStateOf<ParsedRoster?>(null) }
+    var previewEntries by remember { mutableStateOf<List<RosterEntry>?>(null) }
+    var previewWarnings by remember { mutableStateOf<List<String>>(emptyList()) }
+    var previewErrors by remember { mutableStateOf<List<String>>(emptyList()) }
     var diff by remember { mutableStateOf<RosterDiff?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showPromptDialog by remember { mutableStateOf(false) }
@@ -89,11 +101,14 @@ internal fun UpdateRosterDialog(
     fun parseAndPreview() {
         val parsed = RosterTextParser.parse(input)
         if (parsed.entries.isEmpty()) {
-            errorMsg = "未解析到有效成员，请检查文本格式（每行一个成员：昵称,职位）"
+            val ignored = if (parsed.errors.isNotEmpty()) "（已自动忽略 ${parsed.errors.size} 行格式异常）" else ""
+            errorMsg = "未解析到有效成员，请检查文本格式（每行一个成员：名字,职位）$ignored"
             return
         }
         errorMsg = null
-        preview = parsed
+        previewEntries = parsed.entries
+        previewWarnings = parsed.warnings
+        previewErrors = parsed.errors
         diff = computeRosterDiff(roster, parsed.entries)
     }
 
@@ -101,38 +116,35 @@ internal fun UpdateRosterDialog(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(if (preview == null) "更新花名册" else "更新预览") },
+                    title = { Text(if (previewEntries == null) "成员更新" else "更新预览") },
                     navigationIcon = {
                         IconButton(onClick = {
-                            if (preview != null) {
-                                preview = null
+                            if (previewEntries != null) {
+                                previewEntries = null
                                 diff = null
                             } else {
                                 onDismiss()
                             }
                         }) {
                             Icon(
-                                if (preview == null) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = if (preview == null) "关闭" else "返回修改"
+                                if (previewEntries == null) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = if (previewEntries == null) "关闭" else "返回修改"
                             )
                         }
                     }
                 )
             }
         ) { padding ->
-            // 委托属性无法智能转换，先取局部 val 再判空
-            val currentPreview = preview
+            val currentEntries = previewEntries
             val currentDiff = diff
-            if (currentPreview == null || currentDiff == null) {
-                UpdateRosterInputStage(
+            if (currentEntries == null || currentDiff == null) {
+                RosterUpdateInputStage(
                     paddingValues = padding,
                     input = input,
                     onInputChange = { input = it; errorMsg = null },
                     errorMsg = errorMsg,
                     onCopyPrompt = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("花名册识别提示词", CopyPrompts.ROSTER_PROMPT))
-                        Toast.makeText(context, "提示词已复制，请连同截图发给豆包", Toast.LENGTH_SHORT).show()
+                        copyToClipboard(context, prompt, "提示词已复制，请连同截图发给豆包")
                     },
                     onPasteClipboard = {
                         val text = clipboardManager.getText()?.text
@@ -147,37 +159,37 @@ internal fun UpdateRosterDialog(
                     onParse = ::parseAndPreview
                 )
             } else {
-                UpdateRosterPreviewStage(
+                RosterUpdatePreviewStage(
                     paddingValues = padding,
-                    preview = currentPreview,
+                    entries = currentEntries,
+                    warnings = previewWarnings,
+                    errors = previewErrors,
                     diff = currentDiff,
                     onBack = {
-                        preview = null
+                        previewEntries = null
                         diff = null
                     },
-                    onConfirm = {
-                        val summary = buildUpdateSummary(currentDiff)
-                        onReplace(currentPreview.entries, summary)
-                    }
+                    onConfirm = { finalEntries, summary -> onReplace(finalEntries, summary) }
                 )
             }
         }
     }
 
     if (showPromptDialog) {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         AlertDialog(
             onDismissRequest = { showPromptDialog = false },
-            title = { Text("豆包识别提示词") },
+            title = { Text("成员识别提示词") },
             text = {
                 Box(
                     Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState())
                         .background(MaterialTheme.colorScheme.surfaceVariant, CocShape.field)
                         .padding(12.dp)
                 ) {
                     Text(
-                        CopyPrompts.ROSTER_PROMPT,
+                        prompt,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -185,10 +197,7 @@ internal fun UpdateRosterDialog(
             },
             confirmButton = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                        clipboard.setPrimaryClip(ClipData.newPlainText("花名册识别提示词", CopyPrompts.ROSTER_PROMPT))
-                        Toast.makeText(context, "提示词已复制", Toast.LENGTH_SHORT).show()
-                    }) {
+                    IconButton(onClick = { copyToClipboard(context, prompt, "提示词已复制") }) {
                         Icon(Icons.Filled.ContentCopy, "复制提示词", tint = MaterialTheme.colorScheme.primary)
                     }
                     TextButton(onClick = { showPromptDialog = false }) { Text("关闭") }
@@ -198,9 +207,15 @@ internal fun UpdateRosterDialog(
     }
 }
 
+private fun copyToClipboard(context: Context, text: String, toast: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("成员识别提示词", text))
+    Toast.makeText(context, toast, Toast.LENGTH_SHORT).show()
+}
+
 @Composable
-private fun UpdateRosterInputStage(
-    paddingValues: androidx.compose.foundation.layout.PaddingValues,
+private fun RosterUpdateInputStage(
+    paddingValues: PaddingValues,
     input: String,
     onInputChange: (String) -> Unit,
     errorMsg: String?,
@@ -223,9 +238,9 @@ private fun UpdateRosterInputStage(
         CocCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "1. 用悬浮球截取游戏内「部落」页的成员列表（长名单可分多屏）\n" +
-                        "2. 打开豆包 App，把截图和提示词一起发送，让它提取名单\n" +
-                        "3. 复制豆包输出的名单，回到这里粘贴",
+                    "1. 用悬浮球截取游戏内「部落 → 成员」页（长名单可分多屏滚动截取）\n" +
+                        "2. 打开豆包等 AI 软件，把截图和提示词一起发送，让它提取名单\n" +
+                        "3. 复制输出的名单，回到这里粘贴",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -246,16 +261,16 @@ private fun UpdateRosterInputStage(
                     ) {
                         Icon(Icons.Filled.ContentPaste, null, Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("粘贴剪贴板")
+                        Text("粘贴结果")
                     }
                 }
-                TextButton(onClick = onShowPrompt, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                TextButton(onClick = onShowPrompt, contentPadding = PaddingValues(0.dp)) {
                     Text("查看完整提示词", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
 
-        SectionTitle("花名册文本")
+        SectionTitle("识别结果")
         CocCard {
             Column(Modifier.padding(16.dp)) {
                 OutlinedTextField(
@@ -275,7 +290,7 @@ private fun UpdateRosterInputStage(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "每行一个成员：昵称,职位。职位为 首领/副首领/长老/成员，缺省按成员；多段粘贴会自动合并去重。",
+                    "每行一个成员：名字,职位。职位为 首领/副首领/长老/成员，缺省按成员；多段粘贴会自动合并去重。表头行（名字,职位）自动忽略；若某行被混入解说文字导致格式异常，会在预览中以「已忽略」标出，可手动修正后重新解析。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -311,14 +326,41 @@ private fun UpdateRosterInputStage(
     }
 }
 
+/**
+ * 差异预览与确认：
+ * - 退出成员默认勾选（勾选 = 确认删除），取消勾选即保留；
+ * - 新增成员默认勾选（勾选 = 确认加入），取消勾选即不加入；
+ * - 职位变化只展示，一律以新名单为准；
+ * - 更新后总人数超过 [ROSTER_LIMIT] 时禁止确认。
+ */
 @Composable
-private fun UpdateRosterPreviewStage(
-    paddingValues: androidx.compose.foundation.layout.PaddingValues,
-    preview: ParsedRoster,
+private fun RosterUpdatePreviewStage(
+    paddingValues: PaddingValues,
+    entries: List<RosterEntry>,
+    warnings: List<String>,
+    errors: List<String>,
     diff: RosterDiff,
     onBack: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: (entries: List<RosterEntry>, summary: String) -> Unit
 ) {
+    // 取消勾选的新增成员（不加入）；其余一律按新名单写入
+    var excludedAdded by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // 取消勾选的退出成员（保留在花名册）；默认全部勾选 = 确认删除
+    var keptDeparting by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    val finalEntries = remember(entries, diff, excludedAdded, keptDeparting) {
+        val kept = diff.departing
+            .filter { it.name in keptDeparting }
+            .map { RosterEntry(it.name, it.role) }
+        entries.filter { it.name !in excludedAdded } + kept
+    }
+    val limitError = checkRosterLimit(finalEntries.size)
+    val summary = buildUpdateSummary(
+        diff = diff,
+        deletedCount = diff.departing.count { it.name !in keptDeparting },
+        addedCount = diff.added.count { it.name !in excludedAdded }
+    )
+
     Column(
         Modifier
             .fillMaxSize()
@@ -333,27 +375,38 @@ private fun UpdateRosterPreviewStage(
         CocCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "新名单共 ${preview.entries.size} 人",
+                    "识别到 ${entries.size} 人 · 更新后 ${finalEntries.size} / $ROSTER_LIMIT 人",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "新增 ${diff.added.size} · 恢复在册 ${diff.restored.size} · 职位变化 ${diff.roleChanged.size} · 标记离队 ${diff.departing.size} · 不变 ${diff.unchangedCount}",
+                    "新增 ${diff.added.size} · 退出 ${diff.departing.size} · 职位变化 ${diff.roleChanged.size} · 不变 ${diff.unchangedCount}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    "不在新名单的在册成员将标记为已离队（可在「已离队成员」页恢复），职位以新名单为准；战报数据不受影响。",
+                    "退出成员确认后将从花名册删除（战报数据不受影响）；取消勾选可保留，职位以新名单为准。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        if (preview.warnings.isNotEmpty()) {
+        if (limitError != null) {
+            CocCard(Modifier.fillMaxWidth()) {
+                Text(
+                    limitError,
+                    color = MaterialTheme.cocColors.danger,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+        }
+
+        if (warnings.isNotEmpty()) {
             CocCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    preview.warnings.forEach {
+                    warnings.forEach {
                         Text(
                             it,
                             color = MaterialTheme.cocColors.danger,
@@ -364,23 +417,70 @@ private fun UpdateRosterPreviewStage(
             }
         }
 
-        if (diff.added.isNotEmpty()) {
-            SectionTitle("新增成员（${diff.added.size}）")
+        if (errors.isNotEmpty()) {
+            CocCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "以下 ${errors.size} 行无法解析，已忽略（不会入库）：",
+                        color = MaterialTheme.cocColors.danger,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    errors.forEach {
+                        Text(
+                            it,
+                            color = MaterialTheme.cocColors.danger,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Text(
+                        "请手动修正粘贴文本中这些行后，返回重新解析。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
+
+        if (diff.departing.isNotEmpty()) {
+            SectionTitle("退出成员（${diff.departing.size}）· 勾选表示删除")
             CocCard {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    diff.added.forEach { entry ->
-                        RosterRow(name = entry.name, role = entry.role)
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    diff.departing.forEach { member ->
+                        CheckableRosterRow(
+                            name = member.name,
+                            role = member.role,
+                            checked = member.name !in keptDeparting,
+                            onCheckedChange = { checked ->
+                                keptDeparting = if (checked) {
+                                    keptDeparting - member.name
+                                } else {
+                                    keptDeparting + member.name
+                                }
+                            }
+                        )
                     }
                 }
             }
         }
 
-        if (diff.restored.isNotEmpty()) {
-            SectionTitle("恢复在册（${diff.restored.size}）")
+        if (diff.added.isNotEmpty()) {
+            SectionTitle("新增成员（${diff.added.size}）· 勾选表示加入")
             CocCard {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    diff.restored.forEach { entry ->
-                        RosterRow(name = entry.name, role = entry.role)
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    diff.added.forEach { entry ->
+                        CheckableRosterRow(
+                            name = entry.name,
+                            role = entry.role,
+                            checked = entry.name !in excludedAdded,
+                            onCheckedChange = { checked ->
+                                excludedAdded = if (checked) {
+                                    excludedAdded - entry.name
+                                } else {
+                                    excludedAdded + entry.name
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -394,7 +494,7 @@ private fun UpdateRosterPreviewStage(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 6.dp),
+                                .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(change.name, style = MaterialTheme.typography.bodyMedium)
@@ -406,30 +506,6 @@ private fun UpdateRosterPreviewStage(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             RoleText(change.newRole)
-                        }
-                    }
-                }
-            }
-        }
-
-        if (diff.departing.isNotEmpty()) {
-            SectionTitle("将标记离队（${diff.departing.size}）")
-            CocCard {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    diff.departing.forEach { member ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                member.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.cocColors.danger
-                            )
-                            Spacer(Modifier.weight(1f))
-                            RoleText(member.role)
                         }
                     }
                 }
@@ -448,7 +524,8 @@ private fun UpdateRosterPreviewStage(
                 Text("返回修改")
             }
             Button(
-                onClick = onConfirm,
+                onClick = { onConfirm(finalEntries, summary) },
+                enabled = limitError == null && finalEntries.isNotEmpty(),
                 modifier = Modifier
                     .weight(2f)
                     .height(52.dp),
@@ -468,15 +545,26 @@ private fun UpdateRosterPreviewStage(
 }
 
 @Composable
-private fun RosterRow(name: String, role: String) {
+private fun CheckableRosterRow(
+    name: String,
+    role: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(name, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.weight(1f))
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            name,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
         RoleText(role)
     }
 }
@@ -491,12 +579,15 @@ private fun RoleText(role: String) {
     )
 }
 
-/** Snackbar 摘要：省略零值项；全部无变化时提示无变化。 */
-private fun buildUpdateSummary(diff: RosterDiff): String {
+/** Snackbar 摘要：按本次勾选后的真实增删数汇报，省略零值项。 */
+private fun buildUpdateSummary(
+    diff: RosterDiff,
+    deletedCount: Int,
+    addedCount: Int
+): String {
     val parts = mutableListOf<String>()
-    if (diff.added.isNotEmpty()) parts.add("新增 ${diff.added.size}")
-    if (diff.restored.isNotEmpty()) parts.add("恢复在册 ${diff.restored.size}")
+    if (addedCount > 0) parts.add("新增 $addedCount")
+    if (deletedCount > 0) parts.add("移出 $deletedCount")
     if (diff.roleChanged.isNotEmpty()) parts.add("职位变化 ${diff.roleChanged.size}")
-    if (diff.departing.isNotEmpty()) parts.add("标记离队 ${diff.departing.size}")
     return if (parts.isEmpty()) "花名册无变化" else "已更新花名册：" + parts.joinToString(" · ")
 }

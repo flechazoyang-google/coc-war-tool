@@ -1,10 +1,9 @@
 package com.cocwar.data.samples
 
-import com.cocwar.data.model.AttackDto
+import com.cocwar.data.model.Attack
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
-import com.cocwar.data.model.MemberDto
-import com.cocwar.data.model.WarDto
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.EventBuilder
+import com.cocwar.data.model.ParsedEvent
 
 /**
  * Generates the two built-in example datasets:
@@ -12,9 +11,8 @@ import com.cocwar.data.parser.WarJsonParser
  *  - a 15-player league (CWL) round
  * Both are insertable like any imported event and can be deleted by the user.
  *
- * 采用与用户导入一致的精简结构：成员只有 player_name / total_stars / attacks
- * （attack 只有 attack_order / destruction_percentage，status 由摧毁率推导），
- * 职位通过 rosterRoles 注入（与花名册职位映射同源），未进攻成员不写 attacks 占位。
+ * 直接构造领域数据（不经 JSON/CSV 文本），职位通过 rosterRoles 注入（与花名册职位映射同源），
+ * 未进攻成员不写 attacks 占位（由 [EventBuilder] 补齐 destruction=0）。
  */
 object SampleDataProvider {
 
@@ -33,7 +31,7 @@ object SampleDataProvider {
         "九天揽月", "破阵之矛", "苍狼啸月", "烈日灼心", "寒冰法师"
     )
 
-    fun warSample(createdAt: Long): WarJsonParser.ParsedEvent {
+    fun warSample(createdAt: Long): ParsedEvent {
         val roles = mapOf(
             "陈平安" to "leader",
             "混子祭天" to "coLeader",
@@ -46,26 +44,30 @@ object SampleDataProvider {
         val members = WAR_NAMES.mapIndexed { i, name ->
             val isNonAttacker = i in listOf(18, 27, 28, 29)
             val attacks = if (isNonAttacker) {
-                emptyList()  // 未进攻成员无 attacks，解析器自动补 destruction=0 占位
+                emptyList()  // 未进攻成员无 attacks，EventBuilder 自动补 destruction=0 占位
             } else {
                 val star1 = if (i % 5 == 0) 2 else 3
                 val star2 = if (i % 7 == 0) 2 else 3
                 listOf(
-                    AttackDto(1, if (star1 == 3) 100 else 92),
-                    AttackDto(2, if (star2 == 3) 100 else 95)
+                    Attack(1, if (star1 == 3) 100 else 92),
+                    Attack(2, if (star2 == 3) 100 else 95)
                 )
             }
             val totalStars = if (isNonAttacker) 0 else (if (i % 5 == 0) 2 else 3) + (if (i % 7 == 0) 2 else 3)
-            MemberDto(playerName = name, totalStars = totalStars, attacks = attacks)
+            EventBuilder.MemberInput(
+                rank = i + 1,
+                playerName = name,
+                totalStars = totalStars,
+                attacks = attacks
+            )
         }
 
-        val dto = WarDto(members = members)
-        return WarJsonParser.fromDto(dto, isSample = true, createdAt, rosterRoles = roles).let { parsed ->
+        return EventBuilder.build(members, isSample = true, createdAt, rosterRoles = roles).let { parsed ->
             parsed.copy(event = parsed.event.copy(eventName = "示例·30人部落战"))
         }
     }
 
-    fun leagueSample(createdAt: Long): WarJsonParser.ParsedEvent {
+    fun leagueSample(createdAt: Long): ParsedEvent {
         val roles = mapOf(
             "陈平安" to "leader",
             "混子祭天" to "coLeader",
@@ -79,14 +81,21 @@ object SampleDataProvider {
                 emptyList()
             } else {
                 val stars = if (i % 4 == 0) 2 else 3
-                listOf(AttackDto(1, if (stars == 3) 100 else 94))
+                listOf(Attack(1, if (stars == 3) 100 else 94))
             }
             val totalStars = if (isNonAttacker) 0 else (if (i % 4 == 0) 2 else 3)
-            MemberDto(playerName = name, totalStars = totalStars, attacks = attacks)
+            EventBuilder.MemberInput(
+                rank = i + 1,
+                playerName = name,
+                totalStars = totalStars,
+                attacks = attacks
+            )
         }
 
-        val dto = WarDto(members = members)
-        return WarJsonParser.fromDto(dto, isSample = true, createdAt, eventType = EVENT_TYPE_LEAGUE, eventRound = 3, rosterRoles = roles).let { parsed ->
+        return EventBuilder.build(
+            members, isSample = true, createdAt,
+            eventType = EVENT_TYPE_LEAGUE, eventRound = 3, rosterRoles = roles
+        ).let { parsed ->
             parsed.copy(event = parsed.event.copy(eventName = "示例·15人联赛（第3轮）"))
         }
     }

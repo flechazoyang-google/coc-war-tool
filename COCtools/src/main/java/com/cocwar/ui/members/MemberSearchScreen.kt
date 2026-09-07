@@ -67,30 +67,25 @@ fun MemberSearchScreen(onBack: () -> Unit) {
     val snackbarHostState = remember { SnackbarHostState() }
     val focusRequester = remember { FocusRequester() }
 
-    // 子串包含模糊过滤：输入为空显示全部在册成员（与花名册排序一致：职位 → 连续缺席场次从少到多）；
-    // 已离队成员不在搜索范围（在「已离队成员」页管理）
+    // 子串包含模糊过滤：输入为空显示全部成员（与花名册排序一致：职位 → 连续缺席场次从少到多）
     val filtered = remember(roster, absentCounts, query) {
-        val active = roster.filter { it.active }
         val q = query.trim()
-        if (q.isEmpty()) sortRoster(active, absentCounts)
-        else active.filter { it.name.contains(q, ignoreCase = true) }
+        if (q.isEmpty()) sortRoster(roster, absentCounts)
+        else roster.filter { it.name.contains(q, ignoreCase = true) }
     }
 
-    // 删除成员：立即落库删除 → Snackbar 提供撤销（含角色恢复），防误触
+    // 删除成员：立即落库删除 → Snackbar 提供撤销（整条快照写回，含职位），防误触
     fun removeNameWithUndo(name: String) {
         scope.launch {
-            val savedRole = roster.find { it.name == name }?.role ?: "member"
-            viewModel.removeName(name)
+            val snapshot = roster.filter { it.name == name }
+            snapshot.forEach { viewModel.removeName(it.name) }
             val result = snackbarHostState.showSnackbar(
-                message = "已删除成员「$name」",
+                message = "已移出花名册「$name」",
                 actionLabel = "撤销",
                 duration = SnackbarDuration.Short
             )
             if (result == SnackbarResult.ActionPerformed) {
-                viewModel.addNames(listOf(name))
-                if (savedRole != "member") {
-                    viewModel.updateRole(name, savedRole)
-                }
+                viewModel.restoreRemoved(snapshot)
             }
         }
     }

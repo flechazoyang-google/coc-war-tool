@@ -1,6 +1,6 @@
 package com.cocwar.data.csv
 
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParseResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,15 +49,15 @@ class DoubaoOcrCsvValidationTest {
     @Test
     fun `model csv parses as success with 30 members`() {
         val result = CsvImporter.parse(modelCsv, slotCount = 2, eventType = "war")
-        assertTrue(result is WarJsonParser.ParseResult.Success)
-        val members = (result as WarJsonParser.ParseResult.Success).data.members
+        assertTrue(result is ParseResult.Success)
+        val members = (result as ParseResult.Success).data.members
         assertEquals(30, members.size)
     }
 
     @Test
     fun `rank aligns with row order and all members have 2 attack slots`() {
         val result = CsvImporter.parse(modelCsv, slotCount = 2, eventType = "war")
-        val members = (result as WarJsonParser.ParseResult.Success).data.members
+        val members = (result as ParseResult.Success).data.members
         members.forEachIndexed { index, m ->
             assertEquals("列错位：第 ${index + 1} 行", index + 1, m.rank)
             assertEquals(2, m.attacks.size)
@@ -67,7 +67,7 @@ class DoubaoOcrCsvValidationTest {
     @Test
     fun `spot check values incl non-attacker and typo name`() {
         val result = CsvImporter.parse(modelCsv, slotCount = 2, eventType = "war")
-        val members = (result as WarJsonParser.ParseResult.Success).data.members
+        val members = (result as ParseResult.Success).data.members
 
         val chen = members.first { it.playerName == "陈平安" }
         assertEquals(4, chen.totalStars)

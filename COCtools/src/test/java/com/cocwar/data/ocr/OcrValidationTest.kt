@@ -41,13 +41,19 @@ class OcrValidationTest {
     }
 
     @Test
-    fun `destruction out of range or non numeric flagged`() {
+    fun `destruction out of range or non numeric flagged but -1 exempted`() {
         val csv = "成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率\n" +
             "甲,1,6,-1,101\n乙,2,6,abc,99"
         val issues = OcrValidation.validate(csv)
-        // 甲: -1 与 101 各一条；乙: abc 一条
-        assertEquals(3, issues.size)
+        // 甲: -1 豁免（看不清），仅 101 一条；乙: abc 一条
+        assertEquals(2, issues.size)
         assertTrue(issues.all { it.field.contains("摧毁率") })
+    }
+
+    @Test
+    fun `star -1 sentinel not flagged`() {
+        val csv = "成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率\n张三,1,-1,-1,-1"
+        assertTrue(OcrValidation.validate(csv).isEmpty())
     }
 
     @Test

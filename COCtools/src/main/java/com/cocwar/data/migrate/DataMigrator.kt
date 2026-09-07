@@ -68,11 +68,11 @@ class DataMigrator(
         // 第一步：备份（防丢是核心诉求，写失败必须中止）
         val backupFile = File(
             backupDir,
-            "migration_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date()) + ".json"
+            "migration_backup_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date()) + ".zip"
         )
         backupDir.mkdirs()
-        val json = repo.exportAllDataJson()
-        backupFile.writeText(json, Charsets.UTF_8)
+        val bytes = repo.exportAllData()
+        backupFile.writeBytes(bytes)
 
         // 第二步：执行迁移（以最新扫描为准，备份与更新间数据被外部改动时按当前值覆盖）
         val plan = scan()

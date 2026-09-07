@@ -131,16 +131,6 @@ private fun MergeTargetPickerDialog(
                                     .padding(vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (!entry.active) {
-                                    Text(
-                                        "已离队",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.width(44.dp)
-                                    )
-                                } else {
-                                    Spacer(Modifier.width(44.dp))
-                                }
                                 Text(
                                     entry.name,
                                     style = MaterialTheme.typography.bodyLarge,

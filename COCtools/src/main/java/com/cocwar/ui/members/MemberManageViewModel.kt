@@ -25,7 +25,7 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
     // 部落战场次总数（疑似离队判定：count == totalWarCount 表示从未参战，不误报新成员）
     private val _totalWarCount = MutableStateFlow(0)
 
-    // 疑似离队成员（在册 + 连续缺席 ≥ 阈值 + 此前参战过），由 UI 逐人确认后标记离队
+    // 疑似离队成员（连续缺席 ≥ 阈值 + 此前参战过），由 UI 逐人确认后直接删除
     private val _suspects = MutableStateFlow<List<SuspectMember>>(emptyList())
     val suspects: StateFlow<List<SuspectMember>> = _suspects
 
@@ -33,17 +33,13 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
     private val _suspectThreshold = MutableStateFlow(repo.suspectThreshold())
     val suspectThreshold: StateFlow<Int> = _suspectThreshold
 
-    // 已离队成员（active=false，职位保留，可一键恢复）
-    private val _departed = MutableStateFlow<List<MemberRosterEntity>>(emptyList())
-    val departed: StateFlow<List<MemberRosterEntity>> = _departed
-
     // 下拉刷新进度：名单由 Room Flow 自动保持最新，下拉仅提供手动重读与反馈
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
 
     init {
-        // 花名册或战报任一变化（导入/删除/改职位/标记离队/云端还原）都会重算
-        // 连续缺席场次与已离队列表，保证排序与维护入口随数据实时更新
+        // 花名册或战报任一变化（导入/删除/改职位/成员更新/云端还原）都会重算
+        // 连续缺席场次，保证排序与维护入口随数据实时更新
         viewModelScope.launch {
             combine(repo.observeRoster(), repo.events) { roster, _ -> roster }
                 .collect { roster ->
@@ -51,7 +47,6 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
                     val info = repo.getWarAbsentInfo(roster.map { it.name })
                     _absentCounts.value = info.counts
                     _totalWarCount.value = info.totalWarCount
-                    _departed.value = roster.filter { !it.active }
                 }
         }
         // 疑似离队 = 在册 + 连续缺席 ≥ N 场 + 此前参战过；调阈值即时重算
@@ -76,7 +71,6 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
                     val info = repo.getWarAbsentInfo(it.map { m -> m.name })
                     _absentCounts.value = info.counts
                     _totalWarCount.value = info.totalWarCount
-                    _departed.value = it.filter { m -> !m.active }
                 }
             delay(600)
             _refreshing.value = false
@@ -87,7 +81,7 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
         viewModelScope.launch { repo.addToRoster(names) }
     }
 
-    /** 更新花名册（软替换）：新名单 upsert，在册但不在新名单的标记离队；列表经 observeRoster 自动刷新。 */
+    /** 更新花名册（硬替换）：新名单 upsert，不在新名单的直接删除；列表经 observeRoster 自动刷新。 */
     fun replaceRoster(entries: List<RosterEntry>) {
         viewModelScope.launch { repo.replaceRoster(entries) }
     }
@@ -104,7 +98,7 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
     /** 查询某成员距离上次参战（出现在部落战名单）已连续缺席的部落战场次。 */
     suspend fun getWarAbsentCount(name: String): Int = repo.getWarAbsentCount(name)
 
-    // === 离队管理 ===
+    // === 疑似离队清理（确认后直接删除，可撤销） ===
 
     /** 调整疑似离队阈值（1..10，持久化），生效于下一次疑似名单重算。 */
     fun setSuspectThreshold(n: Int) {
@@ -113,20 +107,10 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
         _suspectThreshold.value = repo.suspectThreshold()
     }
 
-    /** 标记某成员为已离队（active=false，职位保留）。 */
-    fun markDeparted(name: String) {
-        viewModelScope.launch { repo.setRosterActive(listOf(name), false) }
-    }
-
-    /** 恢复某已离队成员（active=true，回到在册名单）。 */
-    fun restoreDeparted(name: String) {
-        viewModelScope.launch { repo.setRosterActive(listOf(name), true) }
-    }
-
-    /** 一键恢复全部已离队成员。 */
-    fun restoreAllDeparted() {
-        val names = _departed.value.map { it.name }
-        if (names.isNotEmpty()) viewModelScope.launch { repo.setRosterActive(names, true) }
+    /** 撤销删除：把误删的成员连同职位一起写回花名册。 */
+    fun restoreRemoved(entries: List<MemberRosterEntity>) {
+        if (entries.isEmpty()) return
+        viewModelScope.launch { repo.restoreRoster(entries) }
     }
 
     // === 成员名修正（OCR 错名善后） ===
@@ -144,7 +128,7 @@ class MemberManageViewModel(private val repo: WarRepository) : ViewModel() {
 
     // === 数据体检 ===
 
-    // 扫描结果：识图错名残留 + 花名册疑似重复条目（合并/忽略后即时重扫）
+    // 扫描结果：识别错名残留 + 花名册疑似重复条目（合并/忽略后即时重扫）
     private val _healthIssues = MutableStateFlow<List<HealthIssue>>(emptyList())
     val healthIssues: StateFlow<List<HealthIssue>> = _healthIssues
 

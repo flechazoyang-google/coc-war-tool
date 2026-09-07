@@ -1,6 +1,7 @@
 package com.cocwar.data.ocr
 
 import com.cocwar.data.csv.CsvCodec
+import com.cocwar.data.model.UNKNOWN_VALUE
 
 /**
  * 识别 CSV 合法性校验（纯函数）：识别结果中的异常数值（星数超范围、摧毁率非法）
@@ -44,9 +45,9 @@ object OcrValidation {
             val d2 = cells.getOrNull(4)?.trim()
 
             val starInt = stars?.toIntOrNull()
-            if (stars != null && starInt != null && starInt !in 0..6) {
+            if (starInt != null && starInt != UNKNOWN_VALUE && starInt !in 0..6) {
                 issues += RowIssue(rank, name, "总星数", stars, "总星数超出 0-6 范围，请人工核对")
-            } else if (stars != null && starInt == null && stars.isNotEmpty()) {
+            } else if (starInt == null && !stars.isNullOrEmpty()) {
                 issues += RowIssue(rank, name, "总星数", stars, "总星数不是数字，请人工核对")
             }
 
@@ -55,7 +56,7 @@ object OcrValidation {
                 val v = raw.removeSuffix("%").trim().toIntOrNull()
                 if (v == null) {
                     issues += RowIssue(rank, name, field, raw, "$field 不是数字，请人工核对")
-                } else if (v !in 0..100) {
+                } else if (v != UNKNOWN_VALUE && v !in 0..100) {
                     issues += RowIssue(rank, name, field, raw, "$field 超出 0-100 范围，请人工核对")
                 }
             }

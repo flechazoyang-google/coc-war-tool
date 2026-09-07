@@ -56,55 +56,40 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
-import com.cocwar.data.ocr.OcrClient
-import com.cocwar.data.ocr.OcrConfig
 import com.cocwar.data.ocr.OcrValidation
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParseResult
+import com.cocwar.data.model.ParsedEvent
 import com.cocwar.di.warViewModel
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.components.SegmentedTabs
 import com.cocwar.ui.theme.cocColors
-import com.cocwar.ui.util.ImageCompress
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportScreen(
     onBack: () -> Unit,
-    onSaved: () -> Unit,
-    onOpenBatchOcr: () -> Unit = {},
-    pendingImportId: String? = null
+    onSaved: () -> Unit
 ) {
     val context = LocalContext.current
-    val ocrConfig = remember { OcrConfig(context) }
-    val viewModel: ImportViewModel = warViewModel { ImportViewModel(it, ocrConfig) }
+    val viewModel: ImportViewModel = warViewModel { ImportViewModel(it) }
     val scope = rememberCoroutineScope()
 
-    var jsonText by remember { mutableStateOf("") }
     var csvText by remember { mutableStateOf("") }
-    var parsedEvent by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
+    var parsedEvent by remember { mutableStateOf<ParsedEvent?>(null) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var eventType by remember { mutableStateOf(EVENT_TYPE_WAR) }
-    // 数据来源：0=JSON，1=CSV（B2）
-    var sourceMode by remember { mutableStateOf(0) }
-    // 截图识别：进行中 / 识别数值警告
-    var recognizing by remember { mutableStateOf(false) }
-    var ocrWarning by remember { mutableStateOf<String?>(null) }
+    // CSV 数值校验警告（粘贴/导入的 CSV 同样可能带异常数值）
+    var csvWarning by remember { mutableStateOf<String?>(null) }
     var showPromptDialog by remember { mutableStateOf(false) }
+    // CSV 提示词按当前花名册动态生成（注入名单 + 形近名提醒），初值为静态兜底
+    var csvPromptText by remember { mutableStateOf(CopyPrompts.CSV_PROMPT) }
 
-    fun doParse(text: String) {
-        // 大 JSON 解析放到 IO 线程，避免阻塞主线程
-        scope.launch {
-            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                viewModel.parse(text)
-            }
-            when (result) {
-                is WarJsonParser.ParseResult.Success -> { parsedEvent = result.data; errorMsg = null }
-                is WarJsonParser.ParseResult.Error -> { parsedEvent = null; errorMsg = result.message }
-            }
-        }
+    // 花名册变化时重新生成提示词（名单注入 + 形近名提醒随之更新）
+    LaunchedEffect(eventType) {
+        csvPromptText = viewModel.buildPromptText(eventType)
     }
 
     /** CSV 解析（B2，RULES §4.15）：按当前选择的类型填充槽位。 */
@@ -115,39 +100,15 @@ fun ImportScreen(
                 viewModel.parseCsv(text, eventType, slotCount)
             }
             when (result) {
-                is WarJsonParser.ParseResult.Success -> { parsedEvent = result.data; errorMsg = null }
-                is WarJsonParser.ParseResult.Error -> { parsedEvent = null; errorMsg = result.message }
+                is ParseResult.Success -> { parsedEvent = result.data; errorMsg = null }
+                is ParseResult.Error -> { parsedEvent = null; errorMsg = result.message }
             }
         }
-    }
-
-    // 待确认识图草稿：进入时自动填充 CSV 并解析（复用正常 CSV 导入链路）
-    LaunchedEffect(pendingImportId) {
-        pendingImportId?.let { id ->
-            val pending = viewModel.loadPendingImport(id)
-            if (pending != null) {
-                sourceMode = 1
-                csvText = pending.csvText
-                doParseCsv(pending.csvText)
-            } else {
-                errorMsg = "该待确认识图已不存在"
-            }
-        }
-    }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            // 文件读取移到 IO 线程，避免主线程磁盘 IO 卡顿
-            scope.launch {
-                runCatching {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readText() } ?: ""
-                    }
-                }
-                    .onSuccess { jsonText = it; doParse(it) }
-                    .onFailure { errorMsg = "读取文件失败：${it.message}" }
-            }
-        }
+        // 数值合法性提示：外部软件识别/手写的 CSV 同样可能有越界值（星数>6、摧毁率>100）
+        val issues = OcrValidation.validate(text)
+        csvWarning = if (issues.isEmpty()) null
+        else "有 ${issues.size} 处可疑数值，请核对：\n" +
+            issues.joinToString("\n") { "  ${it.name}（${it.field}=${it.value}）" }
     }
 
     val csvPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -160,51 +121,6 @@ fun ImportScreen(
                 }
                     .onSuccess { csvText = it; doParseCsv(it) }
                     .onFailure { errorMsg = "读取文件失败：${it.message}" }
-            }
-        }
-    }
-
-    /** 截图识别：压缩图片 → 调模型 → CSV 填入并自动解析，复用现有导入链路。 */
-    val ocrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            scope.launch {
-                recognizing = true
-                errorMsg = null
-                ocrWarning = null
-                try {
-                    val base64 = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        ImageCompress.readAndCompressToBase64(context, it)
-                    }
-                    if (base64 == null) {
-                        errorMsg = "读取图片失败，请换一张截图重试"
-                        return@launch
-                    }
-                    val csv = viewModel.recognize(base64)
-                    if (csv.isBlank()) {
-                        errorMsg = "识别结果为空（图片中未识别到战报数据）"
-                        return@launch
-                    }
-                    csvText = csv
-                    val issues = OcrValidation.validate(csv)
-                    ocrWarning = if (issues.isEmpty()) null
-                    else "识别结果有 ${issues.size} 处可疑数值，请核对：\n" +
-                        issues.joinToString("\n") { "  ${it.name}（${it.field}=${it.value}）" }
-                    doParseCsv(csv)
-                } catch (e: OcrClient.OcrException.NotConfigured) {
-                    errorMsg = e.message
-                } catch (e: OcrClient.OcrException.Timeout) {
-                    errorMsg = "识别超时（120 秒），请重试"
-                } catch (e: OcrClient.OcrException.Network) {
-                    errorMsg = "网络错误：${e.detail}，请检查网络后重试"
-                } catch (e: OcrClient.OcrException.ApiError) {
-                    errorMsg = "${e.message}"
-                } catch (e: OcrClient.OcrException.BadResponse) {
-                    errorMsg = "识别响应无法解析，请重试"
-                } catch (e: Exception) {
-                    errorMsg = "识别失败：${e.message}"
-                } finally {
-                    recognizing = false
-                }
             }
         }
     }
@@ -239,68 +155,6 @@ fun ImportScreen(
                 .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            SegmentedTabs(
-                options = listOf("JSON", "CSV"),
-                selectedIndex = sourceMode,
-                onSelect = {
-                    // 切换来源时清空另一面板遗留的解析结果与错误，防止误存
-                    if (sourceMode != it) {
-                        sourceMode = it
-                        parsedEvent = null
-                        errorMsg = null
-                    }
-                },
-                modifier = Modifier.padding(top = 4.dp)
-            )
-            Spacer(Modifier.height(14.dp))
-
-            if (sourceMode == 0) {
-                SectionTitle("数据来源")
-                OutlinedTextField(
-                    value = jsonText,
-                    onValueChange = { jsonText = it },
-                    label = { Text("粘贴 JSON 数据") },
-                    placeholder = { Text("将部落战 JSON 粘贴到这里…") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(150.dp),
-                    shape = CocShape.field,
-                    singleLine = false,
-                    isError = errorMsg != null,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedBorderColor = MaterialTheme.cocColors.hairline,
-                        cursorColor = MaterialTheme.cocColors.accent
-                    )
-                )
-
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
-                        onClick = { picker.launch("application/json") },
-                        modifier = Modifier.weight(1f),
-                        shape = CocShape.field,
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp, MaterialTheme.cocColors.hairline
-                        )
-                    ) {
-                        Icon(Icons.Filled.FileOpen, null, Modifier.size(17.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("选择文件")
-                    }
-                    Button(
-                        onClick = { doParse(jsonText) },
-                        modifier = Modifier.weight(1f),
-                        shape = CocShape.field,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Text("解析并预览", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            } else {
                 SectionTitle("CSV 数据")
                 OutlinedTextField(
                     value = csvText,
@@ -334,26 +188,6 @@ fun ImportScreen(
                         Spacer(Modifier.width(6.dp))
                         Text("选择文件")
                     }
-                    OutlinedButton(
-                        onClick = { ocrPicker.launch("image/*") },
-                        modifier = Modifier.weight(1f),
-                        enabled = !recognizing,
-                        shape = CocShape.field,
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp, MaterialTheme.cocColors.hairline
-                        )
-                    ) {
-                        if (recognizing) {
-                            CircularProgressIndicator(
-                                Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Filled.ImageSearch, null, Modifier.size(17.dp))
-                        }
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (recognizing) "识别中…" else "单屏识图")
-                    }
                     Button(
                         onClick = { doParseCsv(csvText) },
                         modifier = Modifier.weight(1f),
@@ -366,22 +200,13 @@ fun ImportScreen(
                         Text("解析并预览", fontWeight = FontWeight.SemiBold)
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                OutlinedButton(
-                    onClick = onOpenBatchOcr,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = CocShape.field,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.cocColors.hairline)
-                ) {
-                    Text("批量识图（多屏截图）", fontWeight = FontWeight.SemiBold)
-                }
                 Text(
                     "格式：成员名,排名,总星数,进攻1摧毁率,进攻2摧毁率（联赛只有 1 列进攻）。\n" +
-                        "摧毁率可带 %，缺失列按 0；首行若为表头会自动跳过。",
+                        "摧毁率可带 %，缺失列按 0；-1 表示看不清，导入时会提示确认；首行若为表头会自动跳过。\n" +
+                        "截图请用外部 AI（豆包等）识别：点右上⧉复制本页提示词，识别结果粘贴回这里。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
 
             errorMsg?.let {
                 Spacer(Modifier.height(12.dp))
@@ -395,7 +220,7 @@ fun ImportScreen(
                 }
             }
 
-            ocrWarning?.let {
+            csvWarning?.let {
                 Spacer(Modifier.height(12.dp))
                 CocCard(Modifier.fillMaxWidth()) {
                     Text(
@@ -409,13 +234,11 @@ fun ImportScreen(
 
             if (showPromptDialog) {
                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val isJson = sourceMode == 0
-                val prompt = if (isJson) CopyPrompts.JSON_PROMPT else CopyPrompts.CSV_PROMPT
-                val formatLabel = if (isJson) "JSON" else "CSV"
+                val prompt = csvPromptText
 
                 AlertDialog(
                     onDismissRequest = { showPromptDialog = false },
-                    title = { Text("AI 识别提示词（$formatLabel）") },
+                    title = { Text("AI 识别提示词（CSV）") },
                     text = {
                         androidx.compose.foundation.layout.Box(
                             modifier = Modifier
@@ -436,8 +259,8 @@ fun ImportScreen(
                     confirmButton = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = {
-                                clipboard.setPrimaryClip(ClipData.newPlainText("$formatLabel 识别提示词", prompt))
-                                Toast.makeText(context, "$formatLabel 提示词已复制", Toast.LENGTH_SHORT).show()
+                                clipboard.setPrimaryClip(ClipData.newPlainText("CSV 识别提示词", prompt))
+                                Toast.makeText(context, "提示词已复制", Toast.LENGTH_SHORT).show()
                             }) {
                                 Icon(Icons.Filled.ContentCopy, "复制提示词",
                                     tint = MaterialTheme.colorScheme.primary)
@@ -458,7 +281,6 @@ fun ImportScreen(
         ImportPreviewDialog(
             parsed = parsed,
             viewModel = viewModel,
-            pendingImportId = pendingImportId,
             onSaved = { eventId ->
                 parsedEvent = null
                 onSaved()

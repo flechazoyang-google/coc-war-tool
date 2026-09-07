@@ -30,11 +30,13 @@ class RosterMaintenanceTest {
     }
 
     @Test
-    fun `已离队成员不参与判定`() {
-        val roster = listOf(member("甲", active = false), member("乙"))
-        val absent = mapOf("甲" to 6, "乙" to 4)
+    fun `花名册全部成员参与判定_历史离队标记不再生效`() {
+        // 离队改为直接删除后，花名册里的每一行都是当前成员；
+        // 旧版本遗留的 active=false 行由启动清理删除，判定阶段一视同仁。
+        val roster = listOf(member("a", active = false), member("b"))
+        val absent = mapOf("a" to 4, "b" to 4)
         val result = RosterMaintenance.filterSuspectedDeparted(roster, absent, 6, 3)
-        assertEquals(listOf("乙"), result.map { it.name })
+        assertEquals(listOf("a", "b"), result.map { it.name })
     }
 
     @Test

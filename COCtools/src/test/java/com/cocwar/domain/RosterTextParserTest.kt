@@ -60,6 +60,69 @@ class RosterTextParserTest {
     }
 
     @Test
+    fun `表头行用名字而非昵称也能跳过`() {
+        // AI 实际输出的是「名字,职位」，原逻辑只认「昵称」会漏掉
+        val result = RosterTextParser.parse("名字,职位\n陈平安,首领\n张三,成员")
+        assertEquals(
+            listOf(RosterEntry("陈平安", "leader"), RosterEntry("张三", "member")),
+            result.entries
+        )
+        assertTrue(result.warnings.isEmpty())
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun `表头中文逗号且姓名列也能跳过`() {
+        val result = RosterTextParser.parse("姓名，职位\n陈平安,首领")
+        assertEquals(listOf(RosterEntry("陈平安", "leader")), result.entries)
+    }
+
+    @Test
+    fun `名字含全角逗号可正确解析为成员`() {
+        // 用户实测：成员本名就叫「小样，我就这样」，名字内部含全角逗号；
+        // 用最后一个半角逗号切分，名字里的全角逗号应保留、职位取「成员」
+        val result = RosterTextParser.parse("小样，我就这样,成员\n陈平安,首领\n张三,成员")
+        assertEquals(
+            listOf(
+                RosterEntry("小样，我就这样", "member"),
+                RosterEntry("陈平安", "leader"),
+                RosterEntry("张三", "member")
+            ),
+            result.entries
+        )
+        assertTrue(result.errors.isEmpty())
+        assertTrue(result.warnings.isEmpty())
+    }
+
+    @Test
+    fun `职位非合法值保留成员并告警按成员处理`() {
+        // 角色被 AI 误识别（如「首领吗不确定」「大长老」）：保留成员、按成员处理并告警，
+        // 不整行丢弃——用户在预览里可改回正确职位
+        val result = RosterTextParser.parse("张三,首领吗不确定\n陈平安,首领\n李四,成员")
+        assertEquals(
+            listOf(
+                RosterEntry("张三", "member"),
+                RosterEntry("陈平安", "leader"),
+                RosterEntry("李四", "member")
+            ),
+            result.entries
+        )
+        assertEquals(1, result.warnings.size)
+        assertTrue(result.warnings.single().contains("张三"))
+        assertTrue(result.warnings.single().contains("首领吗不确定"))
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun `缺名字的脏行进入已忽略`() {
+        // 形如「,成员」缺名字的脏行无法解析，应进 errors 供用户修正
+        val result = RosterTextParser.parse(",成员\n陈平安,首领")
+        assertEquals(listOf(RosterEntry("陈平安", "leader")), result.entries)
+        assertEquals(1, result.errors.size)
+        assertTrue(result.errors.single().contains(",成员"))
+    }
+
+    @Test
     fun `无职位行默认成员`() {
         val result = RosterTextParser.parse("陈平安\n张三,长老")
         assertEquals(
@@ -80,6 +143,8 @@ class RosterTextParserTest {
         assertEquals("leader", RosterTextParser.normalizeRole("首领"))
         assertEquals("coLeader", RosterTextParser.normalizeRole("副首领"))
         assertEquals("elder", RosterTextParser.normalizeRole("长老"))
+        // 游戏内成员页显示「长者」，与「长老」等价
+        assertEquals("elder", RosterTextParser.normalizeRole("长者"))
         assertEquals("member", RosterTextParser.normalizeRole("成员"))
     }
 

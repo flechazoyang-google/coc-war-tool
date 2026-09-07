@@ -3,9 +3,9 @@ package com.cocwar.ui.eventlist
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cocwar.data.db.MemberEntity
-import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.db.WarEventEntity
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParseResult
+import com.cocwar.data.model.ParsedEvent
 import com.cocwar.data.repository.WarRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,18 +24,6 @@ class EventListViewModel(private val repo: WarRepository) : ViewModel() {
 
     val events: StateFlow<List<WarEventEntity>> = repo.events
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    /** 待确认识图草稿（后台批量识图结果）。 */
-    val pending: StateFlow<List<PendingImportEntity>> = repo.observePendingImports()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    fun deletePending(id: String) {
-        viewModelScope.launch { repo.deletePendingImport(id) }
-    }
-
-    suspend fun pendingImagePaths(id: String): List<String> = repo.pendingImagePaths(id)
-
-    suspend fun markStaleProcessingFailed() = repo.failStaleProcessing()
 
     // 下拉刷新进度：列表本身由 Room Flow 自动保持最新，下拉仅提供手动重读与反馈
     private val _refreshing = MutableStateFlow(false)
@@ -67,21 +55,11 @@ class EventListViewModel(private val repo: WarRepository) : ViewModel() {
 
     /** 撤销删除：按原样重插事件与成员（含进攻记录）。 */
     suspend fun undoDelete(snapshot: DeletedWar) {
-        repo.importEvent(WarJsonParser.ParsedEvent(snapshot.event, snapshot.members))
-    }
-
-    /** 解析剪切板战报 JSON：先按 JSON 内容自动识别类型（RULES §4.9），再注入花名册职位映射。 */
-    suspend fun parseWarJson(text: String): WarJsonParser.ParseResult {
-        val roleMap = repo.rosterRoleMap()
-        return WarJsonParser.parse(
-            text,
-            eventType = WarJsonParser.inferEventType(text),
-            rosterRoles = roleMap
-        )
+        repo.importEvent(ParsedEvent(snapshot.event, snapshot.members))
     }
 
     /** 解析剪切板战报 CSV。 */
-    suspend fun parseCsv(text: String, eventType: String, slotCount: Int): WarJsonParser.ParseResult {
+    suspend fun parseCsv(text: String, eventType: String, slotCount: Int): ParseResult {
         val roleMap = repo.rosterRoleMap()
         return com.cocwar.data.csv.CsvImporter.parse(
             text = text,

@@ -65,12 +65,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cocwar.CocWarApplication
-import com.cocwar.data.db.PendingImportEntity
 import com.cocwar.data.db.WarEventEntity
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParseResult
+import com.cocwar.data.model.ParsedEvent
 import com.cocwar.di.warViewModel
 import com.cocwar.service.FloatingBallService
-import com.cocwar.service.OcrBatchService
 import com.cocwar.service.ScreenCaptureService
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocIconButton
@@ -79,7 +78,6 @@ import com.cocwar.ui.components.RefreshableBox
 import com.cocwar.ui.components.ScreenHeader
 import com.cocwar.ui.importflow.ImportPreviewDialog
 import com.cocwar.ui.importflow.ImportViewModel
-import com.cocwar.ui.importflow.looksLikeWarJson
 import com.cocwar.ui.settings.ScreenshotGalleryDialog
 import com.cocwar.ui.theme.cocColors
 import com.cocwar.ui.util.compareLeagueRound
@@ -97,14 +95,12 @@ import kotlinx.coroutines.launch
 fun EventListScreen(
     onOpen: (String) -> Unit,
     onImport: () -> Unit = {},
-    onOpenSeason: (Int, Int, Int) -> Unit = { _, _, _ -> },
-    onOpenPendingImport: (String) -> Unit = {},
+    onOpenSeason: (Int, Int, Int) -> Unit = { _, _, _ -> }
 ) {
     val viewModel: EventListViewModel = warViewModel { EventListViewModel(it) }
-    val importViewModel: ImportViewModel = warViewModel { ImportViewModel(it, null) }
+    val importViewModel: ImportViewModel = warViewModel { ImportViewModel(it) }
     val events by viewModel.events.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
-    val pending by viewModel.pending.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -120,11 +116,6 @@ fun EventListScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    // 进程被杀兜底：启动无服务运行却残留 processing 草稿时，置为 failed 便于重试/删除
-    LaunchedEffect(Unit) {
-        if (!OcrBatchService.isRunning()) viewModel.markStaleProcessingFailed()
     }
 
     // 一键开关截图悬浮球；权限缺失时弹窗引导（与设置-截图工具页口径一致）
@@ -169,7 +160,7 @@ fun EventListScreen(
     var pendingDeleteEvent by remember { mutableStateOf<WarEventEntity?>(null) }
 
     // 剪切板读取状态（由右上角按钮触发，不再自动检测）
-    var clipboardParsed by remember { mutableStateOf<WarJsonParser.ParsedEvent?>(null) }
+    var clipboardParsed by remember { mutableStateOf<ParsedEvent?>(null) }
     val clipboardManager = LocalClipboardManager.current
 
     // 更多菜单、截图列表、筛选弹窗
@@ -306,20 +297,7 @@ fun EventListScreen(
                                         Toast.makeText(context, "剪切板为空", Toast.LENGTH_SHORT).show()
                                         return@DropdownMenuItem
                                     }
-                                    // 尝试 JSON 格式
-                                    if (looksLikeWarJson(text)) {
-                                        scope.launch {
-                                            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                viewModel.parseWarJson(text)
-                                            }
-                                            when (result) {
-                                                is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
-                                                is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "解析失败：${result.message}", Toast.LENGTH_LONG).show()
-                                            }
-                                        }
-                                        return@DropdownMenuItem
-                                    }
-                                    // 尝试 CSV 格式
+                                    // 读取战报 CSV
                                     if (looksLikeWarCsv(text)) {
                                         val csvEventType = if (typeFilter == "1") "league" else "war"
                                         val csvSlotCount = if (typeFilter == "1") 1 else 2
@@ -328,8 +306,8 @@ fun EventListScreen(
                                                 viewModel.parseCsv(text, csvEventType, csvSlotCount)
                                             }
                                             when (result) {
-                                                is WarJsonParser.ParseResult.Success -> clipboardParsed = result.data
-                                                is WarJsonParser.ParseResult.Error -> Toast.makeText(context, "CSV 解析失败：${result.message}", Toast.LENGTH_LONG).show()
+                                                is ParseResult.Success -> clipboardParsed = result.data
+                                                is ParseResult.Error -> Toast.makeText(context, "CSV 解析失败：${result.message}", Toast.LENGTH_LONG).show()
                                             }
                                         }
                                         return@DropdownMenuItem
@@ -358,47 +336,6 @@ fun EventListScreen(
                 }
             )
     
-            // 待确认识图（后台批量识图结果）
-            if (pending.isNotEmpty()) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "待确认识图",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.cocColors.accent,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    pending.forEach { item ->
-                        PendingImportRow(
-                            item = item,
-                            onOpen = { onOpenPendingImport(item.id) },
-                            onDelete = { viewModel.deletePending(item.id) },
-                            onRetry = {
-                                scope.launch {
-                                    val paths = viewModel.pendingImagePaths(item.id)
-                                    if (paths.isEmpty()) {
-                                        Toast.makeText(context, "重试失败：截图路径已失效", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        OcrBatchService.start(context, paths, replaceId = item.id)
-                                        Toast.makeText(context, "已重新开始后台识图", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            onCancel = {
-                                context.sendBroadcast(
-                                    Intent(OcrBatchService.ACTION_CANCEL).setPackage(context.packageName)
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-
             Spacer(Modifier.height(6.dp))
 
             // 下拉刷新：列表由 Room Flow 自动保持最新，下拉触发手动重读并提供状态反馈
@@ -675,66 +612,6 @@ fun EventListScreen(
                 }) { Text("重置") }
             }
         )
-    }
-}
-
-/**
- * 待确认识图草稿行：processing / ready / failed 三态。
- */
-@Composable
-private fun PendingImportRow(
-    item: PendingImportEntity,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit,
-    onRetry: () -> Unit,
-    onCancel: () -> Unit
-) {
-    CocCard(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                when (item.status) {
-                    "processing" -> Text(
-                        "识图中 (" + item.processedImages + "/" + item.totalImages + ")",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    "ready" -> {
-                        Text("待确认 · 战报", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "识图完成，点击进入导入确认",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    else -> {
-                        Text(
-                            "识图失败",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.cocColors.danger
-                        )
-                        Text(
-                            item.errorMessage.ifBlank { "识别失败" },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-            when (item.status) {
-                "processing" -> TextButton(onClick = onCancel) { Text("取消") }
-                "ready" -> TextButton(onClick = onOpen) { Text("去确认", fontWeight = FontWeight.SemiBold) }
-                else -> {
-                    TextButton(onClick = onRetry) { Text("重试") }
-                    TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.cocColors.danger) }
-                }
-            }
-        }
     }
 }
 

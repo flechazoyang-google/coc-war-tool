@@ -69,12 +69,31 @@ object StringMatcher {
      * 疑似同名判定：编辑距离相似度 >= [threshold]，或（多字名）等长且仅一字之差。
      * 单字名不适用一字之差兜底——任意两个不同的单字名编辑距离都是 1，
      * 兜底会把所有单字名互相判成同名。
+     *
+     * 例外：**编号变体不算同名**（[isNumberedVariant]）。部落里同名玩家按顺序编号区分
+     * （余味 / 余味1 / 余味2），它们是不同成员，不该被判成重复录入或疑似同人。
      */
     fun isLikelySameName(a: String, b: String, threshold: Float = 0.5f): Boolean {
         if (a == b) return true
         if (a.isEmpty() || b.isEmpty()) return false
+        if (isNumberedVariant(a, b)) return false
         if (similarity(a, b) >= threshold) return true
         return a.length == b.length && a.length >= 2 && levenshtein(a, b) == 1
+    }
+
+    /** 去掉结尾的连续数字（同名成员的编号后缀）："余味1" → "余味"，"余味" → "余味"。 */
+    fun stripNumberSuffix(name: String): String =
+        name.trimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9')
+
+    /**
+     * 是否为「同名成员的编号变体」：去掉末尾数字后相同（余味 / 余味1 / 余味2）。
+     * 这类名字是按顺序编号区分的**不同成员**，不是错字也不是重复录入。
+     */
+    fun isNumberedVariant(a: String, b: String): Boolean {
+        if (a == b) return false
+        val sa = stripNumberSuffix(a)
+        val sb = stripNumberSuffix(b)
+        return sa.isNotEmpty() && sa == sb
     }
 
     /**

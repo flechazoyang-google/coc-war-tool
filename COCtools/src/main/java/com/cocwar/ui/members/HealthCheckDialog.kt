@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.cocwar.ui.theme.cocColors
 
 /**
- * 数据体检弹窗：扫描识图错名残留与花名册疑似重复条目，逐项
+ * 数据体检弹窗：扫描识别错名残留与花名册疑似重复条目，逐项
  * 「合并」（复用全局合并，自动修正所有战报）或「忽略」（持久化）。
  */
 @Composable
@@ -69,7 +69,7 @@ fun HealthCheckDialog(
                     }
                 } else {
                     Text(
-                        "发现 ${issues.size} 项疑似同名数据（识图错名或重复条目），" +
+                        "发现 ${issues.size} 项疑似同名数据（识别错名或重复条目），" +
                             "逐项确认后自动修正所有相关战报。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -160,7 +160,7 @@ private fun IssueRow(
             )
         }
         val kindLabel = if (issue.inRoster) "花名册低频条目，疑似同一人拆成两条"
-        else "不在花名册，疑似识图错名"
+        else "不在花名册，疑似识别错名"
         Text(
             "$kindLabel · 相似度 ${(issue.score * 100).toInt()}%",
             style = MaterialTheme.typography.labelSmall,

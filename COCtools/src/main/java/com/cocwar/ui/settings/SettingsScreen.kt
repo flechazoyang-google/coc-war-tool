@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
@@ -37,7 +38,7 @@ fun SettingsScreen(
     onOpenCapture: () -> Unit,
     onOpenGeneral: () -> Unit,
     onOpenAbout: () -> Unit,
-    onOpenOcr: () -> Unit,
+    onOpenPrompt: () -> Unit,
 ) {
     Column(
         Modifier
@@ -79,11 +80,11 @@ fun SettingsScreen(
                     onClick = onOpenCapture
                 )
                 SettingsRow(
-                    icon = Icons.Filled.ImageSearch,
+                    icon = Icons.Filled.ContentCopy,
                     iconColor = MaterialTheme.cocColors.roleLeader,
-                    title = "识图设置",
-                    subtitle = "AI 识图 · API Key 配置",
-                    onClick = onOpenOcr
+                    title = "识别提示词",
+                    subtitle = "复制提示词 · 交给外部 AI（豆包等）识别",
+                    onClick = onOpenPrompt
                 )
                 SettingsRow(
                     icon = Icons.Filled.Tune,

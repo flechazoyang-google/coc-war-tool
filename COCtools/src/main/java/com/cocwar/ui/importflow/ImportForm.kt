@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
 import com.cocwar.data.model.EVENT_TYPE_WAR
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParsedEvent
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.FilterPill
@@ -110,7 +110,7 @@ fun WarTypeRoundSection(eventType: String, onTypeChange: (String) -> Unit) {
  * 数据预览：平面双联数字 —— 总星数(黄铜) / 成员数(墨色)，中间细线分隔。
  */
 @Composable
-fun WarPreviewCard(parsed: WarJsonParser.ParsedEvent) {
+fun WarPreviewCard(parsed: ParsedEvent) {
     CocCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -426,7 +426,7 @@ private fun OptionRow(
 }
 
 /** 构建匹配状态列表。roster 为正式名单。 */
-fun buildMatchStates(parsed: WarJsonParser.ParsedEvent, roster: List<String>): List<MemberMatchState> =
+fun buildMatchStates(parsed: ParsedEvent, roster: List<String>): List<MemberMatchState> =
     parsed.members.map { m ->
         val matched = m.playerName in roster
         val suggestion = if (!matched) {
@@ -507,9 +507,9 @@ internal fun formatWarDate(dateMillis: Long): String {
 }
 
 internal fun adjustParsedDate(
-    parsed: WarJsonParser.ParsedEvent,
+    parsed: ParsedEvent,
     dateMillis: Long
-): WarJsonParser.ParsedEvent {
+): ParsedEvent {
     val newId = "${parsed.event.eventType}_${dateMillis}_${System.nanoTime()}"
     return parsed.copy(
         event = parsed.event.copy(createdAt = dateMillis, eventId = newId),
@@ -519,7 +519,3 @@ internal fun adjustParsedDate(
     )
 }
 
-fun looksLikeWarJson(text: String): Boolean {
-    if (text.length > 200_000) return false
-    return text.contains("\"members\"") && text.contains("player_name")
-}

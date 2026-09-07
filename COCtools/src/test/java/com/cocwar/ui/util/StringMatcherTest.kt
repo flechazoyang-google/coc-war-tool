@@ -1,6 +1,7 @@
 package com.cocwar.ui.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -72,6 +73,34 @@ class StringMatcherTest {
         assertTrue(StringMatcher.isLikelySameName("张叁", "张三"))
         // 王小明 vs 赵小刚：2/3 编辑距离 → 0.33 不达标
         assertEquals(false, StringMatcher.isLikelySameName("王小明", "赵小刚"))
+    }
+
+    /** 同名成员按顺序编号区分：余味 / 余味1 / 余味2 是不同成员，不算疑似同名。 */
+    @Test
+    fun `isLikelySameName 编号变体不是同一个人`() {
+        assertFalse(StringMatcher.isLikelySameName("余味", "余味1"))
+        assertFalse(StringMatcher.isLikelySameName("余味1", "余味2"))
+        assertFalse(StringMatcher.isLikelySameName("余味", "余味12"))
+        // 原名与原名仍是同一人
+        assertTrue(StringMatcher.isLikelySameName("余味", "余味"))
+    }
+
+    @Test
+    fun `isNumberedVariant 去掉末尾数字后相同`() {
+        assertTrue(StringMatcher.isNumberedVariant("余味", "余味1"))
+        assertTrue(StringMatcher.isNumberedVariant("余味1", "余味2"))
+        assertFalse(StringMatcher.isNumberedVariant("张三", "张五"))
+        // 纯数字名不以空串互判
+        assertFalse(StringMatcher.isNumberedVariant("1", "2"))
+        assertFalse(StringMatcher.isNumberedVariant("余味", "余味"))
+    }
+
+    @Test
+    fun `stripNumberSuffix 只去掉结尾连续数字`() {
+        assertEquals("余味", StringMatcher.stripNumberSuffix("余味1"))
+        assertEquals("余味", StringMatcher.stripNumberSuffix("余味12"))
+        assertEquals("余味", StringMatcher.stripNumberSuffix("余味"))
+        assertEquals("a1b", StringMatcher.stripNumberSuffix("a1b2"))
     }
 
     @Test

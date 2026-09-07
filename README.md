@@ -1,16 +1,17 @@
 # COC 部落战/联赛数据管理工具
 
-部落冲突（Clash of Clans）部落战与联赛数据管理 Android 应用。支持 JSON 战报导入、成员进攻统计（含月度统计与最佳成员积分评选）、未进攻人员公示、成员花名册管理，并提供 WebDAV 云端同步、悬浮球/录屏截图辅助、版本更新检查等能力。
+部落冲突（Clash of Clans）部落战与联赛数据管理 Android 应用。支持 CSV 战报导入、成员进攻统计（含月度统计与最佳成员积分评选）、未进攻人员公示、成员花名册管理，并提供 WebDAV 云端同步、悬浮球/录屏截图辅助、版本更新检查等能力。
 
 ## 功能
 
-- **JSON 战报导入** — 粘贴 JSON 或选择文件，自动匹配花名册
+- **CSV 战报导入** — 粘贴 CSV 或选择文件，自动匹配花名册（看不清的数据用 `-1` 标记，导入时二次确认）
 - **部落战/联赛管理** — 部落战 + 联赛（每月多场，每场 7 轮），含联赛赛季 7 轮聚合视图
 - **进攻统计** — 三星率、参战率、有效进攻率、月度统计、最佳成员评选、未进攻人员公示
 - **花名册** — 模糊匹配建议、连续缺席场次统计，统一管理成员名单
-- **数据管理** — 单场导出 / CSV / 全量备份 JSON，WebDAV 云端同步（支持坚果云）
+- **数据管理** — 单场导出 / CSV / 全量备份 ZIP（多 CSV），WebDAV 云端同步（支持坚果云）
 - **成员进攻编辑** — 详情页修改每位成员的进攻状态与摧毁率
 - **辅助工具** — 悬浮球 + 无障碍录屏截屏，截图本地图库浏览
+- **识别提示词** — App 不调用 AI，只按花名册动态生成提示词，交给豆包等外部软件识别后回贴 CSV
 - **版本更新检查** — 内置更新检测（七牛云 CDN release.json）
 
 ## 技术栈
@@ -19,12 +20,12 @@
 |------|------|
 | 语言 | Kotlin 2.1.21，JVM 21（minSdk 30 / targetSdk 35） |
 | UI | Jetpack Compose + Material 3（BOM 2025.06.01）+ Navigation Compose |
-| 数据库 | Room 2.7.2 + KSP（DB v8，7 个手写 Migration） |
-| JSON | Gson 2.11.0（宽松解析，DTO 可空兜底） |
+| 数据库 | Room 2.7.2 + KSP（DB v9，8 个手写 Migration） |
+| 数据格式 | CSV（唯一格式，无 JSON）；备份 ZIP 多 CSV |
 | 架构 | MVVM + Repository（无 DI 框架，`di/warViewModel` 工厂） |
 | 安全 | SecurePrefs：AndroidKeyStore + AES/GCM 加密存储 WebDAV 密码 |
 | 构建 | Gradle 8.11.1（wrapper）+ AGP 8.9.2 + version catalog（阿里云镜像） |
-| 质量 | lint 门禁 + detekt 静态检查 + 153 个 JUnit 单元测试 |
+| 质量 | lint 门禁 + detekt 静态检查 + 246 个 JUnit 单元测试 |
 
 ## 构建
 
@@ -47,10 +48,9 @@ COCtools/build/outputs/apk/debug/COCtools-debug.apk
 COCtools/src/main/java/com/cocwar/
 ├── CocWarApplication.kt          # Application 入口（lazy DB + Repository 单例）
 ├── data/
-│   ├── db/WarDatabase.kt         # Room DB v8 + DAO + 7 个 Migration
-│   ├── model/WarModels.kt        # DTO（宽松可空）+ 领域模型
-│   ├── parser/WarJsonParser.kt   # JSON → ParseResult（永不抛异常）
-│   ├── repository/               # WarRepository + BackupCodec + EventNamingRules
+│   ├── db/WarDatabase.kt         # Room DB v9 + DAO + 8 个 Migration
+│   ├── model/WarModels.kt        # 领域模型 + ImportModels(ParsedEvent/ParseResult) + EventBuilder
+│   ├── repository/               # WarRepository + BackupZipCodec + EventNamingRules
 │   ├── migrate/DataMigrator.kt   # 旧联赛事件名迁移
 │   ├── csv/                      # CSV 编解码 / 导出 / 导入
 │   ├── samples/SampleDataProvider.kt # 内置示例数据

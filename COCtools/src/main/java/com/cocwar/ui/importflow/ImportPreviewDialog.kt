@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -42,7 +43,8 @@ import androidx.compose.ui.window.Dialog
 import com.cocwar.data.db.MemberEntity
 import com.cocwar.data.model.Attack
 import com.cocwar.data.model.EVENT_TYPE_LEAGUE
-import com.cocwar.data.parser.WarJsonParser
+import com.cocwar.data.model.ParsedEvent
+import com.cocwar.data.model.UNKNOWN_VALUE
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.SectionTitle
 import com.cocwar.ui.util.parseEventRoundFromName
@@ -53,9 +55,8 @@ import java.util.TimeZone
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImportPreviewDialog(
-    parsed: WarJsonParser.ParsedEvent,
+    parsed: ParsedEvent,
     viewModel: ImportViewModel,
-    pendingImportId: String? = null,
     onSaved: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -76,10 +77,13 @@ fun ImportPreviewDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     var adjustedParsed by remember { mutableStateOf(parsed) }
     // 入册确认闸：疑似同名冲突 + 已构建的最终数据，待用户确认后保存
-    var conflictConfirm by remember { mutableStateOf<Pair<List<RosterConflict>, WarJsonParser.ParsedEvent>?>(null) }
+    var conflictConfirm by remember { mutableStateOf<Pair<List<RosterConflict>, ParsedEvent>?>(null) }
+    // 「看不清」数据二次确认：检测到 -1 时先提示用户，确认后按 0 入库
+    var unknownCount by remember { mutableStateOf(countUnknown(parsed)) }
+    var showUnknownConfirm by remember { mutableStateOf(false) }
 
     /** 构建最终保存数据：应用成员匹配选择（使用建议/名单选择/新成员改名）、补齐进攻槽位、写入名称/类型/日期。 */
-    fun buildFinalParsed(): WarJsonParser.ParsedEvent {
+    fun buildFinalParsed(): ParsedEvent {
         val editedMembers = parsed.members.mapIndexed { i, m ->
             val state = matchStates.getOrNull(i)
             if (state != null) {
@@ -97,7 +101,11 @@ fun ImportPreviewDialog(
             val padded = existing + (1..finalSlotCount)
                 .filterNot { order -> existing.any { it.attackOrder == order } }
                 .map { Attack(attackOrder = it, destructionPercentage = 0) }
-            m.copy(attacks = padded)
+            // 「看不清」-1 归 0：确认后按未进攻处理（attacks 的 -1 已被 >0 过滤掉）
+            m.copy(
+                totalStars = if (m.totalStars == UNKNOWN_VALUE) 0 else m.totalStars,
+                attacks = padded
+            )
         }
         val newEventId = if (eventType != adjustedParsed.event.eventType) {
             "${eventType}_${adjustedParsed.event.createdAt}_${System.nanoTime()}"
@@ -113,6 +121,20 @@ fun ImportPreviewDialog(
                 it.copy(eventId = newEventId, id = newEventId + "#" + it.id.substringAfter("#"))
             }
         )
+    }
+
+    /** 执行最终保存：先做入册疑似同名冲突检测，无冲突直接入库，有冲突弹确认闸。 */
+    fun performSave(finalParsed: ParsedEvent) {
+        scope.launch {
+            val conflicts = viewModel.findRosterConflicts(
+                finalParsed.members.map { it.playerName }
+            )
+            if (conflicts.isEmpty()) {
+                viewModel.save(finalParsed) { onSaved(finalParsed.event.eventId) }
+            } else {
+                conflictConfirm = conflicts to finalParsed
+            }
+        }
     }
 
     LaunchedEffect(parsed) {
@@ -223,17 +245,12 @@ fun ImportPreviewDialog(
                     onClick = {
                         if (name.trim().isBlank()) { nameError = true; return@Button }
                         val finalParsed = buildFinalParsed()
-                        scope.launch {
-                            // 入册确认闸：新名字与在册成员疑似同名时先人工确认，避免 OCR 错名污染花名册
-                            val conflicts = viewModel.findRosterConflicts(
-                                finalParsed.members.map { it.playerName }
-                            )
-                            if (conflicts.isEmpty()) {
-                                viewModel.save(finalParsed, pendingImportId) { onSaved(finalParsed.event.eventId) }
-                            } else {
-                                conflictConfirm = conflicts to finalParsed
-                            }
+                        // 「看不清」数据二次确认：检测到 -1 时先提示，确认后按 0 入库
+                        if (unknownCount > 0) {
+                            showUnknownConfirm = true
+                            return@Button
                         }
+                        performSave(finalParsed)
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp)
                 ) {
@@ -259,9 +276,32 @@ fun ImportPreviewDialog(
                     }
                 )
                 conflictConfirm = null
-                viewModel.save(resolved, pendingImportId) { onSaved(resolved.event.eventId) }
+                viewModel.save(resolved) { onSaved(resolved.event.eventId) }
             },
             onDismiss = { conflictConfirm = null }
+        )
+    }
+
+    // 「看不清」数据二次确认弹窗：确认后把 -1 归 0 保存（方案 A，库内不保留 -1）
+    if (showUnknownConfirm) {
+        AlertDialog(
+            onDismissRequest = { showUnknownConfirm = false },
+            title = { Text("有数据看不清") },
+            text = {
+                Text(
+                    "检测到 $unknownCount 处数据看不清（已标记为 -1），确认后将按 0 保存。" +
+                        "建议回到识图软件补全后再导入，以免统计失真。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showUnknownConfirm = false
+                    performSave(buildFinalParsed())
+                }) { Text("仍按 0 保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnknownConfirm = false }) { Text("返回修改") }
+            }
         )
     }
 
@@ -285,3 +325,10 @@ fun ImportPreviewDialog(
         }
     }
 }
+
+/** 统计「看不清」字段数量：成员总星数为 -1，或任一进攻摧毁率为 -1，逐处计数。 */
+private fun countUnknown(parsed: ParsedEvent): Int =
+    parsed.members.sumOf { m ->
+        (if (m.totalStars == UNKNOWN_VALUE) 1 else 0) +
+            m.attacks.count { it.destructionPercentage == UNKNOWN_VALUE }
+    }

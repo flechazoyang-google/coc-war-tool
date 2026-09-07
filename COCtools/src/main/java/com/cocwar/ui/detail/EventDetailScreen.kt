@@ -149,10 +149,10 @@ fun EventDetailScreen(eventId: String, onBack: () -> Unit) {
                             scope.launch {
                                 runCatching {
                                     val app = context.applicationContext as CocWarApplication
-                                    val json = app.repository.exportEventJson(eventId)
+                                    val csv = app.repository.exportEventCsv(eventId)
                                     val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/json"
-                                        putExtra(Intent.EXTRA_TEXT, json)
+                                        type = "text/csv"
+                                        putExtra(Intent.EXTRA_TEXT, csv)
                                         putExtra(Intent.EXTRA_SUBJECT, event?.eventName ?: "战报")
                                     }
                                     context.startActivity(Intent.createChooser(intent, "导出战报"))

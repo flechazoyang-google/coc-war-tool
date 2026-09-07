@@ -52,7 +52,7 @@ fun RosterConflictDialog(
         text = {
             Column(Modifier.fillMaxWidth()) {
                 Text(
-                    "以下新成员与在册成员名字高度相似，可能是识图错字。请确认是否为同一人；确认合并不会重复加入花名册。",
+                    "以下新成员与在册成员名字高度相似，可能是识别错字或重名。请确认是否为同一人；确认合并不会重复加入花名册。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

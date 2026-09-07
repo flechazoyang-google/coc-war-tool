@@ -13,7 +13,7 @@ data class HealthIssue(
     val suggestion: String,
     /** 建议目标的行数。 */
     val suggestionRowCount: Int,
-    /** true = 花名册低频条目（疑似同一人拆成两条）；false = 不在花名册（疑似识图错名）。 */
+    /** true = 花名册低频条目（疑似同一人拆成两条）；false = 不在花名册（疑似识别错名）。 */
     val inRoster: Boolean,
     /** 与建议目标的相似度 0..1。 */
     val score: Float
@@ -24,7 +24,7 @@ data class HealthIssue(
  *
  * 两类可疑项（均要求存在相似度 ≥ 0.5 或等长一字之差的目标，见
  * [StringMatcher.isLikelySameName]；无相似目标的名单外名字多为已删册成员，不报）：
- * 1. 事件中出现但不在花名册的名字，且与某在册成员疑似同名 → 多为识图错名；
+ * 1. 事件中出现但不在花名册的名字，且与某在册成员疑似同名 → 多为识别错名；
  * 2. 花名册中出现 ≤ [LOW_COUNT_MAX] 行的低频条目，且与出现 ≥ [HIGH_COUNT_MIN] 行
  *    的其他条目疑似同名 → 疑似同一人被拆成两条。
  *
@@ -48,7 +48,7 @@ object RosterHealthCheck {
         val rosterNameSet = rosterNames.toSet()
         val issues = mutableListOf<HealthIssue>()
 
-        // ① 事件中出现但不在花名册：疑似识图错名
+        // ① 事件中出现但不在花名册：疑似识别错名
         for ((name, count) in memberRowCounts) {
             if (name in rosterNameSet || name in ignored) continue
             StringMatcher.bestLikelyMatch(name, rosterNames)?.let { (target, score) ->

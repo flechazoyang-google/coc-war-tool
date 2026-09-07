@@ -44,21 +44,11 @@ data class MemberEntity(
 data class MemberRosterEntity(
     @PrimaryKey val name: String,
     val role: String = "member",
-    /** 是否在册：false = 已标记离队（保留职位与历史，可一键恢复）。 */
+    /**
+     * 是否在册。离队改为「直接删除」后本字段恒为 true，仅保留列以兼容旧库；
+     * 旧版本遗留的 active = 0 行在启动清理时被删除，业务代码不再读写该字段。
+     */
     val active: Boolean = true
-)
-
-/** 后台批量识图的「待确认」草稿：识图完成后待用户在导入页确认，不入战报与备份。 */
-@Entity(tableName = "pending_imports")
-data class PendingImportEntity(
-    @PrimaryKey val id: String,
-    val status: String,            // "processing" | "ready" | "failed"
-    val csvText: String,           // 聚合后的 CSV（ready 时非空）
-    val errorMessage: String,      // failed 时的错误说明
-    val imagePaths: String,        // Gson JSON 字符串数组（截图文件路径，供重试）
-    val totalImages: Int,
-    val processedImages: Int,
-    val createdAt: Long
 )
 
 class Converters {
@@ -197,64 +187,33 @@ interface RosterDao {
     @Query("UPDATE member_roster SET name = :to WHERE name = :from")
     suspend fun rename(from: String, to: String)
 
-    /** 批量设置成员在册状态（标记离队 / 恢复）。 */
-    @Query("UPDATE member_roster SET active = :active WHERE name IN (:names)")
-    suspend fun setActive(names: List<String>, active: Boolean)
-
     @Query("DELETE FROM member_roster")
     suspend fun clearAll()
 
-    /** upsert：主键冲突时整体更新（role/active 以传入为准）。软替换核心写入，不能复用 insertAll（IGNORE 不更新旧行）。 */
+    /** upsert：主键冲突时整体更新（role/active 以传入为准）。硬替换核心写入，不能复用 insertAll（IGNORE 不更新旧行）。 */
     @Upsert
     suspend fun upsertAll(entries: List<MemberRosterEntity>)
 
-    @Query("UPDATE member_roster SET active = 0 WHERE active = 1 AND name NOT IN (:names)")
-    suspend fun deactivateNotIn(names: List<String>)
-
-    @Query("UPDATE member_roster SET active = 0 WHERE active = 1")
-    suspend fun deactivateAll()
+    /** 删除不在给定名单中的成员。空名单会清空整表——NOT IN () 是非法 SQL 且语义危险，由调用方保证非空。 */
+    @Query("DELETE FROM member_roster WHERE name NOT IN (:names)")
+    suspend fun deleteNotIn(names: List<String>)
 
     /**
-     * 软替换花名册（事务）：新名单 upsert（active=true、职位以新名单为准，含恢复离队成员）；
-     * 在册但不在新名单的标记离队（职位保留）。@Transaction 保证 observeAll 不发射
-     * 「已 upsert 未 deactivate」的中间态。空名单走 deactivateAll——NOT IN () 是非法 SQL 会崩溃。
+     * 清除历史遗留的「已离队」行（active = 0）。
+     * 离队改为直接删除后不再产生新行，仅用于升级时清理旧版本标记过离队的成员。
+     */
+    @Query("DELETE FROM member_roster WHERE active = 0")
+    suspend fun deleteInactive()
+
+    /**
+     * 硬替换花名册（事务）：新名单 upsert（职位以新名单为准），不在新名单的**直接删除**。
+     * @Transaction 保证 observeAll 不发射「已 upsert 未删除」的中间态。
      */
     @Transaction
-    suspend fun softReplace(entries: List<MemberRosterEntity>) {
-        if (entries.isEmpty()) {
-            deactivateAll()
-            return
-        }
+    suspend fun hardReplace(entries: List<MemberRosterEntity>) {
         upsertAll(entries)
-        deactivateNotIn(entries.map { it.name })
+        deleteNotIn(entries.map { it.name })
     }
-}
-
-@Dao
-interface PendingImportDao {
-    @Query("SELECT * FROM pending_imports ORDER BY createdAt DESC")
-    fun observeAll(): Flow<List<PendingImportEntity>>
-
-    @Query("SELECT * FROM pending_imports WHERE id = :id LIMIT 1")
-    suspend fun getById(id: String): PendingImportEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(item: PendingImportEntity)
-
-    @Query("UPDATE pending_imports SET processedImages = :processed WHERE id = :id")
-    suspend fun updateProgress(id: String, processed: Int)
-
-    @Query("UPDATE pending_imports SET status = 'ready', csvText = :csv, errorMessage = '', processedImages = totalImages WHERE id = :id")
-    suspend fun complete(id: String, csv: String)
-
-    @Query("UPDATE pending_imports SET status = 'failed', errorMessage = :msg WHERE id = :id")
-    suspend fun fail(id: String, msg: String)
-
-    @Query("DELETE FROM pending_imports WHERE id = :id")
-    suspend fun delete(id: String)
-
-    @Query("UPDATE pending_imports SET status = 'failed', errorMessage = '识图中断（应用被清理或重启）' WHERE status = 'processing'")
-    suspend fun failAllProcessing()
 }
 
 // v1→v2: 移除 war_events 中的敌方部落字段。
@@ -372,10 +331,17 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
-private const val DB_VERSION = 8
+// v8→v9: 移除 pending_imports（AI 识图功能下线，App 只提供提示词、由外部软件识别）
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP TABLE IF EXISTS pending_imports")
+    }
+}
+
+private const val DB_VERSION = 9
 
 @Database(
-    entities = [WarEventEntity::class, MemberEntity::class, MemberRosterEntity::class, PendingImportEntity::class],
+    entities = [WarEventEntity::class, MemberEntity::class, MemberRosterEntity::class],
     version = DB_VERSION,
     exportSchema = false
 )
@@ -383,7 +349,6 @@ private const val DB_VERSION = 8
 abstract class WarDatabase : RoomDatabase() {
     abstract fun warDao(): WarDao
     abstract fun rosterDao(): RosterDao
-    abstract fun pendingImportDao(): PendingImportDao
 
     companion object {
         const val NAME = "coc_war.db"
@@ -392,7 +357,7 @@ abstract class WarDatabase : RoomDatabase() {
             Room.databaseBuilder(context.applicationContext, WarDatabase::class.java, NAME)
                 .addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_5, MIGRATION_4_5,
-                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
                 )
                 .build()
     }

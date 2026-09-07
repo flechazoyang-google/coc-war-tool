@@ -1,14 +1,8 @@
 # COC War Tool ProGuard/R8 Rules
 
-# === Gson：保留通过反射访问的 DTO 和模型类 ===
+# === Gson：保留通过反射访问的模型类（Room Converters 用 Gson 序列化 Attack） ===
 -keep class com.cocwar.data.model.** { *; }
 -keepclassmembers class com.cocwar.data.model.** { *; }
-
-# 备份/恢复数据类（BackupCodec 通过 Gson 反序列化）
--keep class com.cocwar.data.repository.BackupData { *; }
--keep class com.cocwar.data.repository.BackupEvent { *; }
--keep class com.cocwar.data.repository.BackupMember { *; }
--keep class com.cocwar.data.repository.BackupAttack { *; }
 
 # === Room ===
 -keep class * extends androidx.room.RoomDatabase

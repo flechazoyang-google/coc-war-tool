@@ -14,8 +14,8 @@ import kotlinx.coroutines.withContext
 
 /** 同步冲突：两端都有修改，待用户决策（RULES §6）。 */
 data class SyncConflict(
-    val localJson: String,
-    val remoteJson: String
+    val localZip: ByteArray,
+    val remoteZip: ByteArray
 )
 
 data class SyncUiState(
@@ -118,7 +118,7 @@ class SyncViewModel(
 
                 // 远端侧：三态探测（UNKNOWN 时保守中止，防止误覆盖有数据的远端）
                 val remoteState = withContext(Dispatchers.IO) { client.probe() }
-                val remoteJson = when (remoteState) {
+                val remoteZip = when (remoteState) {
                     WebDavClient.RemoteState.EXISTS ->
                         withContext(Dispatchers.IO) { client.download().getOrThrow() }
                     WebDavClient.RemoteState.MISSING -> null
@@ -127,7 +127,7 @@ class SyncViewModel(
                         return@launch
                     }
                 }
-                val remoteFp = remoteJson?.let { sha256(it) }
+                val remoteFp = remoteZip?.let { sha256(it) }
 
                 val action = SyncDecider.decide(
                     localFp = localFp,
@@ -143,23 +143,23 @@ class SyncViewModel(
                     }
                     SyncDecider.SyncAction.PUSH_LOCAL -> {
                         // 覆盖远端前先归档远端旧版（RULES §6：被覆盖方自动归档，数据不丢）
-                        if (remoteJson != null) archiveRemoteJson(client, remoteJson)
-                        val json = withContext(Dispatchers.IO) { repo.exportAllDataJson() }
-                        withContext(Dispatchers.IO) { client.upload(json) }.getOrThrow()
+                        if (remoteZip != null) archiveRemoteZip(client, remoteZip)
+                        val zip = withContext(Dispatchers.IO) { repo.exportAllData() }
+                        withContext(Dispatchers.IO) { client.upload(zip) }.getOrThrow()
                         updateFingerprints(localFp, localFp)
                         setDone("✓ 已上传本地数据到云端")
                     }
                     SyncDecider.SyncAction.PULL_REMOTE -> {
-                        val json = remoteJson!!
-                        val valid = withContext(Dispatchers.IO) { repo.validateBackupJson(json) }
+                        val zip = remoteZip!!
+                        val valid = withContext(Dispatchers.IO) { repo.validateBackup(zip) }
                         if (!valid) {
                             setDone("✗ 远程内容不是有效备份，未做任何修改")
                             return@launch
                         }
                         // 覆盖本地前先归档本地旧版（RULES §6：被覆盖方自动归档）
-                        val localJson = withContext(Dispatchers.IO) { repo.exportAllDataJson() }
-                        val localPath = withContext(Dispatchers.IO) { repo.saveLocalSyncBackup(localJson) }
-                        withContext(Dispatchers.IO) { repo.restoreFromBackupJson(json) }
+                        val localZip = withContext(Dispatchers.IO) { repo.exportAllData() }
+                        val localPath = withContext(Dispatchers.IO) { repo.saveLocalSyncBackup(localZip) }
+                        withContext(Dispatchers.IO) { repo.restoreFromBackup(zip) }
                         updateFingerprints(remoteFp, remoteFp)
                         setDone("✓ 已下载云端数据恢复本地（本地旧版已归档到 $localPath）")
                     }
@@ -168,8 +168,8 @@ class SyncViewModel(
                         _state.value = _state.value.copy(
                             isWorking = false,
                             conflict = SyncConflict(
-                                localJson = withContext(Dispatchers.IO) { repo.exportAllDataJson() },
-                                remoteJson = remoteJson!!
+                                localZip = withContext(Dispatchers.IO) { repo.exportAllData() },
+                                remoteZip = remoteZip!!
                             ),
                             statusMessage = "⚠ 检测到冲突：本地与云端都有修改"
                         )
@@ -191,8 +191,8 @@ class SyncViewModel(
                     _state.value = _state.value.copy(isWorking = false, statusMessage = "✗ 请先完成配置")
                     return@launch
                 }
-                archiveRemoteJson(client, conflict.remoteJson)
-                withContext(Dispatchers.IO) { client.upload(conflict.localJson) }.getOrThrow()
+                archiveRemoteZip(client, conflict.remoteZip)
+                withContext(Dispatchers.IO) { client.upload(conflict.localZip) }.getOrThrow()
                 val fp = withContext(Dispatchers.IO) { repo.dataFingerprint() }
                 updateFingerprints(fp, fp)
                 setDone("✓ 已保留本地数据（云端旧版已归档）")
@@ -209,16 +209,16 @@ class SyncViewModel(
         viewModelScope.launch {
             try {
                 val localPath = withContext(Dispatchers.IO) {
-                    repo.saveLocalSyncBackup(conflict.localJson)
+                    repo.saveLocalSyncBackup(conflict.localZip)
                 }
                 val valid = withContext(Dispatchers.IO) {
-                    repo.validateBackupJson(conflict.remoteJson)
+                    repo.validateBackup(conflict.remoteZip)
                 }
                 if (!valid) {
                     setDone("✗ 云端数据无效，未做任何修改（本地已归档到 $localPath）")
                     return@launch
                 }
-                withContext(Dispatchers.IO) { repo.restoreFromBackupJson(conflict.remoteJson) }
+                withContext(Dispatchers.IO) { repo.restoreFromBackup(conflict.remoteZip) }
                 val fp = withContext(Dispatchers.IO) { repo.dataFingerprint() }
                 updateFingerprints(fp, fp)
                 setDone("✓ 已采用云端数据（本地旧版已归档到 $localPath）")
@@ -240,13 +240,13 @@ class SyncViewModel(
         _state.value = _state.value.copy(isWorking = true, statusMessage = "正在导出并上传…")
         viewModelScope.launch {
             try {
-                val json = withContext(Dispatchers.IO) { repo.exportAllDataJson() }
+                val zip = withContext(Dispatchers.IO) { repo.exportAllData() }
                 val client = buildClient() ?: run {
                     _state.value = _state.value.copy(isWorking = false, statusMessage = "✗ 请先完成配置")
                     return@launch
                 }
                 val result = withContext(Dispatchers.IO) {
-                    client.upload(json)
+                    client.upload(zip)
                 }
                 _state.value = _state.value.copy(isWorking = false)
                 result.onSuccess {
@@ -272,12 +272,12 @@ class SyncViewModel(
                     _state.value = _state.value.copy(isWorking = false, statusMessage = "✗ 请先完成配置")
                     return@launch
                 }
-                val json = withContext(Dispatchers.IO) {
+                val zip = withContext(Dispatchers.IO) {
                     client.download().getOrThrow()
                 }
                 // 先校验备份内容，非法内容绝不执行清空/写入，避免“假成功”
                 val valid = withContext(Dispatchers.IO) {
-                    repo.validateBackupJson(json)
+                    repo.validateBackup(zip)
                 }
                 if (!valid) {
                     _state.value = _state.value.copy(isWorking = false, statusMessage = "✗ 远程内容不是有效备份，未做任何修改")
@@ -286,7 +286,7 @@ class SyncViewModel(
                 _state.value = _state.value.copy(statusMessage = "正在导入数据…")
                 // 完整还原：先全部解析成功，再清空本地写入，避免半途失败导致数据清空却未还原
                 withContext(Dispatchers.IO) {
-                    repo.restoreFromBackupJson(json)
+                    repo.restoreFromBackup(zip)
                 }
                 val fp = withContext(Dispatchers.IO) { repo.dataFingerprint() }
                 updateFingerprints(fp, fp)
@@ -298,11 +298,11 @@ class SyncViewModel(
     }
 
     /** 归档远端旧版到 WebDAV archives/ 并裁剪超限归档（RULES §6）。 */
-    private fun archiveRemoteJson(client: WebDavClient, json: String) {
+    private fun archiveRemoteZip(client: WebDavClient, zip: ByteArray) {
         val name = "coc_war_backup_" +
             java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US)
-                .format(java.util.Date()) + ".json"
-        client.upload(json, client.archiveUrl(name)).getOrThrow()
+                .format(java.util.Date()) + ".zip"
+        client.upload(zip, client.archiveUrl(name)).getOrThrow()
         val evicted = config.recordArchive(name)
         evicted.forEach { old ->
             runCatching { client.delete(client.archiveUrl(old)) }
@@ -315,9 +315,9 @@ class SyncViewModel(
         config.lastRemoteFingerprint = remoteFp
     }
 
-    private fun sha256(s: String): String {
+    private fun sha256(bytes: ByteArray): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(s.toByteArray(Charsets.UTF_8))
+            .digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
 

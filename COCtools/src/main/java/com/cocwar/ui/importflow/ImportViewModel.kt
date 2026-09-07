@@ -2,36 +2,22 @@ package com.cocwar.ui.importflow
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.cocwar.data.db.PendingImportEntity
-import com.cocwar.data.ocr.OcrClient
-import com.cocwar.data.ocr.OcrConfig
-import com.cocwar.data.ocr.OcrCsvExtractor
+import com.cocwar.data.model.ParseResult
+import com.cocwar.data.model.ParsedEvent
 import com.cocwar.data.ocr.OcrPrompts
-import com.cocwar.data.parser.WarJsonParser
 import com.cocwar.data.repository.WarRepository
 import kotlinx.coroutines.launch
 
 class ImportViewModel(
-    private val repo: WarRepository,
-    private val ocrConfig: OcrConfig? = null
+    private val repo: WarRepository
 ) : ViewModel() {
 
-    /** 解析战报：先按 JSON 内容自动识别类型（RULES §4.9），再解析并注入花名册职位映射。 */
-    suspend fun parse(json: String): WarJsonParser.ParseResult {
-        val roleMap = repo.rosterRoleMap()
-        return WarJsonParser.parse(
-            json,
-            eventType = WarJsonParser.inferEventType(json),
-            rosterRoles = roleMap
-        )
-    }
-
-    /** 解析 CSV 战报（B2，RULES §4.15）：按类型填充槽位，复用 JSON 解析完整链路。 */
+    /** 解析 CSV 战报（B2，RULES §4.15）：按类型填充槽位。 */
     suspend fun parseCsv(
         text: String,
         eventType: String,
         slotCount: Int
-    ): WarJsonParser.ParseResult {
+    ): ParseResult {
         val roleMap = repo.rosterRoleMap()
         return com.cocwar.data.csv.CsvImporter.parse(
             text = text,
@@ -50,21 +36,12 @@ class ImportViewModel(
     }
 
     /**
-     * 识图：调用已配置的视觉模型（默认千问），返回提取后的纯 CSV。
-     * 提示词注入在册成员名单，让模型在源头纠正名字错字。
-     * @throws OcrClient.OcrException 未配置 Key / 网络 / 超时 / API 错误 / 响应解析失败
+     * 生成「给外部 AI 用的识别提示词」：注入在册成员名单 + 形近名提醒，
+     * [eventType] 决定部落战/联赛的列规则。App 本身不调用任何 AI 接口，
+     * 用户复制提示词后到豆包等外部软件识别，再把结果 CSV 粘贴回来。
      */
-    suspend fun recognize(imageBase64: String, mimeType: String = "image/jpeg"): String {
-        val config = ocrConfig ?: throw OcrClient.OcrException.NotConfigured()
-        if (!config.isConfigured) throw OcrClient.OcrException.NotConfigured()
-        val client = OcrClient(
-            apiKey = config.apiKey,
-            baseUrl = config.baseUrl,
-            model = config.model
-        )
-        val prompt = OcrPrompts.buildPrompt(repo.getActiveRoster())
-        return OcrCsvExtractor.extract(client.recognize(imageBase64, mimeType, prompt))
-    }
+    suspend fun buildPromptText(eventType: String?): String =
+        OcrPrompts.buildPrompt(repo.getRoster(), eventType)
 
     suspend fun loadRoster(): List<String> = repo.getRoster()
 
@@ -80,15 +57,12 @@ class ImportViewModel(
      * 同一个 viewModelScope 协程中完成。避免 onSaved→popBackStack 后
      * 名单写入协程被取消导致新成员丢失。
      */
-    suspend fun loadPendingImport(id: String): PendingImportEntity? = repo.getPendingImport(id)
-
-    fun save(parsed: WarJsonParser.ParsedEvent, pendingImportId: String? = null, onSaved: () -> Unit) {
+    fun save(parsed: ParsedEvent, onSaved: () -> Unit) {
         viewModelScope.launch {
             val roster = repo.getRoster()
             val newNames = parsed.members.map { it.playerName }.filter { it !in roster }.distinct()
             if (newNames.isNotEmpty()) repo.addToRoster(newNames)
             repo.importEvent(parsed)
-            if (pendingImportId != null) repo.deletePendingImport(pendingImportId)
             onSaved()
         }
     }

@@ -1,46 +1,22 @@
 package com.cocwar.data.model
 
-import com.google.gson.annotations.SerializedName
-
 /**
- * DTO parsed directly from the user-supplied JSON.
- * Every field is nullable so a missing key never crashes the lenient parser.
+ * 领域模型（App 内部使用，非空、已清洗）。
+ * 数据源统一为 CSV：导入链路不再使用 JSON/Gson DTO。
  */
-data class WarDto(
-    @SerializedName("members") val members: List<MemberDto>? = null
-)
 
-/**
- * 精简后的成员结构：仅 player_name / total_stars / attacks。
- * rank/role 字段仅用于兼容旧版数据源解析，新数据不再依赖：
- * - rank 缺省时按 members 数组顺序（index+1）
- * - role 一律以花名册为准，JSON 中的 role 被忽略
- */
-data class MemberDto(
-    @SerializedName("rank") val rank: Int? = null,
-    @SerializedName("player_name") val playerName: String? = null,
-    @SerializedName("role") val role: String? = null,
-    @SerializedName("total_stars") val totalStars: Int? = 0,
-    @SerializedName("attacks") val attacks: List<AttackDto>? = null
-)
-
-/** 精简后的进攻结构：仅 attack_order / destruction_percentage（status 由摧毁率是否为 0 推导）。 */
-data class AttackDto(
-    @SerializedName("attack_order") val attackOrder: Int? = 0,
-    @SerializedName("destruction_percentage") val destructionPercentage: Int? = 0
-)
-
-/**
- * Domain model used inside the app (non-null, sanitized).
- */
+/** 单次进攻：attack_order 从 1 开始；destructionPercentage 为 0..100，-1 表示「看不清」待确认。 */
 data class Attack(
     val attackOrder: Int = 0,
     val destructionPercentage: Int = 0
 )
 
-/** 是否已发起进攻：摧毁率 > 0 视为已使用（原 status 字段语义由摧毁率是否为 0 推导）。 */
+/** 是否已发起进攻：摧毁率 > 0 视为已使用（-1「看不清」不入统计，按未进攻处理）。 */
 fun Attack.isUsed(): Boolean = destructionPercentage > 0
 
 /** event_type values */
 const val EVENT_TYPE_WAR = "war"
 const val EVENT_TYPE_LEAGUE = "league"
+
+/** 「看不清」哨兵值：识别/手填时用于标记无法确定的数值，导入预览时提示用户确认后归 0。 */
+const val UNKNOWN_VALUE = -1
