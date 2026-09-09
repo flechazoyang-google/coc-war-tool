@@ -503,7 +503,6 @@
     <ID>MaxLineLength:StatsScreen.kt$var savedLeagueMatchLabel by rememberSaveable { mutableStateOf(FilterPrefs.statsLeagueMatch(context)) } // 持久化联赛场次归属标签</ID>
     <ID>MaxLineLength:SyncScreen.kt$visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None</ID>
     <ID>MaxLineLength:UpdateChecker.kt$UpdateChecker$suspend</ID>
-    <ID>MaxLineLength:UpdateCheckerTest.kt$UpdateCheckerTest$"""[{"name":"COCtools-$tag.apk","browser_download_url":"https://gitee.com/x/y/releases/download/$tag/COCtools-$tag.apk"}]"""</ID>
     <ID>MaxLineLength:WarDatabase.kt$&lt;no name provided&gt;$db.execSQL("CREATE TABLE IF NOT EXISTS war_events_new (eventId TEXT PRIMARY KEY NOT NULL, eventName TEXT NOT NULL, eventType TEXT NOT NULL, eventRound INTEGER NOT NULL, clanTotalStars INTEGER NOT NULL, clanTotalDestruction TEXT NOT NULL, isSample INTEGER NOT NULL, createdAt INTEGER NOT NULL)")</ID>
     <ID>MaxLineLength:WarDatabase.kt$&lt;no name provided&gt;$db.execSQL("INSERT INTO war_events_new SELECT eventId, eventName, eventType, eventRound, clanTotalStars, clanTotalDestruction, isSample, createdAt FROM war_events")</ID>
     <ID>MaxLineLength:WarDatabase.kt$WarDao$@Query("SELECT m.eventId FROM members m INNER JOIN war_events e ON m.eventId = e.eventId WHERE m.playerName = :name AND e.eventType != 'league'")</ID>

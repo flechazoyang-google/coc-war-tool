@@ -1,6 +1,6 @@
 # Android CI：lint + 单元测试 + Debug APK 构建门禁
-# 说明：仓库现托管于 Gitee，若启用 Gitee Go，可将本文件步骤迁移至 .workflow/ 下的
-# Gitee Go 配置（语法不同，但步骤与命令一致）。
+# 说明：仓库主托管于 GitHub（flechazoyang-google/coc-war-tool），发布走 GitHub Releases
+# （见 docs/RELEASE_PROCESS.md）；Gitee 仅作为代码镜像。
 name: Android CI
 
 on:

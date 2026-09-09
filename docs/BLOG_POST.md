@@ -43,9 +43,9 @@
 
 ## 五、结语
 
-现在这个 App 在部落里日常运行：战报导入、月度公示、最佳评选，从人工统计变成了两分钟的事。源码在 Gitee 开源，APK 走七牛云 CDN 分发，应用内更新检查按标准 SemVer 四阶段通道推送。
+现在这个 App 在部落里日常运行：战报导入、月度公示、最佳评选，从人工统计变成了两分钟的事。源码在 GitHub 开源，安装包与更新走 GitHub Releases 分发，应用内更新检查按 SemVer 版本比较推送。
 
 回头看，最大的收获可能不是工具本身，而是跑通了一套 AI 结对开发的工作流：人负责口径、取舍和验收，AI 负责实现、重构和守护回归。分工清楚了，一个人也扛得动一个完整的产品。
 
-- 源码：https://gitee.com/yang-genhao/coc-war-tool
-- 下载：https://cdn.flechazo.icu/COCtools-v4.10.0.apk
+- 源码：https://github.com/flechazoyang-google/coc-war-tool
+- 下载：https://github.com/flechazoyang-google/coc-war-tool/releases/latest

@@ -12,10 +12,17 @@ import org.junit.Test
  */
 class UpdateCheckerTest {
 
+    private val apkUrl =
+        "https://github.com/flechazoyang-google/coc-war-tool/releases/download/" +
+            "v4.11.0/COCtools-v4.11.0.apk"
+
+    private fun apkAsset(url: String = apkUrl) =
+        """{"name":"COCtools-v4.11.0.apk","browser_download_url":"$url"}"""
+
     private fun releaseJson(
         tag: String? = "v4.11.0",
         body: String? = "正式版更新日志",
-        assets: String? = """{"name":"COCtools-v4.11.0.apk","browser_download_url":"https://github.com/flechazoyang-google/coc-war-tool/releases/download/v4.11.0/COCtools-v4.11.0.apk"}""",
+        assets: String? = apkAsset(),
         draft: Boolean = false,
         prerelease: Boolean = false
     ): String {
