@@ -1,5 +1,13 @@
 # COC War Tool 发行版日志
 
+## v4.11.0 (2026-09-09)
+
+（摘要见 releases\v4.11.0\RELEASE_NOTE.md）
+
+- **Version Code**：40
+
+---
+
 ## v4.10.0 (2026-09-07)
 
 正式版：花名册重构（离队即删除）+ 成员更新流程 + 解析容错加固
@@ -548,3 +556,4 @@ Bug修复与小幅优化
 - **Gitee Release**: [v1.1](https://gitee.com/yang-genhao/coc-war-tool/releases/tag/v1.1)
 
 ---
+

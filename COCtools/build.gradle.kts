@@ -28,8 +28,8 @@ android {
         applicationId = "com.cocwar"
         minSdk = 30
         targetSdk = 35
-        versionCode = 39
-        versionName = "4.10.0"
+        versionCode = 40
+        versionName = "4.11.0"
         // 「检查更新」读取的 GitHub 仓库（owner/repo，见 UpdateChecker）
         buildConfigField("String", "UPDATE_REPO", "\"flechazoyang-google/coc-war-tool\"")
         // DB Migration 测试（androidTest）需要 instrumentation runner
