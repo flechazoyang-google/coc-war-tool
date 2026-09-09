@@ -9,6 +9,10 @@
 .cxx
 *.apk
 *.aab
+
+# 签名凭据（严禁提交；keystore 丢失即无法升级已装用户）
+keystore.properties
+keystore/
 *.jks
 *.keystore
 
@@ -39,6 +43,13 @@ reasonix.toml
 
 # Test data
 cocwar_test.json
+
+# 调试遗留产物（本地临时，勿提交）
+shot_*.png
+*.b64
+test_payload.json
+test_response.json
+.qoder/settings.local.json
 
 # Env / secrets（请勿提交真实令牌）
 .env

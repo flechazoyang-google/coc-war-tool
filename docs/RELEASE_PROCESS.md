@@ -1,169 +1,164 @@
-# COC War Tool 发布流程（v3 — 目录结构 + 分工）
+# COC War Tool 发布规范
 
-> 适用范围：从 v4.10.0 起。阶段仅保留两种：**beta 公开测试版** 与 **正式版**。
-> 不再发布 alpha / rc / preview。
-> **分工**：AI 只负责「编译打包 + 命名 + 放到对应路径（含 markdown 版本说明）」；
-> **Gitee 发行版与 CDN 上传（含合并 release.json）全部由你手动完成**。
-
----
-
-## 0. 角色分工（一句话）
-
-| 步骤 | 谁做 | 产出 |
-|------|------|------|
-| 编译、命名、放本地目录 + 写版本说明 | AI | `releases/<版本>/{stable,beta/N}/*` + `RELEASE_NOTE.md` |
-| 生成 release.json 片段（供你粘贴） | AI | `releases/<版本>/release.json` |
-| Gitee 发行版 | 你（手动） | Gitee Release（tag + 更新说明，**无 APK 附件**） |
-| 上传 APK 到 CDN | 你（手动） | 以**版本化文件名**上传（与本地包同名，如 `COCtools-v4.10.0.apk`） |
-| 合并 release.json 到 CDN | 你（手动） | `https://cdn.flechazo.icu/release.json` 生效 |
-
-> AI **不再**创建 Gitee 发行版、不再上传安装包。AI 把包打好、命名、归档到本地对应路径，
-> 并生成可直接粘贴的 `release.json` 片段；你再手动做 Gitee 发行版 + CDN 上传。
+> 适用范围：**v4.11.0 起**（与 `E:\agentWork\tools` 工具箱项目统一为同一套发版方式）。
+> 分发渠道：**仅 GitHub Releases**（`flechazoyang-google/coc-war-tool`）。
+> 七牛云 CDN `release.json`、Gitee 发行版、beta/rc/alpha 阶段**均已停用**。
+> 版本号：SemVer `主.次.修`（只发正式版，不带 `-beta` 等后缀）。
 
 ---
 
-## 1. 目录结构（本地归档）
+## 一、一句话流程
 
-```
-releases/<版本>/
-├── stable/
-│   ├── COCtools-v<版本>.apk     # 正式版安装包（如 COCtools-v4.10.0.apk）
-│   └── RELEASE_NOTE.md          # 正式版版本说明（markdown）
-├── beta/
-│   ├── 1/
-│   │   ├── COCtools-v<版本>-beta.1.apk   # 第 1 个测试版
-│   │   └── RELEASE_NOTE.md               # 该测试版说明
-│   ├── 2/
-│   │   ├── COCtools-v<版本>-beta.2.apk   # 第 2 个测试版（正式版发布前可有多轮）
-│   │   └── RELEASE_NOTE.md
-│   └── …                        # 数字 = 测试版编号，一个序号代表一个测试版
-└── release.json                 # 供你合并到 CDN 的片段（beta/stable 两通道）
+```powershell
+# 1. 写好 releases/v4.11.0/RELEASE_NOTE.md
+# 2. 一条命令发版
+.\scripts\release.ps1 -Version 4.11.0
 ```
 
-约定：
-- `stable/` 只放正式版安装包 + 说明。
-- `beta/<N>/` 放第 N 个测试版安装包 + 说明；正式版发布前可能迭代多个测试版（1、2、3…）。
-- `release.json` 位于版本目录顶层（不是 stable/ 或 beta/ 内部）。
-- `*.apk` 被 `.gitignore` 忽略，仅本地留存；目录结构（含 `RELEASE_NOTE.md`）可进 git 追溯。
+脚本自动完成：改 `versionCode/versionName` → 单测 → `clean + assembleRelease`（签名）→
+校验 APK 版本号与签名 → 复制到 `releases/v4.11.0/COCtools-v4.11.0.apk` → 更新 `RELEASE_LOG.md` →
+commit + tag + push（GitHub 必需，其余远端尽力而为）→ `gh release create` 附 APK → 触发个人网站数据更新。
 
-> 历史版本目录（如 `releases/1.0/`、`releases/4.9.0/` 等）仍为旧的扁平格式，
-> 本流程仅约束 **v4.10.0 起的新发版**；如需回填旧目录可另行处理。
+预览不落盘：
 
----
-
-## 2. 版本号与 versionCode 规则
-
-- 版本号（SemVer）：`主.次.修` + 阶段后缀。
-  - beta：`4.10.0-beta.1`、`4.10.0-beta.2` …
-  - 正式版：无后缀，如 `4.10.0`、`4.11.0`。
-- **阶段只有两种**：`beta`（公开测试版）、正式版（无后缀）。alpha / rc / preview 不再使用。
-- **versionCode**：每个「对外发布的构建」（无论 beta 还是正式版）递增 +1。
-  - 当前：`38` = `4.10.0-beta.1`，`39` = `4.10.0`
-  - 下一 beta `4.11.0-beta.1` → `40`
-  - 规则目的：保证新包 `versionCode` 永远 > 已装包，Android 才允许覆盖安装 / App 才判定为「有更新」。
-- 修改位置：`COCtools/build.gradle.kts` 的 `versionCode` 与 `versionName`。
-
----
-
-## 3. AI 构建与本地放置（核心职责）
-
-构建命令（项目根目录，优先 wrapper；离线用本地 gradle 发行版）：
-
-```bash
-# 在线
-./gradlew :COCtools:assembleDebug --no-daemon
-# 离线兜底
-unset ACC_PRODUCT_CONFIG_V3 2>/dev/null
-GRADLE='/c/Users/flechazo/.gradle/wrapper/dists/gradle-8.9-bin/<hash>/gradle-8.9/bin/gradle'
-"$GRADLE" :COCtools:assembleDebug --no-daemon
+```powershell
+.\scripts\release.ps1 -Version 4.11.0 -DryRun
 ```
 
-产物：`COCtools/build/outputs/apk/debug/COCtools-debug.apk`
-
-### 3.1 复制到对应路径 + 写版本说明
-
-| 类型 | 安装包路径 | 说明路径 |
-|------|-----------|----------|
-| 正式版 | `releases/<版本>/stable/COCtools-v<版本>.apk` | `releases/<版本>/stable/RELEASE_NOTE.md` |
-| 测试版 N | `releases/<版本>/beta/<N>/COCtools-v<版本>-beta.N.apk` | `releases/<版本>/beta/<N>/RELEASE_NOTE.md` |
-
-示例（正式版 4.10.0）：
-
-```bash
-V=4.10.0
-mkdir -p releases/$V/stable releases/$V/beta/1
-cp COCtools/build/outputs/apk/debug/COCtools-debug.apk releases/$V/stable/COCtools-v$V.apk
-# 同时撰写 releases/$V/stable/RELEASE_NOTE.md（更新内容 + Version Code）
-```
-
-示例（测试版 4.11.0-beta.1，编号 N=1）：
-
-```bash
-V=4.11.0; N=1
-mkdir -p releases/$V/beta/$N
-cp COCtools/build/outputs/apk/debug/COCtools-debug.apk releases/$V/beta/$N/COCtools-v$V-beta.$N.apk
-# 同时撰写 releases/$V/beta/$N/RELEASE_NOTE.md
-```
-
-> AI 只把安装包放好、写好 `RELEASE_NOTE.md`。安装包在**本地、CDN、release.json 三处使用同一版本化文件名**
-> （`COCtools-v<版本>[-beta.N].apk`），无需别名副本——你上传到 CDN 时保持文件名不变即可。
+> 脚本会校验：当前在 `master` 分支、工作区干净、`keystore.properties` 与 keystore 文件存在、
+> 存在指向 `github.com` 的远端（默认 `github` 远端，缺失时脚本会提示 `git remote add` 命令）。
 
 ---
 
-## 4. release.json（供你合并到 CDN）
+## 二、版本号规则
 
-App 读取 `https://cdn.flechazo.icu/release.json`，结构：
+| 项 | 规则 |
+|---|---|
+| `versionName` | SemVer `主.次.修`，如 `4.11.0`；只发正式版，不带 `-beta` |
+| `versionCode` | **每次对外构建 +1**，绝不回退（否则 Android 拒绝覆盖安装） |
+| tag | `v<versionName>`，如 `v4.11.0` |
+| 修改位置 | `COCtools/build.gradle.kts` 的 `defaultConfig`（由脚本自动改） |
 
-```json
-{
-  "beta":   { "version": "4.10.0-beta.1", "url": "https://cdn.flechazo.icu/COCtools-v4.10.0-beta.1.apk", "body": "公开测试版：花名册重构…" },
-  "stable": { "version": "4.10.0",        "url": "https://cdn.flechazo.icu/COCtools-v4.10.0.apk",        "body": "正式版：花名册重构…" }
-}
+> 当前：`4.10.0`（code 39）→ 下一个正式版 `4.11.0`（code 40）。
+
+---
+
+## 三、本地归档结构
+
+```
+releases/
+├── RELEASE_LOG.md                     # 累计发布日志（进 git）
+└── v4.11.0/
+    ├── COCtools-v4.11.0.apk           # 本地留存（*.apk 已被 .gitignore 忽略）
+    └── RELEASE_NOTE.md                # 版本说明（进 git）
 ```
 
-- AI 在 `releases/<版本>/release.json` 生成**对应通道片段**（含 `version` + `body`，`url` 用**版本化文件名**，与本地安装包同名）。
-- 你上传 APK 后，把该片段**合并进 CDN 上的 `release.json`**：
-  - 只保留 `beta` 与 `stable` 两个通道，删除旧的 `alpha` / `rc` / `preview` 键。
-  - `url` 与本地安装包文件名保持一致（版本化命名）。
-- ⚠️ 不更新 `release.json`，App 内「检查更新」就不会提示新版本（即使 APK 已上传）。
+- 目录名 = tag 名（`v4.11.0`），APK 名 = `COCtools-v<版本>.apk`
+- **APK 不进 git**，只提交 `RELEASE_NOTE.md` 与 `RELEASE_LOG.md`
+- 历史版本目录永久保留，便于回滚与追溯
+- 旧格式目录（`releases/4.10.0/stable|beta/N/`、`releases/1.0/` 等）保留原样，不再新增
 
 ---
 
-## 5. 你手动完成（Gitee 发行版 + CDN 上传）
+## 四、`RELEASE_NOTE.md` 模板
 
-1. **Gitee 发行版**：在 `https://gitee.com/yang-genhao/coc-war-tool/releases/new`
-   手动创建，选择 tag（如 `v4.10.0`），填写更新说明（可取自 `RELEASE_NOTE.md`），
-   **不附加 APK**（APK 走 CDN）；说明里附 CDN 下载链接。
-2. **上传 APK 到 CDN**（保持版本化文件名不变）：
-   - 正式版：把 `releases/<版本>/stable/COCtools-v<版本>.apk` 上传到 `https://cdn.flechazo.icu/COCtools-v<版本>.apk`
-   - 测试版：把 `releases/<版本>/beta/<N>/COCtools-v<版本>-beta.N.apk` 上传到 `https://cdn.flechazo.icu/COCtools-v<版本>-beta.N.apk`
-3. **合并 release.json**：把 `releases/<版本>/release.json` 整体覆盖到 CDN 上的 `release.json`。
+```markdown
+# COC War Tool v4.11.0
 
----
+发布日期：YYYY-MM-DD
+Version Code：40
 
-## 6. 标准发版步骤（按顺序）
+## 变更内容
 
-AI 侧：
-1. 确认 `COCtools/build.gradle.kts` 的 `versionName` / `versionCode` 正确（见 §2）。
-2. 构建：`./gradlew :COCtools:assembleDebug --no-daemon`。
-3. 复制到 §3.1 对应路径（stable/ 或 beta/N/）+ 撰写 `RELEASE_NOTE.md`。
-4. 生成 `releases/<版本>/release.json` 片段（§4）。
-5. `git commit`（version 改动 + 目录结构/说明）+ `git push origin master`（⚠️ 见末尾备注）+ `git tag v<版本>[-beta.N]` + `git push origin <tag>`。
-6. **交付**：告知你「包已就绪，路径在 releases/<版本>/…」，由你执行 §5。
+- ✨ 新功能
+- 🐛 修复
+- 🛠 工程改动
 
-你侧：执行 §5（Gitee 发行版 + CDN 上传 + 合并 release.json）。
+## 校验
 
----
-
-## 备注：git push 绕过 reg.exe 黑名单
-
-本机安全策略将 `reg.exe` 列入程序黑名单，git 凭据管理器（GCM）读注册表时会触发而被杀。
-push 时使用以下环境变量绕过（commit / tag 不受影响）：
-
-```bash
-export GIT_CONFIG_NOSYSTEM=1
-export GCM_DISABLED=true
-export GIT_CREDENTIAL_HELPER=
-export GIT_TERMINAL_PROMPT=0
-git -c credential.helper= push "https://yang-genhao:<token>@gitee.com/yang-genhao/coc-war-tool.git" master
+- 单测：N 用例 / 0 失败
+- 构建：assembleRelease BUILD SUCCESSFUL
+- 实机：安装 release 包冒烟通过
 ```
+
+内容会**原样**作为 GitHub Release 的说明，因此写得面向用户（不要写内部实现细节）。
+
+---
+
+## 五、App 内的「检查更新」
+
+| 项 | 值 |
+|---|---|
+| 数据源 | `https://api.github.com/repos/flechazoyang-google/coc-war-tool/releases/latest` |
+| 仓库坐标 | `COCtools/build.gradle.kts` 的 `buildConfigField("String", "UPDATE_REPO", ...)` |
+| 比对方式 | `tag_name` 去掉 `v` 后与 `BuildConfig.VERSION_NAME` 逐段数值比较 |
+| 触发时机 | 启动时自动 +「设置 → 更新 → 检查更新」手动 |
+| 下载 | Release 里第一个 `.apk` 资产的 `browser_download_url` |
+
+发布后**无需改任何配置**——`gh release create` 一建，App 下一次检查即可发现。
+`releases/latest` 只返回正式版，因此「加入测试计划」开关与预览版通道已移除。
+
+---
+
+## 六、签名与 keystore
+
+| 项 | 值 |
+|---|---|
+| keystore | `keystore/coc-release.jks`（`.gitignore` 排除） |
+| 凭据 | `keystore.properties`（`.gitignore` 排除） |
+| 别名 | `cocwar` |
+| 配置位置 | `COCtools/build.gradle.kts` 的 `signingConfigs.release` |
+
+> ⚠️ **迁移提醒（只此一次）**：v4.10.0 及更早的安装包用的是 **debug keystore** 签名。
+> 从第一个使用 `coc-release.jks` 的版本开始，**已装用户无法覆盖安装**，必须卸载旧版后重装
+> （否则系统报「应用未安装 / 签名不一致」）。该版本的 `RELEASE_NOTE.md` 必须写明这一点。
+>
+> ⚠️ **keystore 必须备份**（密码同步备份）：丢失后无法再给已装用户推送可覆盖安装的更新，
+> 只能让用户卸载重装。
+
+---
+
+## 七、网站联动
+
+- 网站仓库：`flechazoyang-google/personal-website`（GitHub Pages）
+- `scripts/update-projects.js` 通过 GitHub API 拉取最新 Release，写入 `projects.json` 的版本号与 APK 下载链接
+- `.github/workflows/update-projects.yml` 每 6 小时自动跑一次；发布脚本会用
+  `gh workflow run update-projects.yml --repo flechazoyang-google/personal-website` 立即触发
+- 触发失败不影响发布，网站最多 6 小时后自动同步
+
+---
+
+## 八、失败与回滚
+
+| 情况 | 处理 |
+|---|---|
+| 单测/构建失败 | 脚本中止，版本号未提交（工作区可 `git checkout COCtools/build.gradle.kts` 还原） |
+| 推送成功但 Release 创建失败 | 手动补：`gh release create v4.11.0 releases/v4.11.0/COCtools-v4.11.0.apk --repo flechazoyang-google/coc-war-tool --notes-file releases/v4.11.0/RELEASE_NOTE.md --latest` |
+| 发布后发现严重问题 | ① 不改已有 tag：直接发下一个 `4.11.1` 修复；② 若必须撤包：`gh release delete v4.11.0 --yes` |
+| tag 打错 | `git tag -d v4.11.0 && git push github :refs/tags/v4.11.0` |
+| Gitee 镜像推送失败 | 不影响发布（GitHub 为主渠道）；手动 `git push origin master --tags` |
+
+> **永远不要**删除或替换已经发布过的 `versionCode`：已装用户将无法升级。
+
+---
+
+## 九、发布前检查清单
+
+- [ ] 功能已在真机/模拟器冒烟（导入、统计、花名册、同步、悬浮球/截屏）
+- [ ] `releases/v<版本>/RELEASE_NOTE.md` 已写好，面向用户可读
+- [ ] `gh auth status` 正常，对 `flechazoyang-google/coc-war-tool` 有 `repo` 权限
+- [ ] `keystore/coc-release.jks` 与 `keystore.properties` 存在且已备份（**丢失即无法升级**）
+- [ ] 工作区干净、在 `master` 分支
+- [ ] 若本次是首个新签名版本：版本说明已注明「需卸载旧版重装」
+
+---
+
+## 十、旧流程（已停用，仅存档）
+
+| 旧做法 | 现状 |
+|---|---|
+| `./gradlew :COCtools:assembleDebug` 出 debug 包 | 改为 `assembleRelease`（R8 + 签名） |
+| 七牛云 CDN 上传 APK + 合并 `release.json` | 停用；App 改读 GitHub Releases API |
+| Gitee 发行版（tag + 说明，无附件） | 停用；改为 GitHub Release 附 APK |
+| `releases/<版本>/stable|beta/<N>/` 目录 | 新发版改用 `releases/v<版本>/` |
+| `.qoder/skills/release`（qiniu 上传脚本） | 已删除，发版统一走 `scripts/release.ps1` |

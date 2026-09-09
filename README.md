@@ -12,7 +12,7 @@
 - **成员进攻编辑** — 详情页修改每位成员的进攻状态与摧毁率
 - **辅助工具** — 悬浮球 + 无障碍录屏截屏，截图本地图库浏览
 - **识别提示词** — App 不调用 AI，只按花名册动态生成提示词，交给豆包等外部软件识别后回贴 CSV
-- **版本更新检查** — 内置更新检测（七牛云 CDN release.json）
+- **版本更新检查** — 内置更新检测（GitHub Releases API）
 
 ## 技术栈
 
@@ -25,7 +25,7 @@
 | 架构 | MVVM + Repository（无 DI 框架，`di/warViewModel` 工厂） |
 | 安全 | SecurePrefs：AndroidKeyStore + AES/GCM 加密存储 WebDAV 密码 |
 | 构建 | Gradle 8.11.1（wrapper）+ AGP 8.9.2 + version catalog（阿里云镜像） |
-| 质量 | lint 门禁 + detekt 静态检查 + 246 个 JUnit 单元测试 |
+| 质量 | lint 门禁 + detekt 静态检查 + 264 个 JUnit 单元测试 |
 
 ## 构建
 
@@ -42,6 +42,20 @@ COCtools/build/outputs/apk/debug/COCtools-debug.apk
 
 > 离线环境（无网络下载 wrapper 发行版）时，可用本地 Gradle 发行版替代：`export JAVA_HOME='<Android Studio 路径>/jbr'` 后直接调用本地 gradle 二进制执行相同任务。
 
+## 发布
+
+一键发版（详见 [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md)）：
+
+```powershell
+# 1. 写 releases/v4.11.0/RELEASE_NOTE.md
+# 2. 发布
+.\scripts\release.ps1 -Version 4.11.0
+```
+
+脚本会改版本号、跑单测、构建并校验签名、归档到 `releases/v<版本>/`、提交打 tag、推送，
+用 `gh` 创建 GitHub Release 并附上 APK，最后触发个人网站数据更新。
+`keystore.properties` 与 `keystore/` 已被 `.gitignore` 排除，请勿提交（丢失即无法升级已装用户）。
+
 ## 项目结构
 
 ```
@@ -55,7 +69,7 @@ COCtools/src/main/java/com/cocwar/
 │   ├── csv/                      # CSV 编解码 / 导出 / 导入
 │   ├── samples/SampleDataProvider.kt # 内置示例数据
 │   ├── sync/                     # WebDAV 同步（WebDavClient / SyncConfig / SyncDecider / SecurePrefs）
-│   └── update/                   # 版本更新检查（UpdateChecker + UpdateConfig）
+│   └── update/                   # 版本更新检查（UpdateChecker → GitHub Releases API）
 ├── di/WarViewModel.kt            # @Composable ViewModel 工厂（scoped to NavBackStackEntry）
 ├── domain/                       # 纯函数统计：StatsCalculator + LeagueSeason
 ├── service/                      # 后台服务：悬浮球 + 无障碍录屏截屏
@@ -72,4 +86,5 @@ COCtools/src/main/java/com/cocwar/
 - `docs/RULES.md` — 统计口径与命名规则的权威定义（改口径必须先改此处）
 - `docs/ROADMAP.md` — 暂缓开发方向
 - `docs/UPGRADE.md` — 依赖与 SDK 升级记录
+- `docs/RELEASE_PROCESS.md` — 发布规范（GitHub Releases + 一键脚本 + 签名）
 - `releases/RELEASE_LOG.md` — 版本发行日志

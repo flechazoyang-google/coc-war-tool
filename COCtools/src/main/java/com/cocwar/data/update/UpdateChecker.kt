@@ -19,7 +19,8 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val RELEASE_JSON_URL = "https://cdn.flechazo.icu/release.json"
+/** GitHub Releases API：只取最新正式发行版（prerelease 不会出现在 latest 中）。 */
+private const val RELEASE_API_URL = "https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest"
 
 data class UpdateInfo(
     val version: String,
@@ -35,15 +36,16 @@ object UpdateChecker {
     private const val USER_AGENT = "COCWarTool-UpdateChecker"
 
     /**
-     * 从七牛云 CDN 的 release.json 检查更新。
-     * @param includePrerelease true 时优先检查 preview 通道，false 时只检查 stable 通道。
+     * 从 GitHub Releases 检查更新（仓库坐标见 BuildConfig.UPDATE_REPO）。
+     * 无发行版（404）视为「已是最新」；有新版本返回 UpdateInfo，否则返回 null。
      */
-    suspend fun check(context: Context, includePrerelease: Boolean = false): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
+    suspend fun check(context: Context): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         try {
-            val connection = URL(RELEASE_JSON_URL).openConnection() as HttpURLConnection
+            val connection = URL(RELEASE_API_URL).openConnection() as HttpURLConnection
             connection.apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Accept", "application/vnd.github+json")
                 connectTimeout = 15_000
                 readTimeout = 30_000
                 instanceFollowRedirects = true
@@ -51,13 +53,15 @@ object UpdateChecker {
 
             try {
                 val code = connection.responseCode
+                if (code == HttpURLConnection.HTTP_NOT_FOUND) {
+                    return@withContext Result.success(null)
+                }
                 if (code != HttpURLConnection.HTTP_OK) {
-                    return@withContext Result.failure(Exception("CDN 返回 $code"))
+                    return@withContext Result.failure(Exception("GitHub 返回 $code"))
                 }
 
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val info = parseReleaseJson(body, includePrerelease)
-                    ?: return@withContext Result.success(null)
+                val info = parseGitHubRelease(body) ?: return@withContext Result.success(null)
 
                 val currentVersion = BuildConfig.VERSION_NAME
                 Log.d(TAG, "当前: $currentVersion, 最新: ${info.version}${prereleaseLabel(info.version)}")
@@ -77,48 +81,65 @@ object UpdateChecker {
     }
 
     /**
-     * 解析 release.json 并选出最新版本（纯函数，可单测）。
+     * 解析 GitHub Releases API 的 `releases/latest` 响应（纯函数，可单测）。
      *
-     * 支持两种格式：
-     * - 新格式：{ "alpha": {...}, "beta": {...}, "rc": {...}, "stable": {...} }
-     * - 旧格式：{ "stable": {...}, "preview": {...} }
-     *
-     * 选择策略：
-     * - includePrerelease=true：从所有通道中选出版本号最高的；
-     * - includePrerelease=false：只看 stable 通道。
+     * 取值：`tag_name` 去掉 `v` 前缀作为版本号；`body` 作为更新说明（截断 500 字）；
+     * `assets[]` 中第一个 `.apk` 资产的 `browser_download_url` 作为下载地址。
+     * 缺少 tag、缺少 APK 资产、draft/prerelease 或 JSON 非法时返回 null。
      */
-    fun parseReleaseJson(json: String, includePrerelease: Boolean): UpdateInfo? {
+    fun parseGitHubRelease(json: String): UpdateInfo? {
         val root = try {
             JsonParser.parseString(json).asJsonObject
         } catch (_: Exception) {
             return null
         }
 
-        fun channelInfo(key: String): UpdateInfo? {
-            val obj = root.get(key)?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
-            val version = obj.get("version")?.takeIf { it.isJsonPrimitive }?.asString ?: return null
-            val url = obj.get("url")?.takeIf { it.isJsonPrimitive }?.asString ?: return null
-            if (version.isBlank() || url.isBlank()) return null
-            val body = obj.get("body")?.takeIf { it.isJsonPrimitive }?.asString?.take(500) ?: ""
-            val cleanVersion = version.removePrefix("v").removePrefix("V")
-            return UpdateInfo(
-                version = cleanVersion,
-                body = body,
-                apkUrl = url,
-                isPrerelease = isPrereleaseVersion(cleanVersion)
-            )
-        }
+        fun boolOrFalse(key: String): Boolean =
+            root.get(key)?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
 
-        val stableOnly = channelInfo("stable")
-        if (!includePrerelease) return stableOnly
+        if (boolOrFalse("draft") || boolOrFalse("prerelease")) return null
 
-        val channels = listOf("alpha", "beta", "rc", "stable")
-        val candidates = channels.mapNotNull { channelInfo(it) }
-        if (candidates.isEmpty()) {
-            // 旧格式兼容：preview 通道
-            return channelInfo("preview") ?: stableOnly
+        val tag = root.get("tag_name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.trim()
+            .orEmpty()
+        if (tag.isBlank()) return null
+
+        val apkUrl = firstApkAssetUrl(root) ?: return null
+
+        val body = root.get("body")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.take(500)
+            .orEmpty()
+
+        val version = tag.removePrefix("v").removePrefix("V")
+        if (version.isBlank()) return null
+
+        return UpdateInfo(
+            version = version,
+            body = body,
+            apkUrl = apkUrl,
+            isPrerelease = isPrereleaseVersion(version)
+        )
+    }
+
+    /** 取 assets 中第一个 `.apk` 资产的下载地址（跳过非 APK 与缺失 url 的资产）。 */
+    private fun firstApkAssetUrl(root: JsonObject): String? {
+        val assets = root.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
+        for (asset in assets) {
+            val obj = asset.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+            val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+            if (!name.endsWith(".apk", ignoreCase = true)) continue
+            val url = obj.get("browser_download_url")
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString
+                ?.trim()
+                .orEmpty()
+            if (url.isNotBlank()) return url
         }
-        return candidates.maxWithOrNull { a, b -> compareVersion(a.version, b.version) }
+        return null
     }
 
     /**

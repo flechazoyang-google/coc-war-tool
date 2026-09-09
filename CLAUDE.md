@@ -22,12 +22,16 @@ GRADLE=/home/ygh/projects/coc/.toolchain/gradle-8.10.2/bin/gradle
 
 # Unit tests (plain JUnit, pure-logic only)
 "$GRADLE" :COCtools:testDebugUnitTest
+
+# Release (signed, GitHub Releases channel) — one command, see docs/RELEASE_PROCESS.md
+.\scripts\release.ps1 -Version 4.11.0
 ```
 
 - APK output: `COCtools/build/outputs/apk/debug/COCtools-debug.apk`
+- Signed release APK: `COCtools/build/outputs/apk/release/COCtools-release.apk`（需 `keystore.properties`）
 - Android SDK at `../.toolchain/android-sdk` (already set in `local.properties` `sdk.dir`).
 - Dependency/plugin versions are centralized in `gradle/libs.versions.toml` (version catalog).
-- Current version: 4.7.2-preview (versionCode 30, targetSdk 35). Releases tagged `vX.Y` in git; changelog in `releases/RELEASE_LOG.md`.
+- Current version: 4.10.0 (versionCode 39, targetSdk 35). Releases are **GitHub Releases only** (tag `vX.Y.Z`, repo `flechazoyang-google/coc-war-tool`); changelog in `releases/RELEASE_LOG.md`.
 
 ## Architecture
 
@@ -47,7 +51,7 @@ Clash of Clans war/league data-management Android app (Kotlin 2.1.21, JVM 21, Je
 | `data/ocr/` | Prompt generation + paste validation only (no AI calls) — `OcrPrompts`, `OcrCsvExtractor`, `OcrValidation` |
 | `data/samples/SampleDataProvider.kt` | Built-in sample war + league data |
 | `data/sync/` | WebDAV sync (`WebDavClient`, `SyncConfig`, `SyncDecider`) |
-| `data/update/UpdateChecker.kt` | Version update check |
+| `data/update/UpdateChecker.kt` | Version update check — GitHub Releases API (`BuildConfig.UPDATE_REPO`, 取第一个 `.apk` 资产) |
 | `domain/StatsCalculator.kt` | Pure stat functions (`compute`, `computeMonthly`, `computeTopMembers`, `computeRecentMissed`, …) — 口径 defined in `docs/RULES.md` |
 | `di/WarViewModel.kt` | `@Composable warViewModel { repo -> ViewModel(repo) }` factory scoped to NavBackStackEntry |
 | `service/` | `FloatingBallService` (foreground service + overlay ball) + `ScreenCaptureService` (accessibility service) |

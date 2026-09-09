@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -12,6 +14,12 @@ detekt {
     baseline = file("config/detekt/baseline.xml")
 }
 
+// release 签名凭据（keystore.properties 与 keystore/ 已被 .gitignore 排除）
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.cocwar"
     compileSdk = 35
@@ -22,8 +30,21 @@ android {
         targetSdk = 35
         versionCode = 39
         versionName = "4.10.0"
+        // 「检查更新」读取的 GitHub 仓库（owner/repo，见 UpdateChecker）
+        buildConfigField("String", "UPDATE_REPO", "\"flechazoyang-google/coc-war-tool\"")
         // DB Migration 测试（androidTest）需要 instrumentation runner
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -37,6 +58,9 @@ android {
             isShrinkResources = true
             isDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -65,7 +89,7 @@ android {
     }
 
     lint {
-        // CI 门禁：lint 错误即失败；release 构建不强制（发布走七牛云 CDN）
+        // CI 门禁：lint 错误即失败；release 构建不强制（发布走 scripts/release.ps1）
         abortOnError = true
         checkReleaseBuilds = false
     }

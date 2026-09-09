@@ -44,7 +44,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.cocwar.data.update.UpdateChecker
 import com.cocwar.data.update.UpdateInfo
-import com.cocwar.data.update.UpdatePrefs
 import com.cocwar.ui.components.UpdateDialog
 import com.cocwar.ui.detail.EventDetailScreen
 import com.cocwar.ui.eventlist.EventListScreen
@@ -85,10 +84,7 @@ class MainActivity : ComponentActivity() {
             // 启动时按设置自动检查更新（静默：失败不打扰，有更新弹非强制提示）
             var startupUpdateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
             LaunchedEffect(Unit) {
-                val includePrerelease = UpdatePrefs.isPrereleaseEnabled(context)
-                UpdateChecker.check(context, includePrerelease).getOrNull()?.let { info ->
-                    if (info != null) startupUpdateInfo = info
-                }
+                UpdateChecker.check(context).getOrNull()?.let { startupUpdateInfo = it }
             }
             CocWarTheme(style = themeStyle) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

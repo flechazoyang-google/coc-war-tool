@@ -1,6 +1,5 @@
 package com.cocwar.ui.settings
 
-import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,12 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,7 +20,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -41,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import com.cocwar.BuildConfig
 import com.cocwar.data.update.UpdateChecker
 import com.cocwar.data.update.UpdateInfo
-import com.cocwar.data.update.UpdatePrefs
 import com.cocwar.ui.components.CocCard
 import com.cocwar.ui.components.CocShape
 import com.cocwar.ui.components.SectionTitle
@@ -49,16 +44,14 @@ import com.cocwar.ui.components.UpdateDialog
 import kotlinx.coroutines.launch
 
 /**
- * 设置-更新页：加入测试计划开关（持久化）+ 当前版本 + 检查更新（按开关筛选预览版）。
+ * 设置-更新页：当前版本 + 检查更新（数据源为 GitHub Releases）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdateSettingsScreen(onBack: () -> Unit) {    val context = LocalContext.current
+fun UpdateSettingsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var includePrerelease by remember {
-        mutableStateOf(UpdatePrefs.isPrereleaseEnabled(context))
-    }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var checking by remember { mutableStateOf(false) }
 
@@ -89,40 +82,6 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {    val context = LocalContext.cur
         ) {
             Spacer(Modifier.height(4.dp))
 
-            SectionTitle("测试计划")
-            CocCard(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Filled.SystemUpdateAlt, null, Modifier.width(20.dp).height(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(13.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("加入测试计划", style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(1.dp))
-                        Text(
-                            "开启后检查更新时预览版（测试版）也会提示；关闭则仅提示正式发行版",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = includePrerelease,
-                        onCheckedChange = {
-                            includePrerelease = it
-                            UpdatePrefs.setPrereleaseEnabled(context, it)
-                        }
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
             SectionTitle("版本")
             CocCard(Modifier.fillMaxWidth()) {
                 Column {
@@ -149,7 +108,7 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {    val context = LocalContext.cur
                 onClick = {
                     checking = true
                     scope.launch {
-                        val result = UpdateChecker.check(context, includePrerelease)
+                        val result = UpdateChecker.check(context)
                         checking = false
                         result.fold(
                             onSuccess = { info ->
